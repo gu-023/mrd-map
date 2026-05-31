@@ -139,8 +139,8 @@
     }
     tryGetPosition(0);
     // 取得後の継続更新（エラーは tryGetPosition 側のリトライに任せる）
+    // ※ enableHighAccuracy はあえて指定しない（グラスのホストが高精度要求を拒否するため）
     navigator.geolocation.watchPosition(onPosition, onWatchError, {
-      enableHighAccuracy: true,
       maximumAge: 30000,
       timeout: 60000,
     });
@@ -162,12 +162,8 @@
           onGeoError(err); // 数回粘って駄目なら詳細を表示
         }
       },
-      {
-        // 初回2回は高精度、その後は速いネットワーク測位へ切替。古い位置も許容して即表示。
-        enableHighAccuracy: attempt < 2,
-        maximumAge: 60000,
-        timeout: 12000,
-      }
+      // 公式サンプル準拠: 高精度を要求しない。古い位置も許容して即表示。
+      { maximumAge: 60000, timeout: 15000 }
     );
   }
 
