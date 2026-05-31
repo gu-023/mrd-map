@@ -187,17 +187,42 @@
   function onGeoError(err) {
     setGps(false, "GPS不可");
     els.accText.textContent = "";
-    // 実機にはコンソールが無いので、コード+メッセージを画面に出して切り分ける。
+    // 実機にはコンソールが無いので、原因切り分け情報を画面に出す。
     const codeName =
       { 1: "PERMISSION_DENIED", 2: "POSITION_UNAVAILABLE", 3: "TIMEOUT" }[err && err.code] ||
       "UNKNOWN";
     const msg = (err && err.message) ? err.message : "(メッセージなし)";
+    // ホストが別オリジン iframe に埋め込んでいると位置情報は既定で遮断される
+    let framed;
+    try {
+      framed = window.self !== window.top ? "iframe内" : "トップレベル";
+    } catch (e) {
+      framed = "iframe内(別オリジン)";
+    }
     showError(
       "位置情報を取得できません",
       `コード: <code>${codeName}</code><br>` +
       `詳細: <code>${msg}</code><br>` +
-      `↻ で再試行できます。`
+      `埋め込み: <code>${framed}</code><br>` +
+      `許可状態: <code id="perm-state">確認中…</code><br>` +
+      `↻ で再試行`
     );
+    // Permissions API で実際の許可状態を確認（granted / denied / prompt）
+    if (navigator.permissions && navigator.permissions.query) {
+      navigator.permissions
+        .query({ name: "geolocation" })
+        .then((p) => {
+          const el = document.getElementById("perm-state");
+          if (el) el.textContent = p.state;
+        })
+        .catch(() => {
+          const el = document.getElementById("perm-state");
+          if (el) el.textContent = "(query不可)";
+        });
+    } else {
+      const el = document.getElementById("perm-state");
+      if (el) el.textContent = "(API無し)";
+    }
   }
 
   function setGps(on, text) {
