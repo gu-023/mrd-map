@@ -44,6 +44,10 @@
   let navMode = false; // ナビ中
   let navSteps = [];
   let navStepIdx = 0;
+  let navDestination = null; // リルート用に目的地を保持
+  let navFullPath = []; // オフルート判定用の詳細経路点
+  let offRouteCount = 0;
+  let navRerouting = false;
 
   /* ---------- 起動時チェック ---------- */
   function showError(titleHtml, bodyHtml) {
@@ -252,11 +256,12 @@
   }
 
   /* ---------- ナビ（目的地選択 → 徒歩ルート → 次の曲がり角） ---------- */
-  function setNavBanner(text) {
-    if (text == null) {
+  function setNavBanner(html) {
+    if (html == null) {
       els.navBanner.classList.add("hidden");
+      els.navBanner.innerHTML = "";
     } else {
-      els.navBanner.textContent = text;
+      els.navBanner.innerHTML = html;
       els.navBanner.classList.remove("hidden");
     }
   }
@@ -292,44 +297,51 @@
     computeRoute(dest);
   }
 
-  function computeRoute(dest) {
+  function computeRoute(dest, isReroute) {
     const origin = userMarker.getPosition();
     if (!origin) {
       showError("現在地が未取得", "先に ◎ で現在地を取得してください。");
       return;
     }
-    setNavBanner("経路を計算中…");
+    navDestination = dest;
+    navRerouting = !!isReroute;
+    setNavBanner(isReroute ? "ルートを再計算中…" : "経路を計算中…");
     directionsService.route(
-      {
-        origin,
-        destination: dest,
-        travelMode: google.maps.TravelMode.WALKING,
-      },
+      { origin, destination: dest, travelMode: google.maps.TravelMode.WALKING },
       (res, status) => {
+        navRerouting = false;
         if (status === "OK" && res.routes[0]) {
           clearRoute();
           directionsRenderer = new google.maps.DirectionsRenderer({
             map,
             suppressMarkers: true,
-            preserveViewport: true, // ズーム/中心は現在地追従のまま
+            preserveViewport: true,
             polylineOptions: { strokeColor: "#4dd6a0", strokeOpacity: 0.9, strokeWeight: 6 },
           });
           directionsRenderer.setDirections(res);
           navSteps = res.routes[0].legs[0].steps || [];
           navStepIdx = 0;
+          offRouteCount = 0;
+          // オフルート判定用に詳細経路点を平坦化
+          navFullPath = [];
+          navSteps.forEach((s) => {
+            const path = (s.path && s.path.length ? s.path : [s.start_location, s.end_location]);
+            navFullPath.push(...path);
+          });
           navMode = true;
           followMode = true;
-          if (userMarker.getPosition()) updateNav(userMarker.getPosition());
+          if (!isReroute) map.setZoom(18); // 徒歩向けの詳細ズーム
+          updateNav({ lat: origin.lat(), lng: origin.lng() });
         } else if (status === "REQUEST_DENIED") {
           showError(
             "経路を取得できません",
             "ステータス: <code>REQUEST_DENIED</code><br>" +
             "APIキーの「APIの制限」に <b>Directions API</b> を追加してください。"
           );
-          setNavBanner(null);
+          if (!isReroute) setNavBanner(null);
         } else {
           showError("経路を取得できません", `ステータス: <code>${status}</code>`);
-          setNavBanner(null);
+          if (!isReroute) setNavBanner(null);
         }
       }
     );
@@ -345,6 +357,8 @@
   function cancelNav() {
     navMode = false;
     navSteps = [];
+    navFullPath = [];
+    navDestination = null;
     clearRoute();
     setNavBanner(null);
   }
@@ -357,27 +371,91 @@
     return m >= 1000 ? (m / 1000).toFixed(1) + "km" : Math.round(m) + "m";
   }
 
+  function fmtMin(sec) {
+    const min = Math.max(1, Math.round(sec / 60));
+    return min >= 60 ? `${Math.floor(min / 60)}時間${min % 60}分` : `約${min}分`;
+  }
+
   function stripHtml(html) {
     const d = document.createElement("div");
     d.innerHTML = html || "";
     return d.textContent || "進む";
   }
 
-  // 位置更新ごとに「次の曲がり角」を更新
+  // 曲がり角の種類 → 大きな方向アイコン
+  function maneuverArrow(m) {
+    if (!m) return "⬆";
+    if (m === "arrive") return "🏁";
+    if (m.indexOf("uturn") === 0) return "⤵";
+    if (m.indexOf("slight-left") >= 0) return "↖";
+    if (m.indexOf("slight-right") >= 0) return "↗";
+    if (m.indexOf("sharp-left") >= 0) return "⬅";
+    if (m.indexOf("sharp-right") >= 0) return "➡";
+    if (m.indexOf("left") >= 0) return "⬅";
+    if (m.indexOf("right") >= 0) return "➡";
+    return "⬆"; // straight / merge / depart / continue
+  }
+
+  // 残り距離・時間（現在地から終点まで）
+  function remaining(here) {
+    let dist = meters(here, navSteps[navStepIdx].end_location);
+    let sec = 0;
+    const cur = navSteps[navStepIdx];
+    const curDist = cur.distance ? cur.distance.value : dist;
+    const curSec = cur.duration ? cur.duration.value : 0;
+    sec += curDist > 0 ? curSec * Math.min(1, dist / curDist) : 0;
+    for (let i = navStepIdx + 1; i < navSteps.length; i++) {
+      dist += navSteps[i].distance ? navSteps[i].distance.value : 0;
+      sec += navSteps[i].duration ? navSteps[i].duration.value : 0;
+    }
+    return { dist, sec };
+  }
+
+  // 位置更新ごとに「次の曲がり角」と残り・オフルートを更新
   function updateNav(p) {
     if (!navMode || !navSteps.length) return;
     const here = new google.maps.LatLng(p.lat, p.lng);
-    // 通過した手順を進める（手順の終点に近づいたら次へ）
+
+    // 通過した手順を進める
     while (navStepIdx < navSteps.length - 1 && meters(here, navSteps[navStepIdx].end_location) < 25) {
       navStepIdx++;
     }
     const step = navSteps[navStepIdx];
     const d = meters(here, step.end_location);
     const isLast = navStepIdx === navSteps.length - 1;
-    if (isLast && d < 25) {
-      setNavBanner("🏁 目的地に到着");
+
+    if (isLast && d < 20) {
+      setNavBanner('<div class="nav-main"><span class="nav-arrow">🏁</span> 目的地に到着</div>');
+      return;
+    }
+
+    const rem = remaining(here);
+    setNavBanner(
+      `<div class="nav-main"><span class="nav-arrow">${maneuverArrow(step.maneuver)}</span> ` +
+      `<span class="nav-dist">${fmtDist(d)}</span></div>` +
+      `<div class="nav-sub">${stripHtml(step.instructions)}` +
+      ` ・ 残り ${fmtDist(rem.dist)} ${fmtMin(rem.sec)}</div>`
+    );
+
+    rerouteIfOffRoute(here);
+  }
+
+  // ルートから外れ続けたら現在地から再計算
+  function rerouteIfOffRoute(here) {
+    if (navRerouting || !navFullPath.length || !navDestination) return;
+    let min = Infinity;
+    for (let i = 0; i < navFullPath.length; i++) {
+      const dd = meters(here, navFullPath[i]);
+      if (dd < min) min = dd;
+    }
+    if (min > 35) {
+      offRouteCount++;
+      if (offRouteCount >= 3) {
+        offRouteCount = 0;
+        computeRoute(navDestination, true);
+      }
     } else {
-      setNavBanner(`${stripHtml(step.instructions)} ・ あと ${fmtDist(d)}`);
+      offRouteCount = 0;
     }
   }
 

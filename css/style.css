@@ -114,11 +114,28 @@ html, body {
   padding: 10px 16px;
   background: rgba(0, 0, 0, 0.78);
   color: var(--accent);
-  font-size: 26px;
-  font-weight: 700;
-  line-height: 1.3;
   text-align: center;
+  font-size: 22px;
+  font-weight: 700;
   z-index: 6;
+}
+#nav-banner .nav-main {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  font-weight: 700;
+}
+#nav-banner .nav-arrow { font-size: 46px; line-height: 1; }
+#nav-banner .nav-dist { font-size: 36px; }
+#nav-banner .nav-sub {
+  margin-top: 4px;
+  font-size: 18px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.75);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* ---- 操作バー ---- */
