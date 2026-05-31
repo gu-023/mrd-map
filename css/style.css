@@ -212,3 +212,44 @@ html, body {
   box-shadow: 0 0 14px var(--focus);
 }
 #menu-hint { font-size: 18px; color: rgba(255, 255, 255, 0.55); text-align: center; margin-top: 8px; }
+
+/* ---- 場所検索 ---- */
+#search {
+  position: absolute; inset: 0;
+  background: rgba(0, 0, 0, 0.94);
+  display: flex; flex-direction: column;
+  padding: 12px 14px;
+  z-index: 16;
+}
+#search-query {
+  font-size: 26px; font-weight: 700; color: var(--accent);
+  min-height: 34px; padding: 4px 8px; margin-bottom: 8px;
+  border-bottom: 2px solid rgba(255, 255, 255, 0.2);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+#search-keyboard {
+  display: flex; flex-wrap: wrap; gap: 4px; justify-content: center;
+}
+#search-keyboard .key {
+  width: 56px; height: 46px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 24px; font-weight: 700;
+  background: rgba(255, 255, 255, 0.06);
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  border-radius: 8px;
+}
+#search-keyboard .key.focused {
+  border-color: var(--focus); color: var(--focus);
+  background: rgba(77, 214, 160, 0.15); box-shadow: 0 0 12px var(--focus);
+}
+#search-preds { list-style: none; flex: 1; overflow-y: auto; margin-top: 8px; }
+#search-preds .pred {
+  font-size: 22px; padding: 8px 10px;
+  border: 2px solid transparent; border-radius: 8px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+#search-preds .pred.focused {
+  border-color: var(--focus); color: var(--focus);
+  background: rgba(77, 214, 160, 0.12); box-shadow: 0 0 12px var(--focus);
+}
+#search-hint { font-size: 16px; color: rgba(255, 255, 255, 0.55); text-align: center; margin-top: 6px; }

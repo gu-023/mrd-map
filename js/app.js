@@ -25,6 +25,10 @@
     menu: $("#menu"),
     menuTitle: $("#menu-title"),
     menuList: $("#menu-list"),
+    search: $("#search"),
+    searchQuery: $("#search-query"),
+    searchKeyboard: $("#search-keyboard"),
+    searchPreds: $("#search-preds"),
     gpsDot: $("#gps-dot"),
     gpsText: $("#gps-text"),
     accText: $("#acc-text"),
@@ -57,6 +61,18 @@
   let menuOpen = false;
   let menuIdx = 0;
   let menuItems = [];
+  // 検索
+  let autocompleteService = null;
+  let placesService = null;
+  let searchToken = null;
+  let searchOpen = false;
+  let searchQuery = "";
+  let searchPredictions = [];
+  let searchZone = "keys"; // keys / preds
+  let keyIdx = 0;
+  let predIdx = 0;
+  const SEARCH_COLS = 9;
+  const SEARCH_KEYS = "abcdefghijklmnopqrstuvwxyz0123456789".split("").concat(["␣", "⌫", "✕"]);
 
   /* ---------- 起動時チェック ---------- */
   function showError(titleHtml, bodyHtml) {
@@ -95,7 +111,7 @@
       const key = encodeURIComponent(cfg.GOOGLE_MAPS_API_KEY);
       s.src =
         `https://maps.googleapis.com/maps/api/js?key=${key}` +
-        `&callback=__mrdMapInit&libraries=marker,geometry&loading=async&language=ja&region=JP`;
+        `&callback=__mrdMapInit&libraries=marker,geometry,places&loading=async&language=ja&region=JP`;
       s.async = true;
       s.onerror = () => reject(new Error("Google Maps の読み込みに失敗"));
       document.head.appendChild(s);
@@ -307,10 +323,10 @@
     saveList(key, list);
   }
 
-  function saveRecent(dest) {
+  function saveRecent(dest, name) {
     const lat = dest.lat(), lng = dest.lng();
-    addToList("mrd.recents", { name: placeKey(lat, lng), lat, lng }, 8);
-    resolvePlaceName(lat, lng);
+    addToList("mrd.recents", { name: name || placeKey(lat, lng), lat, lng }, 8);
+    if (!name) resolvePlaceName(lat, lng); // 名前未指定なら住所を後付け
   }
 
   function isFav(lat, lng) {
@@ -388,6 +404,7 @@
 
   function openDestinationMenu() {
     const items = [];
+    items.push({ label: "🔍 場所を検索", action: openSearch });
     items.push({ label: "📍 地図で目的地を選ぶ", action: () => { closeMenu(); enterPickMode(); } });
     const fav = loadList("mrd.favorites");
     const rec = loadList("mrd.recents");
@@ -411,7 +428,7 @@
     const list = loadList(key);
     const items = list.map((p) => ({
       label: p.name,
-      action: () => { closeMenu(); computeRoute(new google.maps.LatLng(p.lat, p.lng)); },
+      action: () => { closeMenu(); computeRoute(new google.maps.LatLng(p.lat, p.lng), false, p.name); },
     }));
     items.push({ label: "← 戻る", action: openDestinationMenu });
     openMenu(title, items);
@@ -434,6 +451,115 @@
     openMenu("移動手段", items);
   }
 
+  /* ---------- 場所検索（オンスクリーンキーボード＋Autocomplete） ---------- */
+  function openSearch() {
+    closeMenu();
+    if (!autocompleteService) autocompleteService = new google.maps.places.AutocompleteService();
+    if (!placesService) placesService = new google.maps.places.PlacesService(map);
+    searchToken = new google.maps.places.AutocompleteSessionToken();
+    searchOpen = true;
+    searchQuery = "";
+    searchPredictions = [];
+    searchZone = "keys";
+    keyIdx = 0;
+    predIdx = 0;
+    els.search.classList.remove("hidden");
+    renderSearch();
+  }
+
+  function closeSearch() {
+    searchOpen = false;
+    els.search.classList.add("hidden");
+  }
+
+  function renderSearch() {
+    els.searchQuery.textContent = searchQuery || "（A〜Zで入力 → 候補を選択）";
+    els.searchKeyboard.innerHTML = "";
+    SEARCH_KEYS.forEach((k, i) => {
+      const d = document.createElement("div");
+      d.className = "key" + (searchZone === "keys" && i === keyIdx ? " focused" : "");
+      d.textContent = k;
+      d.addEventListener("click", () => { searchZone = "keys"; keyIdx = i; pressKey(k); });
+      els.searchKeyboard.appendChild(d);
+    });
+    els.searchPreds.innerHTML = "";
+    searchPredictions.forEach((p, i) => {
+      const li = document.createElement("li");
+      li.className = "pred" + (searchZone === "preds" && i === predIdx ? " focused" : "");
+      li.textContent = p.description;
+      li.addEventListener("click", () => { searchZone = "preds"; predIdx = i; selectPrediction(p); });
+      els.searchPreds.appendChild(li);
+    });
+  }
+
+  function pressKey(k) {
+    if (k === "✕") { closeSearch(); return; }
+    if (k === "⌫") searchQuery = searchQuery.slice(0, -1);
+    else if (k === "␣") searchQuery += " ";
+    else searchQuery += k;
+    refreshPredictions();
+    renderSearch();
+  }
+
+  function refreshPredictions() {
+    const q = searchQuery.trim();
+    if (q.length < 1) { searchPredictions = []; return; }
+    const req = {
+      input: q,
+      sessionToken: searchToken,
+      componentRestrictions: { country: "jp" },
+    };
+    const pos = userMarker && userMarker.getPosition();
+    if (pos) { req.location = pos; req.radius = 50000; }
+    autocompleteService.getPlacePredictions(req, (preds, status) => {
+      searchPredictions = status === "OK" && preds ? preds.slice(0, 6) : [];
+      if (predIdx >= searchPredictions.length) predIdx = 0;
+      renderSearch();
+    });
+  }
+
+  function selectPrediction(p) {
+    if (!p) return;
+    placesService.getDetails(
+      { placeId: p.place_id, fields: ["geometry"], sessionToken: searchToken },
+      (res, status) => {
+        searchToken = new google.maps.places.AutocompleteSessionToken(); // セッション更新
+        if (status === "OK" && res && res.geometry && res.geometry.location) {
+          closeSearch();
+          computeRoute(res.geometry.location, false, p.description);
+        } else {
+          showError("場所を取得できません", `ステータス: <code>${status}</code>`);
+        }
+      }
+    );
+  }
+
+  // 検索画面のキー操作
+  function searchKeydown(key) {
+    if (searchZone === "keys") {
+      switch (key) {
+        case "ArrowLeft":  keyIdx = Math.max(0, keyIdx - 1); break;
+        case "ArrowRight": keyIdx = Math.min(SEARCH_KEYS.length - 1, keyIdx + 1); break;
+        case "ArrowUp":    if (keyIdx - SEARCH_COLS >= 0) keyIdx -= SEARCH_COLS; break;
+        case "ArrowDown":
+          if (keyIdx + SEARCH_COLS < SEARCH_KEYS.length) keyIdx += SEARCH_COLS;
+          else if (searchPredictions.length) { searchZone = "preds"; predIdx = 0; }
+          break;
+        case "Enter": case " ": pressKey(SEARCH_KEYS[keyIdx]); return;
+        default: return;
+      }
+    } else {
+      switch (key) {
+        case "ArrowUp":   if (predIdx > 0) predIdx--; else searchZone = "keys"; break;
+        case "ArrowDown": predIdx = Math.min(searchPredictions.length - 1, predIdx + 1); break;
+        case "ArrowLeft": searchZone = "keys"; break;
+        case "Enter": case " ": selectPrediction(searchPredictions[predIdx]); return;
+        default: return;
+      }
+    }
+    renderSearch();
+  }
+
   function enterPickMode() {
     if (compassOn) disableCompass(); // 回転中はパン方向が分かりにくいので解除
     pickMode = true;
@@ -454,7 +580,7 @@
     computeRoute(dest);
   }
 
-  function computeRoute(dest, isReroute) {
+  function computeRoute(dest, isReroute, name) {
     const origin = userMarker.getPosition();
     if (!origin) {
       showError("現在地が未取得", "先に ◎ で現在地を取得してください。");
@@ -489,7 +615,7 @@
           followMode = true;
           if (!isReroute) {
             map.setZoom(travelMode === "DRIVING" ? 17 : 18);
-            saveRecent(dest); // 履歴に保存（名前は逆ジオコーディングで後付け）
+            saveRecent(dest, name); // 履歴に保存（名前があれば優先、無ければ逆ジオコーディング）
           }
           updateNav({ lat: origin.lat(), lng: origin.lng() });
         } else if (status === "REQUEST_DENIED") {
@@ -707,6 +833,15 @@
   const PAN_STEP = 80; // px
 
   document.addEventListener("keydown", (e) => {
+    // 検索画面: キーボード/候補を操作
+    if (searchOpen) {
+      if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "].indexOf(e.key) >= 0) {
+        searchKeydown(e.key);
+        e.preventDefault();
+      }
+      return;
+    }
+
     // メニュー表示中: 上下で選択、決定で実行、← で戻る
     if (menuOpen) {
       switch (e.key) {
