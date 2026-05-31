@@ -128,20 +128,56 @@
     startGeolocation();
   }
 
-  /* ---------- 位置情報（標準ブラウザ API） ---------- */
+  /* ---------- 位置情報（標準ブラウザ API） ----------
+   * グラスはスマホ GPS を中継するため初回フィックスに数秒〜かかる。
+   * タイムアウトはブロックせず粘り強くリトライし、取れ次第表示する。
+   */
   function startGeolocation() {
     if (!("geolocation" in navigator)) {
       setGps(false, "GPS非対応");
       return;
     }
-    navigator.geolocation.watchPosition(
+    tryGetPosition(0);
+    // 取得後の継続更新（エラーは tryGetPosition 側のリトライに任せる）
+    navigator.geolocation.watchPosition(onPosition, onWatchError, {
+      enableHighAccuracy: true,
+      maximumAge: 30000,
+      timeout: 60000,
+    });
+  }
+
+  function tryGetPosition(attempt) {
+    setGps(false, attempt === 0 ? "GPS取得中…" : `GPS再試行中… (${attempt})`);
+    navigator.geolocation.getCurrentPosition(
       onPosition,
-      onGeoError,
-      { enableHighAccuracy: true, maximumAge: 1000, timeout: 15000 }
+      (err) => {
+        // 本当の権限拒否だけは即通知。timeout/unavailable は自動リトライ。
+        if (err && err.code === err.PERMISSION_DENIED) {
+          onGeoError(err);
+          return;
+        }
+        if (attempt < 5) {
+          setTimeout(() => tryGetPosition(attempt + 1), 2000);
+        } else {
+          onGeoError(err); // 数回粘って駄目なら詳細を表示
+        }
+      },
+      {
+        // 初回2回は高精度、その後は速いネットワーク測位へ切替。古い位置も許容して即表示。
+        enableHighAccuracy: attempt < 2,
+        maximumAge: 60000,
+        timeout: 12000,
+      }
     );
   }
 
+  function onWatchError(err) {
+    if (err && err.code === err.PERMISSION_DENIED) onGeoError(err);
+    // それ以外（timeout 等）は無視。watch は監視を継続する。
+  }
+
   function onPosition(pos) {
+    els.error.classList.add("hidden"); // 取得できたらエラー/取得中の案内を消す
     const { latitude, longitude, accuracy } = pos.coords;
     const p = { lat: latitude, lng: longitude };
     userMarker.setPosition(p);
