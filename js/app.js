@@ -20,6 +20,8 @@
     map: $("#map"),
     canvas: $("#map-canvas"),
     headingArrow: $("#heading-arrow"),
+    picker: $("#picker"),
+    navBanner: $("#nav-banner"),
     gpsDot: $("#gps-dot"),
     gpsText: $("#gps-text"),
     accText: $("#acc-text"),
@@ -35,6 +37,13 @@
   let compassOn = false;
   let curHeading = 0; // 平滑化した方位（0=北, 時計回り）
   let orientHandler = null;
+  // ナビ
+  let directionsService = null;
+  let directionsRenderer = null;
+  let pickMode = false; // 目的地選択（中央十字）モード
+  let navMode = false; // ナビ中
+  let navSteps = [];
+  let navStepIdx = 0;
 
   /* ---------- 起動時チェック ---------- */
   function showError(titleHtml, bodyHtml) {
@@ -73,7 +82,7 @@
       const key = encodeURIComponent(cfg.GOOGLE_MAPS_API_KEY);
       s.src =
         `https://maps.googleapis.com/maps/api/js?key=${key}` +
-        `&callback=__mrdMapInit&libraries=marker&loading=async&language=ja&region=JP`;
+        `&callback=__mrdMapInit&libraries=marker,geometry&loading=async&language=ja&region=JP`;
       s.async = true;
       s.onerror = () => reject(new Error("Google Maps の読み込みに失敗"));
       document.head.appendChild(s);
@@ -129,6 +138,8 @@
 
     // ユーザーが移動モードで地図を動かしたら追従を解除
     map.addListener("dragstart", () => (followMode = false));
+
+    directionsService = new google.maps.DirectionsService();
 
     startGeolocation();
   }
@@ -240,6 +251,136 @@
     return ["N", "NE", "E", "SE", "S", "SW", "W", "NW"][Math.round(deg / 45) % 8];
   }
 
+  /* ---------- ナビ（目的地選択 → 徒歩ルート → 次の曲がり角） ---------- */
+  function setNavBanner(text) {
+    if (text == null) {
+      els.navBanner.classList.add("hidden");
+    } else {
+      els.navBanner.textContent = text;
+      els.navBanner.classList.remove("hidden");
+    }
+  }
+
+  // 🚩: ナビ中ならキャンセル、そうでなければ目的地選択モードへ
+  function toggleNav() {
+    if (navMode) {
+      cancelNav();
+    } else if (pickMode) {
+      exitPickMode();
+    } else {
+      enterPickMode();
+    }
+  }
+
+  function enterPickMode() {
+    if (compassOn) disableCompass(); // 回転中はパン方向が分かりにくいので解除
+    pickMode = true;
+    followMode = false;
+    els.picker.classList.remove("hidden");
+    setNavBanner("←↑↓→ で地図を動かし、決定で目的地を確定");
+  }
+
+  function exitPickMode() {
+    pickMode = false;
+    els.picker.classList.add("hidden");
+    if (!navMode) setNavBanner(null);
+  }
+
+  function confirmDestination() {
+    const dest = map.getCenter();
+    exitPickMode();
+    computeRoute(dest);
+  }
+
+  function computeRoute(dest) {
+    const origin = userMarker.getPosition();
+    if (!origin) {
+      showError("現在地が未取得", "先に ◎ で現在地を取得してください。");
+      return;
+    }
+    setNavBanner("経路を計算中…");
+    directionsService.route(
+      {
+        origin,
+        destination: dest,
+        travelMode: google.maps.TravelMode.WALKING,
+      },
+      (res, status) => {
+        if (status === "OK" && res.routes[0]) {
+          clearRoute();
+          directionsRenderer = new google.maps.DirectionsRenderer({
+            map,
+            suppressMarkers: true,
+            preserveViewport: true, // ズーム/中心は現在地追従のまま
+            polylineOptions: { strokeColor: "#4dd6a0", strokeOpacity: 0.9, strokeWeight: 6 },
+          });
+          directionsRenderer.setDirections(res);
+          navSteps = res.routes[0].legs[0].steps || [];
+          navStepIdx = 0;
+          navMode = true;
+          followMode = true;
+          if (userMarker.getPosition()) updateNav(userMarker.getPosition());
+        } else if (status === "REQUEST_DENIED") {
+          showError(
+            "経路を取得できません",
+            "ステータス: <code>REQUEST_DENIED</code><br>" +
+            "APIキーの「APIの制限」に <b>Directions API</b> を追加してください。"
+          );
+          setNavBanner(null);
+        } else {
+          showError("経路を取得できません", `ステータス: <code>${status}</code>`);
+          setNavBanner(null);
+        }
+      }
+    );
+  }
+
+  function clearRoute() {
+    if (directionsRenderer) {
+      directionsRenderer.setMap(null);
+      directionsRenderer = null;
+    }
+  }
+
+  function cancelNav() {
+    navMode = false;
+    navSteps = [];
+    clearRoute();
+    setNavBanner(null);
+  }
+
+  function meters(a, b) {
+    return google.maps.geometry.spherical.computeDistanceBetween(a, b);
+  }
+
+  function fmtDist(m) {
+    return m >= 1000 ? (m / 1000).toFixed(1) + "km" : Math.round(m) + "m";
+  }
+
+  function stripHtml(html) {
+    const d = document.createElement("div");
+    d.innerHTML = html || "";
+    return d.textContent || "進む";
+  }
+
+  // 位置更新ごとに「次の曲がり角」を更新
+  function updateNav(p) {
+    if (!navMode || !navSteps.length) return;
+    const here = new google.maps.LatLng(p.lat, p.lng);
+    // 通過した手順を進める（手順の終点に近づいたら次へ）
+    while (navStepIdx < navSteps.length - 1 && meters(here, navSteps[navStepIdx].end_location) < 25) {
+      navStepIdx++;
+    }
+    const step = navSteps[navStepIdx];
+    const d = meters(here, step.end_location);
+    const isLast = navStepIdx === navSteps.length - 1;
+    if (isLast && d < 25) {
+      setNavBanner("🏁 目的地に到着");
+    } else {
+      setNavBanner(`${stripHtml(step.instructions)} ・ あと ${fmtDist(d)}`);
+    }
+  }
+
   function onPosition(pos) {
     els.error.classList.add("hidden"); // 取得できたらエラー/取得中の案内を消す
     const { latitude, longitude, accuracy } = pos.coords;
@@ -249,7 +390,8 @@
     accuracyCircle.setRadius(accuracy || 0);
     setGps(true, "GPS");
     els.accText.textContent = accuracy ? `±${Math.round(accuracy)}m` : "";
-    if (followMode) map.panTo(p);
+    if (followMode && !pickMode) map.panTo(p); // 目的地選択中は追従しない
+    if (navMode) updateNav(p);
   }
 
   function onGeoError(err) {
@@ -324,6 +466,9 @@
       case "toggle-compass":
         toggleCompass();
         break;
+      case "toggle-nav":
+        toggleNav();
+        break;
     }
   }
 
@@ -349,6 +494,20 @@
   const PAN_STEP = 80; // px
 
   document.addEventListener("keydown", (e) => {
+    // 目的地選択モード: 矢印で地図移動、決定で中央を目的地に確定
+    if (pickMode) {
+      switch (e.key) {
+        case "ArrowLeft":  map && map.panBy(-PAN_STEP, 0); break;
+        case "ArrowRight": map && map.panBy(PAN_STEP, 0); break;
+        case "ArrowUp":    map && map.panBy(0, -PAN_STEP); break;
+        case "ArrowDown":  map && map.panBy(0, PAN_STEP); break;
+        case "Enter": case " ": confirmDestination(); break;
+        default: return;
+      }
+      e.preventDefault();
+      return;
+    }
+
     if (panMode) {
       switch (e.key) {
         case "ArrowLeft":  map && map.panBy(-PAN_STEP, 0); break;
