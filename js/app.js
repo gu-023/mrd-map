@@ -22,6 +22,9 @@
     headingArrow: $("#heading-arrow"),
     picker: $("#picker"),
     navBanner: $("#nav-banner"),
+    menu: $("#menu"),
+    menuTitle: $("#menu-title"),
+    menuList: $("#menu-list"),
     gpsDot: $("#gps-dot"),
     gpsText: $("#gps-text"),
     accText: $("#acc-text"),
@@ -48,6 +51,12 @@
   let navFullPath = []; // オフルート判定用の詳細経路点
   let offRouteCount = 0;
   let navRerouting = false;
+  let geocoder = null;
+  let travelMode = "WALKING"; // WALKING / DRIVING / BICYCLING / TRANSIT
+  // メニュー
+  let menuOpen = false;
+  let menuIdx = 0;
+  let menuItems = [];
 
   /* ---------- 起動時チェック ---------- */
   function showError(titleHtml, bodyHtml) {
@@ -148,6 +157,7 @@
     map.addListener("dragstart", () => (followMode = false));
 
     directionsService = new google.maps.DirectionsService();
+    geocoder = new google.maps.Geocoder();
 
     startGeolocation();
   }
@@ -270,15 +280,158 @@
     }
   }
 
-  // 🚩: ナビ中ならキャンセル、そうでなければ目的地選択モードへ
+  // 🚩: 目的地メニューを開く（選択中モードなら抜ける）
   function toggleNav() {
-    if (navMode) {
-      cancelNav();
-    } else if (pickMode) {
+    if (pickMode) {
       exitPickMode();
     } else {
-      enterPickMode();
+      openDestinationMenu();
     }
+  }
+
+  /* ---------- お気に入り/履歴（localStorage・ログイン不要） ---------- */
+  function loadList(key) {
+    try { return JSON.parse(localStorage.getItem(key) || "[]"); } catch (e) { return []; }
+  }
+  function saveList(key, arr) {
+    try { localStorage.setItem(key, JSON.stringify(arr)); } catch (e) {}
+  }
+  function placeKey(lat, lng) { return lat.toFixed(4) + "," + lng.toFixed(4); }
+
+  function addToList(key, place, cap) {
+    const list = loadList(key).filter(
+      (p) => placeKey(p.lat, p.lng) !== placeKey(place.lat, place.lng)
+    );
+    list.unshift(place);
+    if (list.length > cap) list.length = cap;
+    saveList(key, list);
+  }
+
+  function saveRecent(dest) {
+    const lat = dest.lat(), lng = dest.lng();
+    addToList("mrd.recents", { name: placeKey(lat, lng), lat, lng }, 8);
+    resolvePlaceName(lat, lng);
+  }
+
+  function isFav(lat, lng) {
+    return loadList("mrd.favorites").some((p) => placeKey(p.lat, p.lng) === placeKey(lat, lng));
+  }
+  function addFav(place) { addToList("mrd.favorites", place, 30); }
+  function removeFav(lat, lng) {
+    saveList("mrd.favorites", loadList("mrd.favorites").filter(
+      (p) => placeKey(p.lat, p.lng) !== placeKey(lat, lng)
+    ));
+  }
+
+  function shortenAddr(a) {
+    const s = (a || "").replace(/^日本、/, "").replace(/〒\d{3}-?\d{4}\s*/, "").trim();
+    return s || "地点";
+  }
+
+  // 逆ジオコーディングで地点名を後付け（保存済みの履歴/お気に入りを更新）
+  function resolvePlaceName(lat, lng) {
+    if (!geocoder) return;
+    geocoder.geocode({ location: { lat, lng } }, (results, status) => {
+      if (status !== "OK" || !results || !results[0]) return; // 失敗時は座標表示のまま
+      const name = shortenAddr(results[0].formatted_address);
+      ["mrd.recents", "mrd.favorites"].forEach((key) => {
+        const list = loadList(key);
+        let changed = false;
+        list.forEach((p) => {
+          if (placeKey(p.lat, p.lng) === placeKey(lat, lng)) { p.name = name; changed = true; }
+        });
+        if (changed) saveList(key, list);
+      });
+    });
+  }
+
+  /* ---------- メニュー（上下キーで選択） ---------- */
+  function openMenu(title, items) {
+    menuItems = items;
+    menuIdx = 0;
+    menuOpen = true;
+    els.menuTitle.textContent = title;
+    renderMenu();
+    els.menu.classList.remove("hidden");
+  }
+  function closeMenu() {
+    menuOpen = false;
+    els.menu.classList.add("hidden");
+  }
+  function renderMenu() {
+    els.menuList.innerHTML = "";
+    menuItems.forEach((it, i) => {
+      const li = document.createElement("li");
+      li.className = "menu-row" + (i === menuIdx ? " focused" : "");
+      li.textContent = it.label;
+      li.addEventListener("click", () => { menuIdx = i; renderMenu(); it.action(); });
+      els.menuList.appendChild(li);
+    });
+  }
+  function menuMove(d) {
+    menuIdx = (menuIdx + d + menuItems.length) % menuItems.length;
+    renderMenu();
+  }
+  function menuActivate() {
+    const it = menuItems[menuIdx];
+    if (it) it.action();
+  }
+  function menuBack() {
+    const back = menuItems.find((it) => it.label.indexOf("←") === 0);
+    if (back) back.action();
+    else closeMenu();
+  }
+
+  function travelLabel() {
+    return { WALKING: "徒歩", DRIVING: "自動車", BICYCLING: "自転車", TRANSIT: "公共交通" }[travelMode];
+  }
+
+  function openDestinationMenu() {
+    const items = [];
+    items.push({ label: "📍 地図で目的地を選ぶ", action: () => { closeMenu(); enterPickMode(); } });
+    const fav = loadList("mrd.favorites");
+    const rec = loadList("mrd.recents");
+    if (fav.length) items.push({ label: `⭐ お気に入り (${fav.length})`, action: () => openListMenu("mrd.favorites", "お気に入り") });
+    if (rec.length) items.push({ label: `🕘 最近の目的地 (${rec.length})`, action: () => openListMenu("mrd.recents", "最近の目的地") });
+    items.push({ label: `🚶 移動手段: ${travelLabel()}`, action: openTravelMenu });
+    if (navMode && navDestination) {
+      const lat = navDestination.lat(), lng = navDestination.lng();
+      if (isFav(lat, lng)) {
+        items.push({ label: "⭐ お気に入りから削除", action: () => { removeFav(lat, lng); closeMenu(); } });
+      } else {
+        items.push({ label: "⭐ この目的地をお気に入り登録", action: () => { addFav({ name: placeKey(lat, lng), lat, lng }); resolvePlaceName(lat, lng); closeMenu(); } });
+      }
+      items.push({ label: "⏹ ナビを終了", action: () => { cancelNav(); closeMenu(); } });
+    }
+    items.push({ label: "← 戻る", action: closeMenu });
+    openMenu("目的地", items);
+  }
+
+  function openListMenu(key, title) {
+    const list = loadList(key);
+    const items = list.map((p) => ({
+      label: p.name,
+      action: () => { closeMenu(); computeRoute(new google.maps.LatLng(p.lat, p.lng)); },
+    }));
+    items.push({ label: "← 戻る", action: openDestinationMenu });
+    openMenu(title, items);
+  }
+
+  function openTravelMenu() {
+    const modes = [
+      ["WALKING", "🚶 徒歩"], ["DRIVING", "🚗 自動車"],
+      ["BICYCLING", "🚲 自転車"], ["TRANSIT", "🚆 公共交通"],
+    ];
+    const items = modes.map(([m, label]) => ({
+      label: (travelMode === m ? "● " : "○ ") + label,
+      action: () => {
+        travelMode = m;
+        if (navMode && navDestination) computeRoute(navDestination); // 即再計算
+        openDestinationMenu();
+      },
+    }));
+    items.push({ label: "← 戻る", action: openDestinationMenu });
+    openMenu("移動手段", items);
   }
 
   function enterPickMode() {
@@ -311,7 +464,7 @@
     navRerouting = !!isReroute;
     setNavBanner(isReroute ? "ルートを再計算中…" : "経路を計算中…");
     directionsService.route(
-      { origin, destination: dest, travelMode: google.maps.TravelMode.WALKING },
+      { origin, destination: dest, travelMode: google.maps.TravelMode[travelMode] },
       (res, status) => {
         navRerouting = false;
         if (status === "OK" && res.routes[0]) {
@@ -334,7 +487,10 @@
           });
           navMode = true;
           followMode = true;
-          if (!isReroute) map.setZoom(18); // 徒歩向けの詳細ズーム
+          if (!isReroute) {
+            map.setZoom(travelMode === "DRIVING" ? 17 : 18);
+            saveRecent(dest); // 履歴に保存（名前は逆ジオコーディングで後付け）
+          }
           updateNav({ lat: origin.lat(), lng: origin.lng() });
         } else if (status === "REQUEST_DENIED") {
           showError(
@@ -551,6 +707,19 @@
   const PAN_STEP = 80; // px
 
   document.addEventListener("keydown", (e) => {
+    // メニュー表示中: 上下で選択、決定で実行、← で戻る
+    if (menuOpen) {
+      switch (e.key) {
+        case "ArrowUp":   menuMove(-1); break;
+        case "ArrowDown": menuMove(1); break;
+        case "ArrowLeft": menuBack(); break;
+        case "Enter": case " ": menuActivate(); break;
+        default: return;
+      }
+      e.preventDefault();
+      return;
+    }
+
     // 目的地選択モード: 矢印で地図移動、決定で中央を目的地に確定
     if (pickMode) {
       switch (e.key) {
