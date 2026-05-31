@@ -18,6 +18,8 @@
   const els = {
     app: $("#app"),
     map: $("#map"),
+    canvas: $("#map-canvas"),
+    headingArrow: $("#heading-arrow"),
     gpsDot: $("#gps-dot"),
     gpsText: $("#gps-text"),
     accText: $("#acc-text"),
@@ -30,6 +32,9 @@
   let accuracyCircle = null;
   let followMode = true; // GPS を追従して中央に保つ
   let panMode = false;
+  let compassOn = false;
+  let curHeading = 0; // 平滑化した方位（0=北, 時計回り）
+  let orientHandler = null;
 
   /* ---------- 起動時チェック ---------- */
   function showError(titleHtml, bodyHtml) {
@@ -90,7 +95,7 @@
   ];
 
   function initMap() {
-    map = new google.maps.Map(els.map, {
+    map = new google.maps.Map(els.canvas, {
       center: cfg.DEFAULT_CENTER || { lat: 35.681236, lng: 139.767125 },
       zoom: cfg.DEFAULT_ZOOM || 16,
       disableDefaultUI: true, // 自前の D-pad UI を使う
@@ -170,6 +175,71 @@
     // それ以外（timeout 等）は無視。watch は監視を継続する。
   }
 
+  /* ---------- コンパス（ヘディングアップ） ----------
+   * 方位センサーも位置情報同様、グラスではユーザー操作起点でないと許可が出ない。
+   * 取得した方位ぶんだけ地図キャンバスを逆回転させ、進行方向を常に画面の上にする。
+   */
+  function toggleCompass() {
+    if (compassOn) {
+      disableCompass();
+    } else {
+      enableCompass(); // ★ボタン押下（ユーザー操作）の中から呼ぶこと
+    }
+  }
+
+  function enableCompass() {
+    const start = () => {
+      compassOn = true;
+      els.headingArrow.classList.remove("hidden");
+      // iOS/WebKit は webkitCompassHeading、その他は絶対方位イベント
+      window.addEventListener("deviceorientationabsolute", onOrient, true);
+      window.addEventListener("deviceorientation", onOrient, true);
+    };
+    const DOE = window.DeviceOrientationEvent;
+    if (DOE && typeof DOE.requestPermission === "function") {
+      DOE.requestPermission()
+        .then((state) => {
+          if (state === "granted") start();
+          else showError("方位センサーが拒否されました", "🧭 を決定でもう一度試してください。");
+        })
+        .catch(() => showError("方位センサーを開始できません", "🧭 を決定で再試行。"));
+    } else if (DOE) {
+      start();
+    } else {
+      showError("方位センサー非対応", "この端末では向き連動を利用できません。");
+    }
+  }
+
+  function disableCompass() {
+    compassOn = false;
+    window.removeEventListener("deviceorientationabsolute", onOrient, true);
+    window.removeEventListener("deviceorientation", onOrient, true);
+    els.headingArrow.classList.add("hidden");
+    curHeading = 0;
+    els.canvas.style.transform = "translate(-50%, -50%) rotate(0deg)";
+    setGps(true, "GPS"); // ステータス表示を方位から通常に戻す
+  }
+
+  function headingFromEvent(e) {
+    if (typeof e.webkitCompassHeading === "number") return e.webkitCompassHeading; // iOS: 0=北・時計回り
+    if (e.absolute && typeof e.alpha === "number") return (360 - e.alpha) % 360; // 絶対方位
+    return null;
+  }
+
+  function onOrient(e) {
+    const h = headingFromEvent(e);
+    if (h == null || isNaN(h)) return;
+    // 最短経路で平滑化（コンパスはノイズが多い）
+    let diff = ((h - curHeading + 540) % 360) - 180;
+    curHeading = (curHeading + diff * 0.2 + 360) % 360;
+    els.canvas.style.transform = `translate(-50%, -50%) rotate(${-curHeading}deg)`;
+    els.gpsText.textContent = `🧭 ${Math.round(curHeading)}° ${cardinal(curHeading)}`;
+  }
+
+  function cardinal(deg) {
+    return ["N", "NE", "E", "SE", "S", "SW", "W", "NW"][Math.round(deg / 45) % 8];
+  }
+
   function onPosition(pos) {
     els.error.classList.add("hidden"); // 取得できたらエラー/取得中の案内を消す
     const { latitude, longitude, accuracy } = pos.coords;
@@ -225,7 +295,7 @@
 
   function setGps(on, text) {
     els.gpsDot.classList.toggle("off", !on);
-    els.gpsText.textContent = text;
+    if (!compassOn) els.gpsText.textContent = text; // コンパス中は方位表示を優先
   }
 
   /* ---------- アクション ---------- */
@@ -250,6 +320,9 @@
         break;
       case "toggle-pan":
         setPanMode(!panMode);
+        break;
+      case "toggle-compass":
+        toggleCompass();
         break;
     }
   }

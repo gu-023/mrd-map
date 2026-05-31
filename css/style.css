@@ -57,6 +57,33 @@ html, body {
   width: 100%;
   height: 100%;
   background: #000;
+  overflow: hidden; /* 回転キャンバスのはみ出しを隠す */
+}
+/* 実際に Google マップを描画する内側要素。表示域より大きい正方形にして、
+ * 中心まわりに回転させてもコーナーが欠けないようにする。 */
+#map-canvas {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 780px;
+  height: 780px;
+  transform: translate(-50%, -50%) rotate(0deg);
+  transform-origin: center center;
+}
+/* コンパスモード時の中央固定の向き矢印（画面に対して常に上向き＝進行方向） */
+#heading-arrow {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  transform: translate(-50%, -85%);
+  border-left: 16px solid transparent;
+  border-right: 16px solid transparent;
+  border-bottom: 28px solid var(--accent);
+  filter: drop-shadow(0 0 6px var(--accent));
+  pointer-events: none;
+  z-index: 4;
 }
 
 /* ---- 操作バー ---- */
@@ -64,12 +91,12 @@ html, body {
   display: flex;
   justify-content: center;
   align-items: center;
-  gap: 18px;
+  gap: 10px;
   z-index: 5;
 }
 .focusable {
-  width: 96px; height: 72px;
-  font-size: 40px; font-weight: 700;
+  width: 84px; height: 64px;
+  font-size: 32px; font-weight: 700;
   color: var(--fg);
   background: rgba(255,255,255,0.06);
   border: 2px solid rgba(255,255,255,0.35);
