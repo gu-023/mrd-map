@@ -105,6 +105,10 @@
     { featureType: "poi", elementType: "geometry", stylers: [{ color: "#101510" }] },
     { featureType: "poi.park", elementType: "geometry", stylers: [{ color: "#0d1f0d" }] },
     { featureType: "transit", elementType: "geometry", stylers: [{ color: "#2a2a3a" }] },
+    // 加算ディスプレイの視認性のためラベルを間引く（POI/施設名は非表示、道路名は残す）
+    { featureType: "poi", elementType: "labels", stylers: [{ visibility: "off" }] },
+    { featureType: "transit", elementType: "labels", stylers: [{ visibility: "off" }] },
+    { featureType: "administrative", elementType: "labels", stylers: [{ visibility: "off" }] },
   ];
 
   function initMap() {
@@ -475,42 +479,17 @@
   function onGeoError(err) {
     setGps(false, "GPS不可");
     els.accText.textContent = "";
-    // 実機にはコンソールが無いので、原因切り分け情報を画面に出す。
-    const codeName =
-      { 1: "PERMISSION_DENIED", 2: "POSITION_UNAVAILABLE", 3: "TIMEOUT" }[err && err.code] ||
-      "UNKNOWN";
-    const msg = (err && err.message) ? err.message : "(メッセージなし)";
-    // ホストが別オリジン iframe に埋め込んでいると位置情報は既定で遮断される
-    let framed;
-    try {
-      framed = window.self !== window.top ? "iframe内" : "トップレベル";
-    } catch (e) {
-      framed = "iframe内(別オリジン)";
-    }
-    showError(
-      "位置情報を取得できません",
-      `コード: <code>${codeName}</code><br>` +
-      `詳細: <code>${msg}</code><br>` +
-      `埋め込み: <code>${framed}</code><br>` +
-      `許可状態: <code id="perm-state">確認中…</code><br>` +
-      `◎ を決定で再取得 / ↻ で再読み込み`
-    );
-    // Permissions API で実際の許可状態を確認（granted / denied / prompt）
-    if (navigator.permissions && navigator.permissions.query) {
-      navigator.permissions
-        .query({ name: "geolocation" })
-        .then((p) => {
-          const el = document.getElementById("perm-state");
-          if (el) el.textContent = p.state;
-        })
-        .catch(() => {
-          const el = document.getElementById("perm-state");
-          if (el) el.textContent = "(query不可)";
-        });
+    const code = err && err.code;
+    let body;
+    if (code === 1) {
+      // PERMISSION_DENIED: グラスではユーザー操作起点で許可を出す必要がある
+      body = "◎ を決定して、表示される許可を承認してください。";
+    } else if (code === 3) {
+      body = "現在地の取得に時間がかかっています。◎ を決定で再取得してください。";
     } else {
-      const el = document.getElementById("perm-state");
-      if (el) el.textContent = "(API無し)";
+      body = "現在地を特定できません。屋外/窓際で ◎ を決定して再取得してください。";
     }
+    showError("位置情報を取得できません", body + "<br><br>◎ 再取得 / ↻ 再読み込み");
   }
 
   function setGps(on, text) {
