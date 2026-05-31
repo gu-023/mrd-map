@@ -129,42 +129,40 @@
   }
 
   /* ---------- 位置情報（標準ブラウザ API） ----------
-   * グラスはスマホ GPS を中継するため初回フィックスに数秒〜かかる。
-   * タイムアウトはブロックせず粘り強くリトライし、取れ次第表示する。
+   * グラスのホストは、位置情報の許可プロンプトを「ユーザー操作（決定ボタン）」
+   * 起点でないと通さず、ページ読み込み時の自動要求は即拒否する。
+   * そのため自動取得はせず、◎ボタン押下の中で getCurrentPosition を直接呼ぶ。
    */
+  let geoWatchStarted = false;
+
   function startGeolocation() {
     if (!("geolocation" in navigator)) {
       setGps(false, "GPS非対応");
       return;
     }
-    tryGetPosition(0);
-    // 取得後の継続更新（エラーは tryGetPosition 側のリトライに任せる）
-    // ※ enableHighAccuracy はあえて指定しない（グラスのホストが高精度要求を拒否するため）
-    navigator.geolocation.watchPosition(onPosition, onWatchError, {
-      maximumAge: 30000,
-      timeout: 60000,
-    });
+    setGps(false, "◎ を決定で現在地取得");
   }
 
-  function tryGetPosition(attempt) {
-    setGps(false, attempt === 0 ? "GPS取得中…" : `GPS再試行中… (${attempt})`);
-    navigator.geolocation.getCurrentPosition(
-      onPosition,
-      (err) => {
-        // 本当の権限拒否だけは即通知。timeout/unavailable は自動リトライ。
-        if (err && err.code === err.PERMISSION_DENIED) {
-          onGeoError(err);
-          return;
-        }
-        if (attempt < 5) {
-          setTimeout(() => tryGetPosition(attempt + 1), 2000);
-        } else {
-          onGeoError(err); // 数回粘って駄目なら詳細を表示
-        }
-      },
-      // 公式サンプル準拠: 高精度を要求しない。古い位置も許容して即表示。
-      { maximumAge: 60000, timeout: 15000 }
-    );
+  // ◎ボタンの click/keydown ハンドラ内（＝ユーザー操作中）から呼ぶこと
+  function acquireLocation() {
+    if (!("geolocation" in navigator)) {
+      setGps(false, "GPS非対応");
+      return;
+    }
+    setGps(false, "GPS取得中…");
+    // 高精度は指定しない（公式サンプル準拠）。古い位置も許容して即表示。
+    navigator.geolocation.getCurrentPosition(onPosition, onGeoError, {
+      maximumAge: 60000,
+      timeout: 15000,
+    });
+    // 一度許可が通れば継続更新を開始（多重登録は防ぐ）
+    if (!geoWatchStarted) {
+      geoWatchStarted = true;
+      navigator.geolocation.watchPosition(onPosition, onWatchError, {
+        maximumAge: 30000,
+        timeout: 60000,
+      });
+    }
   }
 
   function onWatchError(err) {
@@ -205,7 +203,7 @@
       `詳細: <code>${msg}</code><br>` +
       `埋め込み: <code>${framed}</code><br>` +
       `許可状態: <code id="perm-state">確認中…</code><br>` +
-      `↻ で再試行`
+      `◎ を決定で再取得 / ↻ で再読み込み`
     );
     // Permissions API で実際の許可状態を確認（granted / denied / prompt）
     if (navigator.permissions && navigator.permissions.query) {
@@ -243,7 +241,12 @@
         break;
       case "recenter":
         followMode = true;
-        if (userMarker.getPosition()) map.panTo(userMarker.getPosition());
+        if (userMarker.getPosition()) {
+          map.panTo(userMarker.getPosition());
+        } else {
+          els.error.classList.add("hidden"); // 前回エラー表示を消す
+          acquireLocation(); // ★ユーザー操作の中で位置情報を要求（プロンプト通過のため）
+        }
         break;
       case "toggle-pan":
         setPanMode(!panMode);
