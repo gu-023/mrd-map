@@ -47,6 +47,19 @@
     return;
   }
 
+  // Google Maps の認証/認可エラー（キー・リファラー・API未有効化・課金）はここに来る。
+  // 具体的な MapError コードはコンソールに出るが、実機向けに画面でも案内する。
+  window.gm_authFailure = function () {
+    showError(
+      "Google Maps 認証エラー",
+      "次のいずれかが原因です：<br>" +
+      "・Maps JavaScript API が未有効化<br>" +
+      "・リファラー制限の不一致<br>" +
+      "・課金(Billing)未設定<br>" +
+      "PCのChromeコンソールで <code>◯◯MapError</code> を確認してください。"
+    );
+  };
+
   /* ---------- Google Maps スクリプトを動的ロード ---------- */
   function loadGoogleMaps() {
     return new Promise((resolve, reject) => {
@@ -155,6 +168,7 @@
 
   /* ---------- アクション ---------- */
   function doAction(action) {
+    if (action === "retry") { location.reload(); return; } // 地図未初期化でも効くよう先頭で処理
     if (!map) return;
     switch (action) {
       case "zoom-in":
