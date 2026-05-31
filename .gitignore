@@ -1,0 +1,8 @@
+# API キー入りの config.js はコミットしない。
+# - ローカル開発: config.template.js をコピーして手で作る
+# - 本番(GitHub Pages): GitHub Actions が Secret から生成して配信する
+js/config.js
+
+# OS / エディタ
+.DS_Store
+node_modules/

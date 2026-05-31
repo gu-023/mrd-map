@@ -1,0 +1,108 @@
+/*
+ * Ray-Ban Display 向けスタイル
+ * - 画面は 600x600、単眼、加算(additive)ディスプレイ
+ * - 黒(#000)は透明として描画される → 背景は純黒、文字/線は明るい高コントラストに
+ * - タッチ/カーソルは無い。フォーカスは見やすく強調する
+ */
+
+:root {
+  --fg: #ffffff;
+  --accent: #4dd6a0;   /* 明るい緑: additive で視認性が高い */
+  --warn: #ffd24d;
+  --focus: #4dd6a0;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  width: 600px;
+  height: 600px;
+  background: #000;
+  color: var(--fg);
+  font-family: -apple-system, "Helvetica Neue", Arial, sans-serif;
+  overflow: hidden;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+#app {
+  position: relative;
+  width: 600px;
+  height: 600px;
+  display: grid;
+  grid-template-rows: 56px 1fr 96px 40px;
+}
+
+/* ---- ステータスバー ---- */
+#status-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 20px;
+  font-size: 26px;
+  font-weight: 600;
+  z-index: 5;
+}
+#gps-dot {
+  width: 16px; height: 16px; border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent);
+}
+#gps-dot.off { background: #555; box-shadow: none; }
+#acc-text { margin-left: auto; font-size: 22px; color: var(--accent); }
+
+/* ---- 地図 ---- */
+#map {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background: #000;
+}
+
+/* ---- 操作バー ---- */
+#controls {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 18px;
+  z-index: 5;
+}
+.focusable {
+  width: 96px; height: 72px;
+  font-size: 40px; font-weight: 700;
+  color: var(--fg);
+  background: rgba(255,255,255,0.06);
+  border: 2px solid rgba(255,255,255,0.35);
+  border-radius: 16px;
+  cursor: pointer;
+}
+/* D-pad で選択中の要素 = 太い緑枠で強調 */
+.focusable.focused {
+  border-color: var(--focus);
+  color: var(--focus);
+  box-shadow: 0 0 16px var(--focus);
+  background: rgba(77,214,160,0.12);
+}
+
+/* 移動モード時の表示 */
+#app.pan-mode #map { outline: 3px solid var(--accent); outline-offset: -3px; }
+#app.pan-mode #hint::after { content: " — 移動モード: ←↑↓→ で地図移動 / 決定で終了"; color: var(--accent); }
+
+#hint {
+  display: flex; align-items: center; justify-content: center;
+  font-size: 20px; color: rgba(255,255,255,0.6);
+}
+
+/* ---- エラー/案内オーバーレイ ---- */
+#error-overlay {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  flex-direction: column; gap: 16px;
+  padding: 40px; text-align: center;
+  background: #000;
+  font-size: 24px; line-height: 1.5;
+  z-index: 20;
+}
+#error-overlay .title { color: var(--warn); font-size: 30px; font-weight: 700; }
+#error-overlay code { color: var(--accent); font-size: 22px; }
+.hidden { display: none !important; }
