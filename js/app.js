@@ -155,10 +155,17 @@
   function onGeoError(err) {
     setGps(false, "GPS不可");
     els.accText.textContent = "";
-    // 権限拒否時は案内（タイムアウト等では出さない）
-    if (err && err.code === err.PERMISSION_DENIED) {
-      showError("位置情報が拒否されています", "グラス/スマホ側で位置情報の許可を確認してください。");
-    }
+    // 実機にはコンソールが無いので、コード+メッセージを画面に出して切り分ける。
+    const codeName =
+      { 1: "PERMISSION_DENIED", 2: "POSITION_UNAVAILABLE", 3: "TIMEOUT" }[err && err.code] ||
+      "UNKNOWN";
+    const msg = (err && err.message) ? err.message : "(メッセージなし)";
+    showError(
+      "位置情報を取得できません",
+      `コード: <code>${codeName}</code><br>` +
+      `詳細: <code>${msg}</code><br>` +
+      `↻ で再試行できます。`
+    );
   }
 
   function setGps(on, text) {
