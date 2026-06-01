@@ -55,6 +55,8 @@
   let navFullPath = []; // オフルート判定用の詳細経路点
   let offRouteCount = 0;
   let navRerouting = false;
+  let navBounds = null; // ルート全体の範囲（プレビュー用）
+  let zoomedForTurn = false; // 曲がり角ズーム中か
   let geocoder = null;
   let travelMode = "WALKING"; // WALKING / DRIVING / BICYCLING / TRANSIT
   // メニュー
@@ -412,6 +414,8 @@
     if (rec.length) items.push({ label: `🕘 最近の目的地 (${rec.length})`, action: () => openListMenu("mrd.recents", "最近の目的地") });
     items.push({ label: `🚶 移動手段: ${travelLabel()}`, action: openTravelMenu });
     if (navMode && navDestination) {
+      items.push({ label: "🗺 ルート全体を表示", action: () => { if (navBounds) map.fitBounds(navBounds); followMode = false; closeMenu(); } });
+      items.push({ label: "📋 ルート一覧", action: openStepList });
       const lat = navDestination.lat(), lng = navDestination.lng();
       if (isFav(lat, lng)) {
         items.push({ label: "⭐ お気に入りから削除", action: () => { removeFav(lat, lng); closeMenu(); } });
@@ -422,6 +426,15 @@
     }
     items.push({ label: "← 戻る", action: closeMenu });
     openMenu("目的地", items);
+  }
+
+  function openStepList() {
+    const items = navSteps.map((s, i) => ({
+      label: `${i + 1}. ${stripHtml(s.instructions)} (${s.distance ? s.distance.text : ""})`,
+      action: () => { followMode = false; map.panTo(s.start_location); closeMenu(); },
+    }));
+    items.push({ label: "← 戻る", action: openDestinationMenu });
+    openMenu("ルート一覧", items);
   }
 
   function openListMenu(key, title) {
@@ -605,6 +618,8 @@
           navSteps = res.routes[0].legs[0].steps || [];
           navStepIdx = 0;
           offRouteCount = 0;
+          navBounds = res.routes[0].bounds || null;
+          zoomedForTurn = false;
           // オフルート判定用に詳細経路点を平坦化
           navFullPath = [];
           navSteps.forEach((s) => {
@@ -720,10 +735,28 @@
       `<div class="nav-main"><span class="nav-arrow">${maneuverArrow(step.maneuver)}</span> ` +
       `<span class="nav-dist">${fmtDist(d)}</span></div>` +
       `<div class="nav-sub">${stripHtml(step.instructions)}` +
-      ` ・ 残り ${fmtDist(rem.dist)} ${fmtMin(rem.sec)}</div>`
+      ` ・ 残り ${fmtDist(rem.dist)} ${fmtMin(rem.sec)} ・ ${arrivalClock(rem.sec)}着</div>`
     );
 
+    if (followMode) autoZoomForTurn(d, isLast); // 全体表示中は自動ズームしない
     rerouteIfOffRoute(here);
+  }
+
+  // 到着予想時刻（現在時刻 + 残り秒）
+  function arrivalClock(sec) {
+    const t = new Date(Date.now() + sec * 1000);
+    const p = (n) => (n < 10 ? "0" + n : "" + n);
+    return p(t.getHours()) + ":" + p(t.getMinutes());
+  }
+
+  // 曲がり角が近いと自動でズームイン、離れたら戻す（ヒステリシスでばたつき防止）
+  function autoZoomForTurn(d, isLast) {
+    const base = travelMode === "DRIVING" ? 17 : 18;
+    if (!isLast && d < 40) {
+      if (!zoomedForTurn) { zoomedForTurn = true; map.setZoom(19); }
+    } else if (d > 60 || isLast) {
+      if (zoomedForTurn) { zoomedForTurn = false; map.setZoom(base); }
+    }
   }
 
   // ルートから外れ続けたら現在地から再計算
