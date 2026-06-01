@@ -57,6 +57,10 @@
   let navRerouting = false;
   let navBounds = null; // ルート全体の範囲（プレビュー用）
   let zoomedForTurn = false; // 曲がり角ズーム中か
+  // 信号機（OpenStreetMap）
+  let signalsOn = true;
+  let signalData = [];
+  let signalMarkers = [];
   let geocoder = null;
   let travelMode = "WALKING"; // WALKING / DRIVING / BICYCLING / TRANSIT
   // メニュー
@@ -416,6 +420,15 @@
     if (navMode && navDestination) {
       items.push({ label: "🗺 ルート全体を表示", action: () => { if (navBounds) map.fitBounds(navBounds); followMode = false; closeMenu(); } });
       items.push({ label: "📋 ルート一覧", action: openStepList });
+      items.push({
+        label: `🚥 信号表示: ${signalsOn ? "ON" : "OFF"}`,
+        action: () => {
+          signalsOn = !signalsOn;
+          if (signalsOn && !signalData.length) fetchSignals();
+          else plotSignals();
+          closeMenu();
+        },
+      });
       const lat = navDestination.lat(), lng = navDestination.lng();
       if (isFav(lat, lng)) {
         items.push({ label: "⭐ お気に入りから削除", action: () => { removeFav(lat, lng); closeMenu(); } });
@@ -632,6 +645,7 @@
             map.setZoom(travelMode === "DRIVING" ? 17 : 18);
             saveRecent(dest, name); // 履歴に保存（名前があれば優先、無ければ逆ジオコーディング）
           }
+          if (signalsOn) fetchSignals(); // ルート周辺の信号機を取得
           updateNav({ lat: origin.lat(), lng: origin.lng() });
         } else if (status === "REQUEST_DENIED") {
           showError(
@@ -661,7 +675,69 @@
     navFullPath = [];
     navDestination = null;
     clearRoute();
+    clearSignals();
+    signalData = [];
     setNavBanner(null);
+  }
+
+  /* ---------- 信号機（OpenStreetMap Overpass・無料/キー不要） ---------- */
+  function fetchSignals() {
+    if (!navBounds || !navFullPath.length) return;
+    const sw = navBounds.getSouthWest(), ne = navBounds.getNorthEast();
+    const q =
+      `[out:json][timeout:20];node["highway"="traffic_signals"]` +
+      `(${sw.lat()},${sw.lng()},${ne.lat()},${ne.lng()});out;`;
+    fetch("https://overpass-api.de/api/interpreter", {
+      method: "POST",
+      body: "data=" + encodeURIComponent(q),
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => {
+        if (!j || !j.elements) return;
+        const near = [];
+        for (const el of j.elements) {
+          if (near.length > 200) break;
+          const pt = new google.maps.LatLng(el.lat, el.lon);
+          let min = Infinity;
+          for (let i = 0; i < navFullPath.length; i++) {
+            const d = meters(pt, navFullPath[i]);
+            if (d < min) min = d;
+            if (min < 25) break;
+          }
+          if (min < 25) near.push({ lat: el.lat, lng: el.lon }); // ルート沿いのみ
+        }
+        signalData = near;
+        plotSignals();
+      })
+      .catch(() => {}); // 取得失敗は無視（ベストエフォート）
+  }
+
+  function plotSignals() {
+    clearSignals();
+    if (!signalsOn) return;
+    signalData.forEach((s) => {
+      signalMarkers.push(
+        new google.maps.Marker({
+          map,
+          position: { lat: s.lat, lng: s.lng },
+          clickable: false,
+          title: "信号",
+          icon: {
+            path: google.maps.SymbolPath.CIRCLE,
+            scale: 5,
+            fillColor: "#ff8c1a",
+            fillOpacity: 1,
+            strokeColor: "#000000",
+            strokeWeight: 1,
+          },
+        })
+      );
+    });
+  }
+
+  function clearSignals() {
+    signalMarkers.forEach((m) => m.setMap(null));
+    signalMarkers = [];
   }
 
   function meters(a, b) {
