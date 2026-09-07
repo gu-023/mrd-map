@@ -55,6 +55,7 @@
   let navFullPath = []; // オフルート判定用の詳細経路点
   let offRouteCount = 0;
   let navRerouting = false;
+  let routeRequestId = 0; // 古い Directions callback を無視するための世代番号
   let navBounds = null; // ルート全体の範囲（プレビュー用）
   let zoomedForTurn = false; // 曲がり角ズーム中か
   // 信号機（OpenStreetMap）
@@ -616,6 +617,7 @@
       showError("現在地が未取得", "先に ◎ で現在地を取得してください。");
       return;
     }
+    const requestId = ++routeRequestId;
     navDestination = dest;
     navRerouting = !!isReroute;
     const previousNavBanner = isReroute && !els.navBanner.classList.contains("hidden")
@@ -625,6 +627,7 @@
     directionsService.route(
       { origin, destination: dest, travelMode: google.maps.TravelMode[travelMode] },
       (res, status) => {
+        if (requestId !== routeRequestId) return;
         navRerouting = false;
         if (status === "OK" && res.routes[0]) {
           clearRoute();
@@ -677,6 +680,8 @@
   }
 
   function cancelNav() {
+    routeRequestId++; // 未完了の Directions callback でナビが復活しないよう無効化
+    navRerouting = false;
     navMode = false;
     navSteps = [];
     navFullPath = [];
