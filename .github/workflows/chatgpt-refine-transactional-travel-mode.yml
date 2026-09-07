@@ -1,0 +1,42 @@
+name: ChatGPT refine transactional travel mode
+
+on:
+  push:
+    branches:
+      - chatgpt/transactional-travel-mode
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chatgpt/transactional-travel-mode
+      - name: Close menu while replacement route is pending
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path("js/app.js")
+          text = path.read_text()
+          old = "        if (navMode && navDestination) {\n          computeRoute(navDestination, false, undefined, m); // 成功時だけ移動手段を確定\n        } else {\n          travelMode = m;\n        }\n        openDestinationMenu();"
+          new = "        if (navMode && navDestination) {\n          closeMenu();\n          computeRoute(navDestination, false, undefined, m); // 成功時だけ移動手段を確定\n        } else {\n          travelMode = m;\n          openDestinationMenu();\n        }"
+          if old not in text:
+              raise SystemExit("travel mode action did not match expected branch")
+          path.write_text(text.replace(old, new, 1))
+          PY
+      - name: Verify patch
+        run: |
+          node --check js/app.js
+          git diff --check
+          grep -A7 -F 'if (navMode && navDestination) {' js/app.js | grep -F 'closeMenu();'
+      - name: Remove helper workflow and commit
+        run: |
+          rm .github/workflows/chatgpt-refine-transactional-travel-mode.yml
+          git config user.name "gu-023"
+          git config user.email "59335552+gu-023@users.noreply.github.com"
+          git add js/app.js .github/workflows/chatgpt-refine-transactional-travel-mode.yml
+          git commit -m "Keep route mode UI consistent while recalculating"
+          git push origin HEAD:chatgpt/transactional-travel-mode
