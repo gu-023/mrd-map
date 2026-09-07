@@ -20,22 +20,23 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
-
           path = Path("js/app.js")
           text = path.read_text()
-          old = '''  function onWatchError(err) {
-    if (err && err.code === err.PERMISSION_DENIED) onGeoError(err);
-    // それ以外（timeout 等）は無視。watch は監視を継続する。
-  }
-'''
-          new = '''  function onWatchError(err) {
-    if (err && err.code === err.PERMISSION_DENIED) {
-      geoWatchStarted = false;
-      onGeoError(err);
-    }
-    // それ以外（timeout 等）は無視。watch は監視を継続する。
-  }
-'''
+          old = (
+              "  function onWatchError(err) {\n"
+              "    if (err && err.code === err.PERMISSION_DENIED) onGeoError(err);\n"
+              "    // それ以外（timeout 等）は無視。watch は監視を継続する。\n"
+              "  }\n"
+          )
+          new = (
+              "  function onWatchError(err) {\n"
+              "    if (err && err.code === err.PERMISSION_DENIED) {\n"
+              "      geoWatchStarted = false;\n"
+              "      onGeoError(err);\n"
+              "    }\n"
+              "    // それ以外（timeout 等）は無視。watch は監視を継続する。\n"
+              "  }\n"
+          )
           if old not in text:
               raise SystemExit("target onWatchError block not found")
           path.write_text(text.replace(old, new, 1))
