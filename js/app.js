@@ -80,6 +80,7 @@
   let keyIdx = 0;
   let predIdx = 0;
   let predictionRequestId = 0; // 古い Autocomplete callback を無視するための世代番号
+  let placeDetailsRequestId = 0; // 古い Place Details callback を無視するための世代番号
   const SEARCH_COLS = 9;
   const SEARCH_KEYS = "abcdefghijklmnopqrstuvwxyz0123456789".split("").concat(["␣", "⌫", "✕"]);
 
@@ -498,6 +499,7 @@
 
   function closeSearch() {
     predictionRequestId++; // 閉じた検索の callback が後から UI を更新しないよう無効化
+    placeDetailsRequestId++; // 閉じた検索の Place Details callback も無効化
     searchOpen = false;
     els.search.classList.add("hidden");
   }
@@ -552,9 +554,11 @@
 
   function selectPrediction(p) {
     if (!p) return;
+    const requestId = ++placeDetailsRequestId;
     placesService.getDetails(
       { placeId: p.place_id, fields: ["geometry"], sessionToken: searchToken },
       (res, status) => {
+        if (requestId !== placeDetailsRequestId || !searchOpen) return;
         searchToken = new google.maps.places.AutocompleteSessionToken(); // セッション更新
         if (status === "OK" && res && res.geometry && res.geometry.location) {
           closeSearch();
