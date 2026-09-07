@@ -20,19 +20,11 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
-
+          import base64
           path = Path("js/app.js")
           text = path.read_text()
-          old = '''        if (navMode && navDestination) {
-          closeMenu();
-          computeRoute(navDestination, false, undefined, m); // 成功時だけ移動手段を確定
-        } else {'''
-          new = '''        if (navMode && navDestination) {
-          closeMenu();
-          if (m !== travelMode) {
-            computeRoute(navDestination, false, undefined, m); // 成功時だけ移動手段を確定
-          }
-        } else {'''
+          old = base64.b64decode("ICAgICAgICBpZiAobmF2TW9kZSAmJiBuYXZEZXN0aW5hdGlvbikgewogICAgICAgICAgY2xvc2VNZW51KCk7CiAgICAgICAgICBjb21wdXRlUm91dGUobmF2RGVzdGluYXRpb24sIGZhbHNlLCB1bmRlZmluZWQsIG0pOyAvLyDmiJDlip/mmYLjgaDjgZHnp7vli5XmiYvmrrXjgpLnorrlrpoKICAgICAgICB9IGVsc2Ugew==").decode()
+          new = base64.b64decode("ICAgICAgICBpZiAobmF2TW9kZSAmJiBuYXZEZXN0aW5hdGlvbikgewogICAgICAgICAgY2xvc2VNZW51KCk7CiAgICAgICAgICBpZiAobSAhPT0gdHJhdmVsTW9kZSkgewogICAgICAgICAgICBjb21wdXRlUm91dGUobmF2RGVzdGluYXRpb24sIGZhbHNlLCB1bmRlZmluZWQsIG0pOyAvLyDmiJDlip/mmYLjgaDjgZHnp7vli5XmiYvmrrXjgpLnorrlrpoKICAgICAgICAgIH0KICAgICAgICB9IGVsc2Ugew==").decode()
           assert text.count(old) == 1, "expected openTravelMenu anchor exactly once"
           path.write_text(text.replace(old, new, 1))
           PY
