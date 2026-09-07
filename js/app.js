@@ -473,11 +473,12 @@
       label: (travelMode === m ? "● " : "○ ") + label,
       action: () => {
         if (navMode && navDestination) {
+          closeMenu();
           computeRoute(navDestination, false, undefined, m); // 成功時だけ移動手段を確定
         } else {
           travelMode = m;
+          openDestinationMenu();
         }
-        openDestinationMenu();
       },
     }));
     items.push({ label: "← 戻る", action: openDestinationMenu });
