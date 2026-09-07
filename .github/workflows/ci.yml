@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  static-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check JavaScript syntax
+        run: node --check js/app.js
+
+      - name: Check required files and config hygiene
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f index.html
+          test -f css/style.css
+          test -f js/app.js
+          test -f js/config.template.js
+
+          if git ls-files --error-unmatch js/config.js >/dev/null 2>&1; then
+            echo "::error::js/config.js contains the local API key and must not be committed"
+            exit 1
+          fi
+
+          if ! grep -q '__GOOGLE_MAPS_API_KEY__' js/config.template.js; then
+            echo "::error::js/config.template.js must keep the deployment placeholder"
+            exit 1
+          fi
