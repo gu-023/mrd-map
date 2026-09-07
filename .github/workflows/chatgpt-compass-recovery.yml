@@ -1,0 +1,97 @@
+name: ChatGPT compass recovery patch
+
+on:
+  push:
+    branches:
+      - chatgpt/clear-compass-error-retry
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chatgpt/clear-compass-error-retry
+
+      - name: Apply atomic compass recovery patch
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path('js/app.js')
+          text = p.read_text()
+
+          old = '''  function showError(titleHtml, bodyHtml) {
+            els.error.innerHTML =
+              `<div class="title">${titleHtml}</div><div>${bodyHtml}</div>`;
+            els.error.classList.remove("hidden");
+          }
+          '''
+          new = '''  let errorSource = null;
+
+          function showError(titleHtml, bodyHtml, source = null) {
+            errorSource = source;
+            els.error.innerHTML =
+              `<div class="title">${titleHtml}</div><div>${bodyHtml}</div>`;
+            els.error.classList.remove("hidden");
+          }
+
+          function clearError(source) {
+            if (errorSource !== source) return;
+            errorSource = null;
+            els.error.classList.add("hidden");
+          }
+          '''
+          if text.count(old) != 1:
+            raise SystemExit(f'showError anchor count={text.count(old)}')
+          text = text.replace(old, new)
+
+          old = '''    const start = () => {
+              compassOn = true;
+          '''
+          new = '''    const start = () => {
+              clearError("compass");
+              compassOn = true;
+          '''
+          if text.count(old) != 1:
+            raise SystemExit(f'compass start anchor count={text.count(old)}')
+          text = text.replace(old, new)
+
+          replacements = {
+            'else showError("方位センサーが拒否されました", "🧭 を決定でもう一度試してください。");': 'else showError("方位センサーが拒否されました", "🧭 を決定でもう一度試してください。", "compass");',
+            '.catch(() => showError("方位センサーを開始できません", "🧭 を決定で再試行。"));': '.catch(() => showError("方位センサーを開始できません", "🧭 を決定で再試行。", "compass"));',
+            'showError("方位センサー非対応", "この端末では向き連動を利用できません。");': 'showError("方位センサー非対応", "この端末では向き連動を利用できません。", "compass");',
+          }
+          for before, after in replacements.items():
+            if text.count(before) != 1:
+              raise SystemExit(f'compass error anchor count={text.count(before)}: {before}')
+            text = text.replace(before, after)
+
+          p.write_text(text)
+          PY
+
+      - name: Validate patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check js/app.js
+          git diff --check
+          test "$(git diff --name-only | tr -d '\r')" = "js/app.js"
+          grep -q 'clearError("compass")' js/app.js
+          grep -q '"compass"));' js/app.js
+
+      - name: Commit patch and remove helper workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          rm .github/workflows/chatgpt-compass-recovery.yml
+          git add js/app.js .github/workflows/chatgpt-compass-recovery.yml
+          git commit -m "Clear compass error after successful retry"
+          git push
