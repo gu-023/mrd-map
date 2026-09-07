@@ -85,10 +85,19 @@
   const SEARCH_KEYS = "abcdefghijklmnopqrstuvwxyz0123456789".split("").concat(["␣", "⌫", "✕"]);
 
   /* ---------- 起動時チェック ---------- */
-  function showError(titleHtml, bodyHtml) {
+  let errorSource = null;
+
+  function showError(titleHtml, bodyHtml, source = null) {
+    errorSource = source;
     els.error.innerHTML =
       `<div class="title">${titleHtml}</div><div>${bodyHtml}</div>`;
     els.error.classList.remove("hidden");
+  }
+
+  function clearError(source) {
+    if (errorSource !== source) return;
+    errorSource = null;
+    els.error.classList.add("hidden");
   }
 
   if (!cfg.GOOGLE_MAPS_API_KEY || cfg.GOOGLE_MAPS_API_KEY === "__GOOGLE_MAPS_API_KEY__") {
@@ -247,6 +256,7 @@
 
   function enableCompass() {
     const start = () => {
+      clearError("compass");
       compassOn = true;
       els.headingArrow.classList.remove("hidden");
       // iOS/WebKit は webkitCompassHeading、その他は絶対方位イベント
@@ -258,13 +268,13 @@
       DOE.requestPermission()
         .then((state) => {
           if (state === "granted") start();
-          else showError("方位センサーが拒否されました", "🧭 を決定でもう一度試してください。");
+          else showError("方位センサーが拒否されました", "🧭 を決定でもう一度試してください。", "compass");
         })
-        .catch(() => showError("方位センサーを開始できません", "🧭 を決定で再試行。"));
+        .catch(() => showError("方位センサーを開始できません", "🧭 を決定で再試行。", "compass"));
     } else if (DOE) {
       start();
     } else {
-      showError("方位センサー非対応", "この端末では向き連動を利用できません。");
+      showError("方位センサー非対応", "この端末では向き連動を利用できません。", "compass");
     }
   }
 
