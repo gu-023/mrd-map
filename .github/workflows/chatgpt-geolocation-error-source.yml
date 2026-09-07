@@ -1,0 +1,72 @@
+name: Apply geolocation error source patch
+
+on:
+  push:
+    branches:
+      - chatgpt/source-geolocation-errors
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chatgpt/source-geolocation-errors
+          fetch-depth: 0
+
+      - name: Apply exact patch
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("js/app.js")
+          text = path.read_text()
+          replacements = [
+              (
+                  '    els.error.classList.add("hidden"); // 取得できたらエラー/取得中の案内を消す',
+                  '    clearError("geolocation"); // 取得できたら位置情報エラーだけを消す',
+              ),
+              (
+                  '          els.error.classList.add("hidden"); // 前回エラー表示を消す',
+                  '          clearError("geolocation"); // 前回の位置情報エラーだけを消す',
+              ),
+              (
+                  '    showError("位置情報を取得できません", body + "<br><br>◎ 再取得 / ↻ 再読み込み");',
+                  '    showError("位置情報を取得できません", body + "<br><br>◎ 再取得 / ↻ 再読み込み", "geolocation");',
+              ),
+          ]
+
+          for old, new in replacements:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"expected exactly one match for {old!r}, found {count}")
+              text = text.replace(old, new)
+
+          path.write_text(text)
+          PY
+
+      - name: Verify patch
+        shell: bash
+        run: |
+          node --check js/app.js
+          git diff --check
+          grep -F 'clearError("geolocation"); // 取得できたら位置情報エラーだけを消す' js/app.js
+          grep -F 'clearError("geolocation"); // 前回の位置情報エラーだけを消す' js/app.js
+          grep -F 'showError("位置情報を取得できません", body + "<br><br>◎ 再取得 / ↻ 再読み込み", "geolocation");' js/app.js
+          if grep -F 'els.error.classList.add("hidden"); // 取得できたらエラー/取得中の案内を消す' js/app.js; then exit 1; fi
+          if grep -F 'els.error.classList.add("hidden"); // 前回エラー表示を消す' js/app.js; then exit 1; fi
+
+      - name: Commit patch and remove helper
+        shell: bash
+        run: |
+          rm .github/workflows/chatgpt-geolocation-error-source.yml
+          git add js/app.js .github/workflows/chatgpt-geolocation-error-source.yml
+          git diff --cached --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Scope geolocation error clearing"
+          git push origin HEAD:chatgpt/source-geolocation-errors
