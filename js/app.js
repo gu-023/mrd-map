@@ -77,6 +77,7 @@
   let searchZone = "keys"; // keys / preds
   let keyIdx = 0;
   let predIdx = 0;
+  let predictionRequestId = 0; // 古い Autocomplete callback を無視するための世代番号
   const SEARCH_COLS = 9;
   const SEARCH_KEYS = "abcdefghijklmnopqrstuvwxyz0123456789".split("").concat(["␣", "⌫", "✕"]);
 
@@ -494,6 +495,7 @@
   }
 
   function closeSearch() {
+    predictionRequestId++; // 閉じた検索の callback が後から UI を更新しないよう無効化
     searchOpen = false;
     els.search.classList.add("hidden");
   }
@@ -528,6 +530,7 @@
   }
 
   function refreshPredictions() {
+    const requestId = ++predictionRequestId;
     const q = searchQuery.trim();
     if (q.length < 1) { searchPredictions = []; return; }
     const req = {
@@ -538,6 +541,7 @@
     const pos = userMarker && userMarker.getPosition();
     if (pos) { req.location = pos; req.radius = 50000; }
     autocompleteService.getPlacePredictions(req, (preds, status) => {
+      if (requestId !== predictionRequestId || !searchOpen) return;
       searchPredictions = status === "OK" && preds ? preds.slice(0, 6) : [];
       if (predIdx >= searchPredictions.length) predIdx = 0;
       renderSearch();
