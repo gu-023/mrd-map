@@ -1,0 +1,53 @@
+name: Apply recent-history fix
+
+on:
+  push:
+    branches:
+      - chatgpt/avoid-recent-mode-resave
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chatgpt/avoid-recent-mode-resave
+          fetch-depth: 0
+      - name: Apply focused patch
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('js/app.js')
+          text = path.read_text()
+          old = '''          if (!isReroute) {
+            map.setZoom(routeTravelMode === "DRIVING" ? 17 : 18);
+            saveRecent(dest, name); // 履歴に保存（名前があれば優先、無ければ逆ジオコーディング）
+          }
+'''
+          new = '''          if (!isReroute) {
+            map.setZoom(routeTravelMode === "DRIVING" ? 17 : 18);
+            if (requestedTravelMode === undefined) {
+              saveRecent(dest, name); // 移動手段だけの再計算では履歴を更新しない
+            }
+          }
+'''
+          if text.count(old) != 1:
+              raise SystemExit(f'expected exactly one target block, found {text.count(old)}')
+          path.write_text(text.replace(old, new, 1))
+          PY
+      - name: Validate JavaScript and diff
+        run: |
+          node --check js/app.js
+          git diff --check
+          git diff -- js/app.js
+      - name: Remove helper workflow and push patch
+        run: |
+          rm .github/workflows/apply-recent-history-fix.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add js/app.js .github/workflows/apply-recent-history-fix.yml
+          git commit -m "Avoid rewriting recents on travel-mode changes"
+          git push origin HEAD:chatgpt/avoid-recent-mode-resave
