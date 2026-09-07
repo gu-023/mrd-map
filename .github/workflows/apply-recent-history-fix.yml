@@ -22,21 +22,11 @@ jobs:
           from pathlib import Path
           path = Path('js/app.js')
           text = path.read_text()
-          old = '''          if (!isReroute) {
-            map.setZoom(routeTravelMode === "DRIVING" ? 17 : 18);
-            saveRecent(dest, name); // 履歴に保存（名前があれば優先、無ければ逆ジオコーディング）
-          }
-'''
-          new = '''          if (!isReroute) {
-            map.setZoom(routeTravelMode === "DRIVING" ? 17 : 18);
-            if (requestedTravelMode === undefined) {
-              saveRecent(dest, name); // 移動手段だけの再計算では履歴を更新しない
-            }
-          }
-'''
-          if text.count(old) != 1:
-              raise SystemExit(f'expected exactly one target block, found {text.count(old)}')
-          path.write_text(text.replace(old, new, 1))
+          needle = '            saveRecent(dest, name); // 履歴に保存（名前があれば優先、無ければ逆ジオコーディング）'
+          replacement = '            if (requestedTravelMode === undefined) {\n              saveRecent(dest, name); // 移動手段だけの再計算では履歴を更新しない\n            }'
+          if text.count(needle) != 1:
+              raise SystemExit(f'expected exactly one target line, found {text.count(needle)}')
+          path.write_text(text.replace(needle, replacement, 1))
           PY
       - name: Validate JavaScript and diff
         run: |
