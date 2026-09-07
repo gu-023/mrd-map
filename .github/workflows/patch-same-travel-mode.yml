@@ -1,0 +1,53 @@
+name: Patch same travel mode
+
+on:
+  push:
+    branches:
+      - chatgpt/noop-same-travel-mode
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chatgpt/noop-same-travel-mode
+
+      - name: Apply focused patch
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("js/app.js")
+          text = path.read_text()
+          old = '''        if (navMode && navDestination) {
+          closeMenu();
+          computeRoute(navDestination, false, undefined, m); // 成功時だけ移動手段を確定
+        } else {'''
+          new = '''        if (navMode && navDestination) {
+          closeMenu();
+          if (m !== travelMode) {
+            computeRoute(navDestination, false, undefined, m); // 成功時だけ移動手段を確定
+          }
+        } else {'''
+          assert text.count(old) == 1, "expected openTravelMenu anchor exactly once"
+          path.write_text(text.replace(old, new, 1))
+          PY
+
+      - name: Validate
+        run: |
+          node --check js/app.js
+          git diff --check
+          grep -F 'if (m !== travelMode)' js/app.js
+
+      - name: Commit focused change and remove helper
+        run: |
+          rm .github/workflows/patch-same-travel-mode.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add js/app.js .github/workflows/patch-same-travel-mode.yml
+          git commit -m "Skip redundant same-mode route recalculation"
+          git push origin HEAD:chatgpt/noop-same-travel-mode
