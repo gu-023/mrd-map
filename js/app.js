@@ -472,9 +472,13 @@
     const items = modes.map(([m, label]) => ({
       label: (travelMode === m ? "● " : "○ ") + label,
       action: () => {
-        travelMode = m;
-        if (navMode && navDestination) computeRoute(navDestination); // 即再計算
-        openDestinationMenu();
+        if (navMode && navDestination) {
+          closeMenu();
+          computeRoute(navDestination, false, undefined, m); // 成功時だけ移動手段を確定
+        } else {
+          travelMode = m;
+          openDestinationMenu();
+        }
       },
     }));
     items.push({ label: "← 戻る", action: openDestinationMenu });
@@ -616,24 +620,26 @@
     computeRoute(dest);
   }
 
-  function computeRoute(dest, isReroute, name) {
+  function computeRoute(dest, isReroute, name, requestedTravelMode) {
     const origin = userMarker.getPosition();
     if (!origin) {
       showError("現在地が未取得", "先に ◎ で現在地を取得してください。");
       return;
     }
     const requestId = ++routeRequestId;
+    const routeTravelMode = requestedTravelMode || travelMode;
     navRerouting = true; // 経路要求中は既存ルートからの自動リルートを抑止
     const previousNavBanner = navMode && !els.navBanner.classList.contains("hidden")
       ? els.navBanner.innerHTML
       : null;
     setNavBanner(isReroute ? "ルートを再計算中…" : "経路を計算中…");
     directionsService.route(
-      { origin, destination: dest, travelMode: google.maps.TravelMode[travelMode] },
+      { origin, destination: dest, travelMode: google.maps.TravelMode[routeTravelMode] },
       (res, status) => {
         if (requestId !== routeRequestId) return;
         navRerouting = false;
         if (status === "OK" && res.routes[0]) {
+          travelMode = routeTravelMode;
           navDestination = dest;
           clearRoute();
           directionsRenderer = new google.maps.DirectionsRenderer({
@@ -657,7 +663,7 @@
           navMode = true;
           followMode = true;
           if (!isReroute) {
-            map.setZoom(travelMode === "DRIVING" ? 17 : 18);
+            map.setZoom(routeTravelMode === "DRIVING" ? 17 : 18);
             saveRecent(dest, name); // 履歴に保存（名前があれば優先、無ければ逆ジオコーディング）
           }
           signalRequestId++; // 前ルートの未完了 Overpass callback を無効化
