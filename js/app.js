@@ -62,6 +62,7 @@
   let signalsOn = true;
   let signalData = [];
   let signalMarkers = [];
+  let signalRequestId = 0; // 古い Overpass callback を無視するための世代番号
   let geocoder = null;
   let travelMode = "WALKING"; // WALKING / DRIVING / BICYCLING / TRANSIT
   // メニュー
@@ -655,6 +656,9 @@
             map.setZoom(travelMode === "DRIVING" ? 17 : 18);
             saveRecent(dest, name); // 履歴に保存（名前があれば優先、無ければ逆ジオコーディング）
           }
+          signalRequestId++; // 前ルートの未完了 Overpass callback を無効化
+          clearSignals();
+          signalData = [];
           if (signalsOn) fetchSignals(); // ルート周辺の信号機を取得
           updateNav({ lat: origin.lat(), lng: origin.lng() });
         } else if (status === "REQUEST_DENIED") {
@@ -681,6 +685,7 @@
 
   function cancelNav() {
     routeRequestId++; // 未完了の Directions callback でナビが復活しないよう無効化
+    signalRequestId++; // 未完了の Overpass callback で信号が復活しないよう無効化
     navRerouting = false;
     navMode = false;
     navSteps = [];
@@ -695,6 +700,7 @@
   /* ---------- 信号機（OpenStreetMap Overpass・無料/キー不要） ---------- */
   function fetchSignals() {
     if (!navBounds || !navFullPath.length) return;
+    const requestId = ++signalRequestId;
     const sw = navBounds.getSouthWest(), ne = navBounds.getNorthEast();
     const q =
       `[out:json][timeout:20];node["highway"="traffic_signals"]` +
@@ -705,6 +711,7 @@
     })
       .then((r) => (r.ok ? r.json() : null))
       .then((j) => {
+        if (requestId !== signalRequestId || !navMode) return;
         if (!j || !j.elements) return;
         const near = [];
         for (const el of j.elements) {
