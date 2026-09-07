@@ -1,0 +1,60 @@
+name: ChatGPT route request guard
+
+on:
+  push:
+    branches:
+      - chatgpt/ignore-stale-directions
+    paths:
+      - .github/workflows/chatgpt-route-request-guard.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chatgpt/ignore-stale-directions
+      - name: Guard stale Directions callbacks
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("js/app.js")
+          text = path.read_text()
+          replacements = [
+              (
+                  '  let navRerouting = false;\n',
+                  '  let navRerouting = false;\n  let routeRequestId = 0; // 古い Directions callback を無視するための世代番号\n',
+              ),
+              (
+                  '    navDestination = dest;\n    navRerouting = !!isReroute;\n',
+                  '    const requestId = ++routeRequestId;\n    navDestination = dest;\n    navRerouting = !!isReroute;\n',
+              ),
+              (
+                  '      (res, status) => {\n        navRerouting = false;\n',
+                  '      (res, status) => {\n        if (requestId !== routeRequestId) return;\n        navRerouting = false;\n',
+              ),
+              (
+                  '  function cancelNav() {\n    navMode = false;\n',
+                  '  function cancelNav() {\n    routeRequestId++; // 未完了の Directions callback でナビが復活しないよう無効化\n    navRerouting = false;\n    navMode = false;\n',
+              ),
+          ]
+          for old, new in replacements:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"expected exactly one anchor, got {count}: {old!r}")
+              text = text.replace(old, new, 1)
+          path.write_text(text)
+          PY
+          node --check js/app.js
+      - name: Commit patch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add js/app.js
+          git diff --cached --check
+          git commit -m "Ignore stale Directions responses"
+          git push origin HEAD:chatgpt/ignore-stale-directions
