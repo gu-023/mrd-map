@@ -58,7 +58,7 @@ Maps JS API のキーはブラウザに必ず露出します。本プロジェ�
    Settings → Pages → Build and deployment → Source = **GitHub Actions**
 3. **Google Cloud のリファラー制限**（設定済み）
    - 許可: `https://gu-023.github.io/mrd-map/*`
-   - API 制限: Maps JavaScript API のみ
+   - API 制限: Maps JavaScript API / Directions API / Geocoding API / Places API
 
 → `main` に push すると自動でビルド & デプロイ。完成URL: `https://gu-023.github.io/mrd-map/`
 
