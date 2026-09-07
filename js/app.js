@@ -618,6 +618,9 @@
     }
     navDestination = dest;
     navRerouting = !!isReroute;
+    const previousNavBanner = isReroute && !els.navBanner.classList.contains("hidden")
+      ? els.navBanner.innerHTML
+      : null;
     setNavBanner(isReroute ? "ルートを再計算中…" : "経路を計算中…");
     directionsService.route(
       { origin, destination: dest, travelMode: google.maps.TravelMode[travelMode] },
@@ -657,10 +660,10 @@
             "ステータス: <code>REQUEST_DENIED</code><br>" +
             "APIキーの「APIの制限」に <b>Directions API</b> を追加してください。"
           );
-          if (!isReroute) setNavBanner(null);
+          setNavBanner(isReroute ? previousNavBanner : null);
         } else {
           showError("経路を取得できません", `ステータス: <code>${status}</code>`);
-          if (!isReroute) setNavBanner(null);
+          setNavBanner(isReroute ? previousNavBanner : null);
         }
       }
     );
