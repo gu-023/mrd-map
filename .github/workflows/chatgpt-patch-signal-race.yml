@@ -1,0 +1,81 @@
+name: ChatGPT patch stale signal responses
+
+on:
+  push:
+    branches:
+      - chatgpt/guard-stale-signals
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply guarded Overpass response patch
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('js/app.js')
+          s = path.read_text()
+
+          replacements = [
+              (
+                  '  let signalMarkers = [];\n',
+                  '  let signalMarkers = [];\n'
+                  '  let signalRequestId = 0; // 古い Overpass callback を無視するための世代番号\n',
+              ),
+              (
+                  '          if (signalsOn) fetchSignals(); // ルート周辺の信号機を取得\n',
+                  '          signalRequestId++; // 前ルートの未完了 Overpass callback を無効化\n'
+                  '          clearSignals();\n'
+                  '          signalData = [];\n'
+                  '          if (signalsOn) fetchSignals(); // ルート周辺の信号機を取得\n',
+              ),
+              (
+                  '    routeRequestId++; // 未完了の Directions callback でナビが復活しないよう無効化\n',
+                  '    routeRequestId++; // 未完了の Directions callback でナビが復活しないよう無効化\n'
+                  '    signalRequestId++; // 未完了の Overpass callback で信号が復活しないよう無効化\n',
+              ),
+              (
+                  '  function fetchSignals() {\n    if (!navBounds || !navFullPath.length) return;\n',
+                  '  function fetchSignals() {\n'
+                  '    if (!navBounds || !navFullPath.length) return;\n'
+                  '    const requestId = ++signalRequestId;\n',
+              ),
+              (
+                  '      .then((j) => {\n        if (!j || !j.elements) return;\n',
+                  '      .then((j) => {\n'
+                  '        if (requestId !== signalRequestId || !navMode) return;\n'
+                  '        if (!j || !j.elements) return;\n',
+              ),
+          ]
+
+          for old, new in replacements:
+              count = s.count(old)
+              if count != 1:
+                  raise SystemExit(f'anchor count {count} for: {old!r}')
+              s = s.replace(old, new, 1)
+
+          path.write_text(s)
+          PY
+
+          node --check js/app.js
+          git diff --check
+          rm .github/workflows/chatgpt-patch-signal-race.yml
+          git diff --check
+
+      - name: Commit patch and remove temporary workflow
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add js/app.js .github/workflows/chatgpt-patch-signal-race.yml
+          git commit -m "Ignore stale traffic signal responses"
+          git push origin HEAD:chatgpt/guard-stale-signals
