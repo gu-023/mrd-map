@@ -1,0 +1,57 @@
+name: Apply reroute banner fix
+
+on:
+  push:
+    branches:
+      - chatgpt/restore-reroute-banner
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chatgpt/restore-reroute-banner
+
+      - name: Patch reroute failure banner handling
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("js/app.js")
+          text = path.read_text()
+
+          before = '''    navDestination = dest;
+              navRerouting = !!isReroute;
+              setNavBanner(isReroute ? "ルートを再計算中…" : "経路を計算中…");'''
+          after = '''    navDestination = dest;
+              navRerouting = !!isReroute;
+              const previousNavBanner = isReroute && !els.navBanner.classList.contains("hidden")
+                ? els.navBanner.innerHTML
+                : null;
+              setNavBanner(isReroute ? "ルートを再計算中…" : "経路を計算中…");'''
+          if before not in text:
+              raise SystemExit("computeRoute anchor not found")
+          text = text.replace(before, after, 1)
+
+          failure = '          if (!isReroute) setNavBanner(null);'
+          if text.count(failure) != 2:
+              raise SystemExit(f"expected 2 failure banner branches, found {text.count(failure)}")
+          text = text.replace(failure, '          setNavBanner(isReroute ? previousNavBanner : null);')
+
+          path.write_text(text)
+          PY
+
+          node --check js/app.js
+
+      - name: Commit final patch and remove helper workflow
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/apply-reroute-fix.yml
+          git add js/app.js
+          git commit -m "Restore guidance when reroute fails"
+          git push origin HEAD:chatgpt/restore-reroute-banner
