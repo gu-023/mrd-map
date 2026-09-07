@@ -623,9 +623,8 @@
       return;
     }
     const requestId = ++routeRequestId;
-    navDestination = dest;
-    navRerouting = !!isReroute;
-    const previousNavBanner = isReroute && !els.navBanner.classList.contains("hidden")
+    navRerouting = true; // 経路要求中は既存ルートからの自動リルートを抑止
+    const previousNavBanner = navMode && !els.navBanner.classList.contains("hidden")
       ? els.navBanner.innerHTML
       : null;
     setNavBanner(isReroute ? "ルートを再計算中…" : "経路を計算中…");
@@ -635,6 +634,7 @@
         if (requestId !== routeRequestId) return;
         navRerouting = false;
         if (status === "OK" && res.routes[0]) {
+          navDestination = dest;
           clearRoute();
           directionsRenderer = new google.maps.DirectionsRenderer({
             map,
@@ -671,10 +671,10 @@
             "ステータス: <code>REQUEST_DENIED</code><br>" +
             "APIキーの「APIの制限」に <b>Directions API</b> を追加してください。"
           );
-          setNavBanner(isReroute ? previousNavBanner : null);
+          setNavBanner(previousNavBanner);
         } else {
           showError("経路を取得できません", `ステータス: <code>${status}</code>`);
-          setNavBanner(isReroute ? previousNavBanner : null);
+          setNavBanner(previousNavBanner);
         }
       }
     );
