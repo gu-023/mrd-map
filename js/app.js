@@ -664,7 +664,9 @@
           followMode = true;
           if (!isReroute) {
             map.setZoom(routeTravelMode === "DRIVING" ? 17 : 18);
-            saveRecent(dest, name); // 履歴に保存（名前があれば優先、無ければ逆ジオコーディング）
+            if (requestedTravelMode === undefined) {
+              saveRecent(dest, name); // 移動手段だけの再計算では履歴を更新しない
+            }
           }
           signalRequestId++; // 前ルートの未完了 Overpass callback を無効化
           clearSignals();
