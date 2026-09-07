@@ -226,7 +226,10 @@
   }
 
   function onWatchError(err) {
-    if (err && err.code === err.PERMISSION_DENIED) onGeoError(err);
+    if (err && err.code === err.PERMISSION_DENIED) {
+      geoWatchStarted = false;
+      onGeoError(err);
+    }
     // それ以外（timeout 等）は無視。watch は監視を継続する。
   }
 
