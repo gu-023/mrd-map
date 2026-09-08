@@ -594,6 +594,7 @@
 
   // 検索画面のキー操作
   function searchKeydown(key) {
+    placeDetailsRequestId++; // 検索操作を再開したら未完了の Place Details callback を無効化
     clearError("places"); // 検索を続ける D-pad 操作で stale Places error を解除
     if (searchZone === "keys") {
       switch (key) {
