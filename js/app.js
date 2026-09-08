@@ -952,15 +952,16 @@
       case "zoom-out":
         map.setZoom(map.getZoom() - 1);
         break;
-      case "recenter":
+      case "recenter": {
         followMode = true;
-        if (userMarker.getPosition()) {
-          map.panTo(userMarker.getPosition());
-        } else {
-          clearError("geolocation"); // 前回の位置情報エラーだけを消す
+        const currentPosition = userMarker.getPosition();
+        if (currentPosition) map.panTo(currentPosition);
+        if (!currentPosition || errorSource === "geolocation" || !geoWatchStarted) {
+          clearError("geolocation"); // stale な現在地が残っていても位置情報エラー時は再取得する
           acquireLocation(); // ★ユーザー操作の中で位置情報を要求（プロンプト通過のため）
         }
         break;
+      }
       case "toggle-pan":
         setPanMode(!panMode);
         break;
