@@ -1,0 +1,56 @@
+name: ChatGPT route distance turn UI patch v2
+
+on:
+  push:
+    branches:
+      - chatgpt/route-distance-turn-ui
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chatgpt/route-distance-turn-ui
+          fetch-depth: 0
+      - name: Apply and verify atomic patch
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('js/app.js')
+          text = path.read_text()
+          replacements = [
+              ('    const d = meters(here, step.end_location);\n', '    const directEndDist = meters(here, step.end_location);\n    const turnDist = stepRemainingDistance(here, step);\n'),
+              ('    if (isLast && d < 20) {', '    if (isLast && directEndDist < 20) {'),
+              ('${fmtDist(d)}', '${fmtDist(turnDist)}'),
+              ('    if (followMode) autoZoomForTurn(d, isLast); // 全体表示中は自動ズームしない', '    if (followMode) autoZoomForTurn(turnDist, isLast); // 全体表示中は自動ズームしない'),
+          ]
+          for old, new in replacements:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'expected one anchor, found {count}: {old!r}')
+              text = text.replace(old, new)
+          path.write_text(text)
+          PY
+          node --check js/app.js
+          git diff --check
+          grep -F 'const directEndDist = meters(here, step.end_location);' js/app.js
+          grep -F 'const turnDist = stepRemainingDistance(here, step);' js/app.js
+          grep -F 'if (isLast && directEndDist < 20)' js/app.js
+          grep -F '${fmtDist(turnDist)}' js/app.js
+          grep -F 'autoZoomForTurn(turnDist, isLast)' js/app.js
+          ! grep -F 'const d = meters(here, step.end_location);' js/app.js
+          git diff -- js/app.js
+      - name: Commit patch
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add js/app.js
+          git diff --cached --quiet && exit 1
+          git commit -m 'Use route distance for turn UI'
+          git push origin HEAD:chatgpt/route-distance-turn-ui
