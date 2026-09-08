@@ -886,6 +886,8 @@
     }
     return { dist, sec };
   }
+
+  // 位置更新ごとに「次の曲がり角」と残り・オフルートを更新
   function updateNav(p) {
     if (!navMode || !navSteps.length) return;
     const here = new google.maps.LatLng(p.lat, p.lng);
