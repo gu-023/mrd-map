@@ -654,6 +654,7 @@
         if (requestId !== routeRequestId) return;
         navRerouting = false;
         if (status === "OK" && res.routes[0]) {
+          clearError("directions");
           travelMode = routeTravelMode;
           navDestination = dest;
           clearRoute();
@@ -692,11 +693,12 @@
           showError(
             "経路を取得できません",
             "ステータス: <code>REQUEST_DENIED</code><br>" +
-            "APIキーの「APIの制限」に <b>Directions API</b> を追加してください。"
+            "APIキーの「APIの制限」に <b>Directions API</b> を追加してください。",
+            "directions"
           );
           setNavBanner(previousNavBanner);
         } else {
-          showError("経路を取得できません", `ステータス: <code>${status}</code>`);
+          showError("経路を取得できません", `ステータス: <code>${status}</code>`, "directions");
           setNavBanner(previousNavBanner);
         }
       }
