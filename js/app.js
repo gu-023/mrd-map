@@ -519,6 +519,7 @@
   function closeSearch() {
     predictionRequestId++; // 閉じた検索の callback が後から UI を更新しないよう無効化
     placeDetailsRequestId++; // 閉じた検索の Place Details callback も無効化
+    clearError("places"); // 明示的に検索を閉じたら Places 由来の stale error も解除
     searchOpen = false;
     els.search.classList.add("hidden");
   }
