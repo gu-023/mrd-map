@@ -950,14 +950,18 @@
     const continuityPrevious = previous && meters(previous, here) <= 250 ? previous : null;
     navLastPosition = here;
 
-    // 通過した手順を進める。25m 圏をサンプルしなくても、短い移動区間が曲がり角を横切れば補完する。
+    // 通過した手順を進める。1つの GPS fix では「25m以内」だけを根拠に複数手順を飛ばさない。
+    // 複数手順を一気に進めるのは、前回→今回の移動区間が各終端を実際に横切った場合だけ。
+    let advancedThisFix = false;
     while (navStepIdx < navSteps.length - 1) {
       const currentStep = navSteps[navStepIdx];
       const end = currentStep.end_location;
       const crossedSinceLast = segmentPassesNear(continuityPrevious, here, end, 25) &&
         stepRemainingDistance(here, currentStep, continuityPrevious) < 1;
-      if (meters(here, end) >= 25 && !crossedSinceLast) break;
+      const nearEnd = meters(here, end) < 25;
+      if (!crossedSinceLast && (!nearEnd || advancedThisFix)) break;
       navStepIdx++;
+      advancedThisFix = true;
     }
     const step = navSteps[navStepIdx];
     const directEndDist = meters(here, step.end_location);
