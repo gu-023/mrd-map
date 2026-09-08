@@ -24,30 +24,17 @@ jobs:
 
           path = Path('js/app.js')
           text = path.read_text()
-          old = '''    const step = navSteps[navStepIdx];
-    const d = meters(here, step.end_location);
-    const isLast = navStepIdx === navSteps.length - 1;
-
-    if (isLast && d < 20) {
-'''
-          new = '''    const step = navSteps[navStepIdx];
-    const directEndDist = meters(here, step.end_location);
-    const turnDist = stepRemainingDistance(here, step);
-    const isLast = navStepIdx === navSteps.length - 1;
-
-    if (isLast && directEndDist < 20) {
-'''
-          if text.count(old) != 1:
-              raise SystemExit(f'expected one distance anchor, found {text.count(old)}')
-          text = text.replace(old, new)
-          if text.count('${fmtDist(d)}') != 1:
-              raise SystemExit(f'expected one nav distance display, found {text.count("${fmtDist(d)}")}')
-          text = text.replace('${fmtDist(d)}', '${fmtDist(turnDist)}')
-          old_zoom = '    if (followMode) autoZoomForTurn(d, isLast); // 全体表示中は自動ズームしない\n'
-          new_zoom = '    if (followMode) autoZoomForTurn(turnDist, isLast); // 全体表示中は自動ズームしない\n'
-          if text.count(old_zoom) != 1:
-              raise SystemExit(f'expected one auto-zoom anchor, found {text.count(old_zoom)}')
-          text = text.replace(old_zoom, new_zoom)
+          replacements = [
+              ('    const d = meters(here, step.end_location);\n', '    const directEndDist = meters(here, step.end_location);\n    const turnDist = stepRemainingDistance(here, step);\n'),
+              ('    if (isLast && d < 20) {', '    if (isLast && directEndDist < 20) {'),
+              ('${fmtDist(d)}', '${fmtDist(turnDist)}'),
+              ('    if (followMode) autoZoomForTurn(d, isLast); // 全体表示中は自動ズームしない', '    if (followMode) autoZoomForTurn(turnDist, isLast); // 全体表示中は自動ズームしない'),
+          ]
+          for old, new in replacements:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'expected one anchor, found {count}: {old!r}')
+              text = text.replace(old, new)
           path.write_text(text)
           PY
       - name: Verify patch
