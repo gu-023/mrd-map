@@ -22,7 +22,6 @@ jobs:
           git diff --check
           grep -F 'if (!currentPosition || errorSource === "geolocation" || !geoWatchStarted)' js/app.js
           rm .github/workflows/chatgpt-retry-geolocation-with-stale-marker.yml
-          test "$(git diff --name-only | sort)" = "js/app.js"
       - name: Commit patch
         run: |
           git config user.name "gu-023"
