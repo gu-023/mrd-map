@@ -969,7 +969,7 @@
     const turnDist = stepRemainingDistance(here, step, continuityPrevious);
     const isLast = navStepIdx === navSteps.length - 1;
 
-    if (isLast && directEndDist < 20) {
+    if (isLast && directEndDist < 20 && turnDist < 20) {
       setNavBanner('<div class="nav-main"><span class="nav-arrow">🏁</span> 目的地に到着</div>');
       return;
     }
