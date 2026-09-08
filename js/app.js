@@ -934,10 +934,11 @@
       navStepIdx++;
     }
     const step = navSteps[navStepIdx];
-    const d = meters(here, step.end_location);
+    const directEndDist = meters(here, step.end_location);
+    const turnDist = stepRemainingDistance(here, step);
     const isLast = navStepIdx === navSteps.length - 1;
 
-    if (isLast && d < 20) {
+    if (isLast && directEndDist < 20) {
       setNavBanner('<div class="nav-main"><span class="nav-arrow">🏁</span> 目的地に到着</div>');
       return;
     }
@@ -945,12 +946,12 @@
     const rem = remaining(here);
     setNavBanner(
       `<div class="nav-main"><span class="nav-arrow">${maneuverArrow(step.maneuver)}</span> ` +
-      `<span class="nav-dist">${fmtDist(d)}</span></div>` +
+      `<span class="nav-dist">${fmtDist(turnDist)}</span></div>` +
       `<div class="nav-sub">${stripHtml(step.instructions)}` +
       ` ・ 残り ${fmtDist(rem.dist)} ${fmtMin(rem.sec)} ・ ${arrivalClock(rem.sec)}着</div>`
     );
 
-    if (followMode) autoZoomForTurn(d, isLast); // 全体表示中は自動ズームしない
+    if (followMode) autoZoomForTurn(turnDist, isLast); // 全体表示中は自動ズームしない
     rerouteIfOffRoute(here);
   }
 
