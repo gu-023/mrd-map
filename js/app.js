@@ -594,6 +594,7 @@
 
   // 検索画面のキー操作
   function searchKeydown(key) {
+    clearError("places"); // 検索を続ける D-pad 操作で stale Places error を解除
     if (searchZone === "keys") {
       switch (key) {
         case "ArrowLeft":  keyIdx = Math.max(0, keyIdx - 1); break;
