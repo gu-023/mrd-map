@@ -836,7 +836,7 @@
   }
 
   // 現在ステップの polyline 上で現在地に最も近い区間を求め、終端までの道なり距離を返す。
-  function stepRemainingDistance(here, step) {
+  function stepRemainingDistance(here, step, previous = null) {
     const path = step.path || [];
     if (path.length < 2) return meters(here, step.end_location);
 
@@ -846,6 +846,10 @@
     let nearestSegment = 0;
     let nearestT = 0;
     let nearestOffsetSq = Infinity;
+    let nearestPreviousOffsetSq = Infinity;
+    const continuityTie = 3 / 111320; // 現在地が約3m以内で同程度なら前回fixに近い区間を優先
+    const previousX = previous ? (previous.lng() - hereLng) * cosLat : 0;
+    const previousY = previous ? previous.lat() - hereLat : 0;
 
     for (let i = 0; i < path.length - 1; i++) {
       const a = path[i];
@@ -861,8 +865,28 @@
       const px = ax + t * dx;
       const py = ay + t * dy;
       const offsetSq = px * px + py * py;
-      if (offsetSq < nearestOffsetSq) {
+      let previousOffsetSq = Infinity;
+      if (previous) {
+        const previousAx = ax - previousX;
+        const previousAy = ay - previousY;
+        const previousT = lengthSq > 0
+          ? Math.max(0, Math.min(1, -(previousAx * dx + previousAy * dy) / lengthSq))
+          : 0;
+        const previousPx = previousAx + previousT * dx;
+        const previousPy = previousAy + previousT * dy;
+        previousOffsetSq = previousPx * previousPx + previousPy * previousPy;
+      }
+      const offset = Math.sqrt(offsetSq);
+      const nearestOffset = Math.sqrt(nearestOffsetSq);
+      const clearlyCloser = previous
+        ? offset + continuityTie < nearestOffset
+        : offset < nearestOffset;
+      const continuityWins = previous &&
+        Math.abs(offset - nearestOffset) <= continuityTie &&
+        previousOffsetSq < nearestPreviousOffsetSq;
+      if (clearlyCloser || continuityWins) {
         nearestOffsetSq = offsetSq;
+        nearestPreviousOffsetSq = previousOffsetSq;
         nearestSegment = i;
         nearestT = t;
       }
@@ -883,9 +907,9 @@
   }
 
   // 残り距離・時間（現在地から終点まで）
-  function remaining(here) {
+  function remaining(here, previous = null) {
     const cur = navSteps[navStepIdx];
-    let dist = stepRemainingDistance(here, cur);
+    let dist = stepRemainingDistance(here, cur, previous);
     let sec = 0;
     const curDist = cur.distance ? cur.distance.value : dist;
     const curSec = cur.duration ? cur.duration.value : 0;
@@ -929,13 +953,13 @@
       const currentStep = navSteps[navStepIdx];
       const end = currentStep.end_location;
       const crossedSinceLast = segmentPassesNear(previous, here, end, 25) &&
-        stepRemainingDistance(here, currentStep) < 1;
+        stepRemainingDistance(here, currentStep, previous) < 1;
       if (meters(here, end) >= 25 && !crossedSinceLast) break;
       navStepIdx++;
     }
     const step = navSteps[navStepIdx];
     const directEndDist = meters(here, step.end_location);
-    const turnDist = stepRemainingDistance(here, step);
+    const turnDist = stepRemainingDistance(here, step, previous);
     const isLast = navStepIdx === navSteps.length - 1;
 
     if (isLast && directEndDist < 20) {
@@ -943,7 +967,7 @@
       return;
     }
 
-    const rem = remaining(here);
+    const rem = remaining(here, previous);
     setNavBanner(
       `<div class="nav-main"><span class="nav-arrow">${maneuverArrow(step.maneuver)}</span> ` +
       `<span class="nav-dist">${fmtDist(turnDist)}</span></div>` +
