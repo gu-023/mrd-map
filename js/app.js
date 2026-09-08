@@ -638,7 +638,7 @@
   function computeRoute(dest, isReroute, name, requestedTravelMode) {
     const origin = userMarker.getPosition();
     if (!origin) {
-      showError("現在地が未取得", "先に ◎ で現在地を取得してください。");
+      showError("現在地が未取得", "先に ◎ で現在地を取得してください。", "geolocation");
       return;
     }
     const requestId = ++routeRequestId;
