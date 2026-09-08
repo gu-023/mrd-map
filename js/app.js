@@ -865,11 +865,18 @@
       }
     }
 
-    let dist = meters(path[nearestSegment], path[nearestSegment + 1]) * (1 - nearestT);
-    for (let i = nearestSegment + 1; i < path.length - 1; i++) {
-      dist += meters(path[i], path[i + 1]);
+    let dist = 0;
+    let pathDist = 0;
+    for (let i = 0; i < path.length - 1; i++) {
+      const segmentDist = meters(path[i], path[i + 1]);
+      pathDist += segmentDist;
+      if (i < nearestSegment) continue;
+      dist += i === nearestSegment ? segmentDist * (1 - nearestT) : segmentDist;
     }
-    return dist;
+    const stepDist = step.distance ? step.distance.value : 0;
+    return stepDist > 0 && pathDist > 0
+      ? stepDist * Math.min(1, dist / pathDist)
+      : dist;
   }
 
   // 残り距離・時間（現在地から終点まで）
