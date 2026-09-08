@@ -23,15 +23,17 @@ jobs:
 
           path = Path("js/app.js")
           source = path.read_text()
-          old = '''      const crossedSinceLast = segmentPassesNear(continuityPrevious, here, end, 25) &&
-        stepRemainingDistance(here, currentStep, continuityPrevious) < 1;
-      const nearEnd = meters(here, end) < 25;
-'''
-          new = '''      const routeRemaining = stepRemainingDistance(here, currentStep, continuityPrevious);
-      const crossedSinceLast = segmentPassesNear(continuityPrevious, here, end, 25) &&
-        routeRemaining < 1;
-      const nearEnd = meters(here, end) < 25 && routeRemaining < 25;
-'''
+          old = (
+              "      const crossedSinceLast = segmentPassesNear(continuityPrevious, here, end, 25) &&\n"
+              "        stepRemainingDistance(here, currentStep, continuityPrevious) < 1;\n"
+              "      const nearEnd = meters(here, end) < 25;\n"
+          )
+          new = (
+              "      const routeRemaining = stepRemainingDistance(here, currentStep, continuityPrevious);\n"
+              "      const crossedSinceLast = segmentPassesNear(continuityPrevious, here, end, 25) &&\n"
+              "        routeRemaining < 1;\n"
+              "      const nearEnd = meters(here, end) < 25 && routeRemaining < 25;\n"
+          )
           if source.count(old) != 1:
               raise SystemExit("expected navigation advancement block exactly once")
           path.write_text(source.replace(old, new))
