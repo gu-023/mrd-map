@@ -901,7 +901,7 @@
   }
 
   function onPosition(pos) {
-    els.error.classList.add("hidden"); // 取得できたらエラー/取得中の案内を消す
+    clearError("geolocation"); // 取得できたら位置情報エラーだけを消す
     const { latitude, longitude, accuracy } = pos.coords;
     const p = { lat: latitude, lng: longitude };
     userMarker.setPosition(p);
@@ -926,7 +926,7 @@
     } else {
       body = "現在地を特定できません。屋外/窓際で ◎ を決定して再取得してください。";
     }
-    showError("位置情報を取得できません", body + "<br><br>◎ 再取得 / ↻ 再読み込み");
+    showError("位置情報を取得できません", body + "<br><br>◎ 再取得 / ↻ 再読み込み", "geolocation");
   }
 
   function setGps(on, text) {
@@ -950,7 +950,7 @@
         if (userMarker.getPosition()) {
           map.panTo(userMarker.getPosition());
         } else {
-          els.error.classList.add("hidden"); // 前回エラー表示を消す
+          clearError("geolocation"); // 前回の位置情報エラーだけを消す
           acquireLocation(); // ★ユーザー操作の中で位置情報を要求（プロンプト通過のため）
         }
         break;
