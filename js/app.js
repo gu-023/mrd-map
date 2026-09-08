@@ -832,11 +832,58 @@
     return "⬆"; // straight / merge / depart / continue
   }
 
+  // 現在ステップの polyline 上で現在地に最も近い区間を求め、終端までの道なり距離を返す。
+  function stepRemainingDistance(here, step) {
+    const path = step.path || [];
+    if (path.length < 2) return meters(here, step.end_location);
+
+    const hereLat = here.lat();
+    const hereLng = here.lng();
+    const cosLat = Math.cos((hereLat * Math.PI) / 180);
+    let nearestSegment = 0;
+    let nearestT = 0;
+    let nearestOffsetSq = Infinity;
+
+    for (let i = 0; i < path.length - 1; i++) {
+      const a = path[i];
+      const b = path[i + 1];
+      const ax = (a.lng() - hereLng) * cosLat;
+      const ay = a.lat() - hereLat;
+      const dx = (b.lng() - a.lng()) * cosLat;
+      const dy = b.lat() - a.lat();
+      const lengthSq = dx * dx + dy * dy;
+      const t = lengthSq > 0
+        ? Math.max(0, Math.min(1, -(ax * dx + ay * dy) / lengthSq))
+        : 0;
+      const px = ax + t * dx;
+      const py = ay + t * dy;
+      const offsetSq = px * px + py * py;
+      if (offsetSq < nearestOffsetSq) {
+        nearestOffsetSq = offsetSq;
+        nearestSegment = i;
+        nearestT = t;
+      }
+    }
+
+    let dist = 0;
+    let pathDist = 0;
+    for (let i = 0; i < path.length - 1; i++) {
+      const segmentDist = meters(path[i], path[i + 1]);
+      pathDist += segmentDist;
+      if (i < nearestSegment) continue;
+      dist += i === nearestSegment ? segmentDist * (1 - nearestT) : segmentDist;
+    }
+    const stepDist = step.distance ? step.distance.value : 0;
+    return stepDist > 0 && pathDist > 0
+      ? stepDist * Math.min(1, dist / pathDist)
+      : dist;
+  }
+
   // 残り距離・時間（現在地から終点まで）
   function remaining(here) {
-    let dist = meters(here, navSteps[navStepIdx].end_location);
-    let sec = 0;
     const cur = navSteps[navStepIdx];
+    let dist = stepRemainingDistance(here, cur);
+    let sec = 0;
     const curDist = cur.distance ? cur.distance.value : dist;
     const curSec = cur.duration ? cur.duration.value : 0;
     sec += curDist > 0 ? curSec * Math.min(1, dist / curDist) : 0;
