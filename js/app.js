@@ -204,6 +204,7 @@
    * そのため自動取得はせず、◎ボタン押下の中で getCurrentPosition を直接呼ぶ。
    */
   let geoWatchStarted = false;
+  let gpsStatusText = ""; // コンパス中も最新の GPS 状態文言を保持
 
   function startGeolocation() {
     if (!("geolocation" in navigator)) {
@@ -286,7 +287,7 @@
     els.headingArrow.classList.add("hidden");
     curHeading = 0;
     els.canvas.style.transform = "translate(-50%, -50%) rotate(0deg)";
-    setGps(true, "GPS"); // ステータス表示を方位から通常に戻す
+    els.gpsText.textContent = gpsStatusText; // コンパス中に更新された最新の GPS 状態を復元
   }
 
   function headingFromEvent(e) {
@@ -1064,6 +1065,7 @@
   }
 
   function setGps(on, text) {
+    gpsStatusText = text;
     els.gpsDot.classList.toggle("off", !on);
     if (!compassOn) els.gpsText.textContent = text; // コンパス中は方位表示を優先
   }
