@@ -22,23 +22,14 @@ jobs:
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
-
           path = Path("js/app.js")
-          text = path.read_text()
-          old = '''  function closeSearch() {
-            predictionRequestId++; // 閉じた検索の callback が後から UI を更新しないよう無効化
-            placeDetailsRequestId++; // 閉じた検索の Place Details callback も無効化
-            searchOpen = false;
-'''
-          new = '''  function closeSearch() {
-            predictionRequestId++; // 閉じた検索の callback が後から UI を更新しないよう無効化
-            placeDetailsRequestId++; // 閉じた検索の Place Details callback も無効化
-            clearError("places"); // 明示的に検索を閉じたら Places 由来の stale error も解除
-            searchOpen = false;
-'''
-          if text.count(old) != 1:
-              raise SystemExit(f"expected exactly one closeSearch anchor, found {text.count(old)}")
-          path.write_text(text.replace(old, new, 1))
+          lines = path.read_text().splitlines(keepends=True)
+          anchor = '    placeDetailsRequestId++; // 閉じた検索の Place Details callback も無効化\n'
+          matches = [i for i, line in enumerate(lines) if line == anchor and i > 0 and lines[i - 1].lstrip().startswith("predictionRequestId++")]
+          if len(matches) != 1:
+              raise SystemExit(f"expected exactly one closeSearch anchor, found {len(matches)}")
+          lines.insert(matches[0] + 1, '    clearError("places"); // 明示的に検索を閉じたら Places 由来の stale error も解除\n')
+          path.write_text(''.join(lines))
           PY
 
           node --check js/app.js
@@ -46,13 +37,8 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           text = Path("js/app.js").read_text()
-          snippet = '''  function closeSearch() {
-            predictionRequestId++; // 閉じた検索の callback が後から UI を更新しないよう無効化
-            placeDetailsRequestId++; // 閉じた検索の Place Details callback も無効化
-            clearError("places"); // 明示的に検索を閉じたら Places 由来の stale error も解除
-            searchOpen = false;
-'''
-          if text.count(snippet) != 1:
+          marker = '    clearError("places"); // 明示的に検索を閉じたら Places 由来の stale error も解除\n'
+          if text.count(marker) != 1:
               raise SystemExit("closeSearch Places-error clear guard missing or duplicated")
           PY
 
