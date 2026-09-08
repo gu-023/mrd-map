@@ -956,9 +956,10 @@
     while (navStepIdx < navSteps.length - 1) {
       const currentStep = navSteps[navStepIdx];
       const end = currentStep.end_location;
+      const routeRemaining = stepRemainingDistance(here, currentStep, continuityPrevious);
       const crossedSinceLast = segmentPassesNear(continuityPrevious, here, end, 25) &&
-        stepRemainingDistance(here, currentStep, continuityPrevious) < 1;
-      const nearEnd = meters(here, end) < 25;
+        routeRemaining < 1;
+      const nearEnd = meters(here, end) < 25 && routeRemaining < 25;
       if (!crossedSinceLast && (!nearEnd || advancedThisFix)) break;
       navStepIdx++;
       advancedThisFix = true;
