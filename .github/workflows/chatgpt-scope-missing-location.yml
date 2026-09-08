@@ -1,0 +1,48 @@
+name: ChatGPT scope missing-location error
+
+on:
+  push:
+    branches:
+      - chatgpt/scope-missing-location-error
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chatgpt/scope-missing-location-error
+
+      - name: Apply atomic patch
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path("js/app.js")
+          text = path.read_text()
+          old = 'showError("現在地が未取得", "先に ◎ で現在地を取得してください。");'
+          new = 'showError("現在地が未取得", "先に ◎ で現在地を取得してください。", "geolocation");'
+          count = text.count(old)
+          if count != 1:
+              raise SystemExit(f"expected exactly one target, found {count}")
+          path.write_text(text.replace(old, new, 1))
+          PY
+
+      - name: Validate JavaScript and diff
+        run: |
+          node --check js/app.js
+          git diff --check
+          grep -F 'showError("現在地が未取得", "先に ◎ で現在地を取得してください。", "geolocation");' js/app.js
+          test "$(git diff --name-only)" = "js/app.js"
+
+      - name: Commit patch and remove helper
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          rm .github/workflows/chatgpt-scope-missing-location.yml
+          git add js/app.js .github/workflows/chatgpt-scope-missing-location.yml
+          git commit -m "Scope missing-location error to geolocation"
+          git push origin HEAD:chatgpt/scope-missing-location-error
