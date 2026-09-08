@@ -580,10 +580,11 @@
         if (requestId !== placeDetailsRequestId || !searchOpen) return;
         searchToken = new google.maps.places.AutocompleteSessionToken(); // セッション更新
         if (status === "OK" && res && res.geometry && res.geometry.location) {
+          clearError("places");
           closeSearch();
           computeRoute(res.geometry.location, false, p.description);
         } else {
-          showError("場所を取得できません", `ステータス: <code>${status}</code>`);
+          showError("場所を取得できません", `ステータス: <code>${status}</code>`, "places");
         }
       }
     );
