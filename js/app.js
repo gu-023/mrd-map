@@ -946,20 +946,21 @@
     if (!navMode || !navSteps.length) return;
     const here = new google.maps.LatLng(p.lat, p.lng);
     const previous = navLastPosition;
+    const continuityPrevious = previous && meters(previous, here) <= 250 ? previous : null;
     navLastPosition = here;
 
     // 通過した手順を進める。25m 圏をサンプルしなくても、短い移動区間が曲がり角を横切れば補完する。
     while (navStepIdx < navSteps.length - 1) {
       const currentStep = navSteps[navStepIdx];
       const end = currentStep.end_location;
-      const crossedSinceLast = segmentPassesNear(previous, here, end, 25) &&
-        stepRemainingDistance(here, currentStep, previous) < 1;
+      const crossedSinceLast = segmentPassesNear(continuityPrevious, here, end, 25) &&
+        stepRemainingDistance(here, currentStep, continuityPrevious) < 1;
       if (meters(here, end) >= 25 && !crossedSinceLast) break;
       navStepIdx++;
     }
     const step = navSteps[navStepIdx];
     const directEndDist = meters(here, step.end_location);
-    const turnDist = stepRemainingDistance(here, step, previous);
+    const turnDist = stepRemainingDistance(here, step, continuityPrevious);
     const isLast = navStepIdx === navSteps.length - 1;
 
     if (isLast && directEndDist < 20) {
@@ -967,7 +968,7 @@
       return;
     }
 
-    const rem = remaining(here, previous);
+    const rem = remaining(here, continuityPrevious);
     setNavBanner(
       `<div class="nav-main"><span class="nav-arrow">${maneuverArrow(step.maneuver)}</span> ` +
       `<span class="nav-dist">${fmtDist(turnDist)}</span></div>` +
