@@ -997,13 +997,31 @@
     }
   }
 
+  // 点から経路線分までの最短距離。長い polyline 区間の中間も正しく評価する。
+  function distanceToSegment(here, a, b) {
+    const metersPerDegree = (Math.PI * 6371008.8) / 180;
+    const cosLat = Math.cos((here.lat() * Math.PI) / 180);
+    const ax = (a.lng() - here.lng()) * cosLat * metersPerDegree;
+    const ay = (a.lat() - here.lat()) * metersPerDegree;
+    const bx = (b.lng() - here.lng()) * cosLat * metersPerDegree;
+    const by = (b.lat() - here.lat()) * metersPerDegree;
+    const dx = bx - ax;
+    const dy = by - ay;
+    const lengthSq = dx * dx + dy * dy;
+    const t = lengthSq > 0
+      ? Math.max(0, Math.min(1, -(ax * dx + ay * dy) / lengthSq))
+      : 0;
+    return Math.hypot(ax + t * dx, ay + t * dy);
+  }
+
   // ルートから外れ続けたら現在地から再計算
   function rerouteIfOffRoute(here) {
     if (navRerouting || !navFullPath.length || !navDestination) return;
-    let min = Infinity;
-    for (let i = 0; i < navFullPath.length; i++) {
-      const dd = meters(here, navFullPath[i]);
+    let min = navFullPath.length === 1 ? meters(here, navFullPath[0]) : Infinity;
+    for (let i = 0; i < navFullPath.length - 1; i++) {
+      const dd = distanceToSegment(here, navFullPath[i], navFullPath[i + 1]);
       if (dd < min) min = dd;
+      if (min <= 35) break;
     }
     if (min > 35) {
       offRouteCount++;
