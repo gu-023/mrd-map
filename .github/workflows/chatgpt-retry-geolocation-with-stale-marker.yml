@@ -1,0 +1,59 @@
+name: ChatGPT patch geolocation retry
+
+on:
+  push:
+    branches:
+      - chatgpt/retry-geolocation-with-stale-marker
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chatgpt/retry-geolocation-with-stale-marker
+      - name: Apply atomic patch and verify
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("js/app.js")
+          text = path.read_text()
+          old = '''      case "recenter":
+        followMode = true;
+        if (userMarker.getPosition()) {
+          map.panTo(userMarker.getPosition());
+        } else {
+          clearError("geolocation"); // 前回の位置情報エラーだけを消す
+          acquireLocation(); // ★ユーザー操作の中で位置情報を要求（プロンプト通過のため）
+        }
+        break;'''
+          new = '''      case "recenter": {
+        followMode = true;
+        const currentPosition = userMarker.getPosition();
+        if (currentPosition) map.panTo(currentPosition);
+        if (!currentPosition || errorSource === "geolocation" || !geoWatchStarted) {
+          clearError("geolocation"); // stale な現在地が残っていても位置情報エラー時は再取得する
+          acquireLocation(); // ★ユーザー操作の中で位置情報を要求（プロンプト通過のため）
+        }
+        break;
+      }'''
+          if text.count(old) != 1:
+              raise SystemExit("expected recenter block exactly once")
+          path.write_text(text.replace(old, new))
+          PY
+          node --check js/app.js
+          git diff --check
+          grep -F 'if (!currentPosition || errorSource === "geolocation" || !geoWatchStarted)' js/app.js
+          rm .github/workflows/chatgpt-retry-geolocation-with-stale-marker.yml
+          test "$(git diff --name-only | sort)" = "js/app.js"
+      - name: Commit patch
+        run: |
+          git config user.name "gu-023"
+          git config user.email "59335552+gu-023@users.noreply.github.com"
+          git add js/app.js .github/workflows/chatgpt-retry-geolocation-with-stale-marker.yml
+          git commit -m "Retry geolocation when stale location remains" -m "Allow the D-pad current-location action to reacquire permission and restart position watching after a geolocation failure even when an old marker is still present."
+          git push origin HEAD:chatgpt/retry-geolocation-with-stale-marker
