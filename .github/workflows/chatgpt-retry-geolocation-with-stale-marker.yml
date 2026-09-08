@@ -17,34 +17,7 @@ jobs:
           ref: chatgpt/retry-geolocation-with-stale-marker
       - name: Apply atomic patch and verify
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
-
-          path = Path("js/app.js")
-          text = path.read_text()
-          old = '''      case "recenter":
-        followMode = true;
-        if (userMarker.getPosition()) {
-          map.panTo(userMarker.getPosition());
-        } else {
-          clearError("geolocation"); // 前回の位置情報エラーだけを消す
-          acquireLocation(); // ★ユーザー操作の中で位置情報を要求（プロンプト通過のため）
-        }
-        break;'''
-          new = '''      case "recenter": {
-        followMode = true;
-        const currentPosition = userMarker.getPosition();
-        if (currentPosition) map.panTo(currentPosition);
-        if (!currentPosition || errorSource === "geolocation" || !geoWatchStarted) {
-          clearError("geolocation"); // stale な現在地が残っていても位置情報エラー時は再取得する
-          acquireLocation(); // ★ユーザー操作の中で位置情報を要求（プロンプト通過のため）
-        }
-        break;
-      }'''
-          if text.count(old) != 1:
-              raise SystemExit("expected recenter block exactly once")
-          path.write_text(text.replace(old, new))
-          PY
+          python3 -c 'from pathlib import Path; p=Path("js/app.js"); s=p.read_text(); old="      case \"recenter\":\n        followMode = true;\n        if (userMarker.getPosition()) {\n          map.panTo(userMarker.getPosition());\n        } else {\n          clearError(\"geolocation\"); // 前回の位置情報エラーだけを消す\n          acquireLocation(); // ★ユーザー操作の中で位置情報を要求（プロンプト通過のため）\n        }\n        break;"; new="      case \"recenter\": {\n        followMode = true;\n        const currentPosition = userMarker.getPosition();\n        if (currentPosition) map.panTo(currentPosition);\n        if (!currentPosition || errorSource === \"geolocation\" || !geoWatchStarted) {\n          clearError(\"geolocation\"); // stale な現在地が残っていても位置情報エラー時は再取得する\n          acquireLocation(); // ★ユーザー操作の中で位置情報を要求（プロンプト通過のため）\n        }\n        break;\n      }"; assert s.count(old)==1, "expected recenter block exactly once"; p.write_text(s.replace(old,new))'
           node --check js/app.js
           git diff --check
           grep -F 'if (!currentPosition || errorSource === "geolocation" || !geoWatchStarted)' js/app.js
