@@ -758,7 +758,7 @@
         if (!j || !j.elements) return;
         const near = [];
         for (const el of j.elements) {
-          if (near.length > 200) break;
+          if (near.length >= 200) break;
           const pt = new google.maps.LatLng(el.lat, el.lon);
           let min = navFullPath.length === 1 ? meters(pt, navFullPath[0]) : Infinity;
           for (let i = 0; i < navFullPath.length - 1; i++) {
