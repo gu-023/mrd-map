@@ -51,6 +51,7 @@
   let navMode = false; // ナビ中
   let navSteps = [];
   let navStepIdx = 0;
+  let navLastPosition = null; // 前回のナビ位置（曲がり角通過の取りこぼし補完）
   let navDestination = null; // リルート用に目的地を保持
   let navFullPath = []; // オフルート判定用の詳細経路点
   let offRouteCount = 0;
@@ -678,6 +679,7 @@
           directionsRenderer.setDirections(res);
           navSteps = res.routes[0].legs[0].steps || [];
           navStepIdx = 0;
+          navLastPosition = null;
           offRouteCount = 0;
           navBounds = res.routes[0].bounds || null;
           zoomedForTurn = false;
@@ -728,6 +730,7 @@
     signalRequestId++; // 未完了の Overpass callback で信号が復活しないよう無効化
     navRerouting = false;
     navMode = false;
+    navLastPosition = null;
     navSteps = [];
     navFullPath = [];
     navDestination = null;
@@ -894,13 +897,40 @@
     return { dist, sec };
   }
 
+  // GPS 更新が曲がり角の 25m 圏を飛び越えた場合、前回→今回の短い移動区間で通過を補完する。
+  function segmentPassesNear(a, b, target, radius) {
+    if (!a || meters(a, b) > 250) return false; // 大きな GPS ジャンプは通過根拠にしない
+    const metersPerDegree = (Math.PI * 6371008.8) / 180;
+    const cosLat = Math.cos((target.lat() * Math.PI) / 180);
+    const ax = (a.lng() - target.lng()) * cosLat * metersPerDegree;
+    const ay = (a.lat() - target.lat()) * metersPerDegree;
+    const bx = (b.lng() - target.lng()) * cosLat * metersPerDegree;
+    const by = (b.lat() - target.lat()) * metersPerDegree;
+    const dx = bx - ax;
+    const dy = by - ay;
+    const lengthSq = dx * dx + dy * dy;
+    const t = lengthSq > 0
+      ? Math.max(0, Math.min(1, -(ax * dx + ay * dy) / lengthSq))
+      : 0;
+    const px = ax + t * dx;
+    const py = ay + t * dy;
+    return px * px + py * py < radius * radius;
+  }
+
   // 位置更新ごとに「次の曲がり角」と残り・オフルートを更新
   function updateNav(p) {
     if (!navMode || !navSteps.length) return;
     const here = new google.maps.LatLng(p.lat, p.lng);
+    const previous = navLastPosition;
+    navLastPosition = here;
 
-    // 通過した手順を進める
-    while (navStepIdx < navSteps.length - 1 && meters(here, navSteps[navStepIdx].end_location) < 25) {
+    // 通過した手順を進める。25m 圏をサンプルしなくても、短い移動区間が曲がり角を横切れば補完する。
+    while (navStepIdx < navSteps.length - 1) {
+      const currentStep = navSteps[navStepIdx];
+      const end = currentStep.end_location;
+      const crossedSinceLast = segmentPassesNear(previous, here, end, 25) &&
+        stepRemainingDistance(here, currentStep) < 1;
+      if (meters(here, end) >= 25 && !crossedSinceLast) break;
       navStepIdx++;
     }
     const step = navSteps[navStepIdx];
