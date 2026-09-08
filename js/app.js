@@ -574,6 +574,7 @@
 
   function selectPrediction(p) {
     if (!p) return;
+    clearError("places"); // 再試行中は古い Places error だけ解除
     const requestId = ++placeDetailsRequestId;
     placesService.getDetails(
       { placeId: p.place_id, fields: ["geometry"], sessionToken: searchToken },
