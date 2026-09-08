@@ -23,16 +23,11 @@ jobs:
           from pathlib import Path
           path = Path("js/app.js")
           text = path.read_text()
-          old = '''  function searchKeydown(key) {
-            clearError("places"); // 検索を続ける D-pad 操作で stale Places error を解除
-          '''
-          new = '''  function searchKeydown(key) {
-            placeDetailsRequestId++; // 検索操作を再開したら未完了の Place Details callback を無効化
-            clearError("places"); // 検索を続ける D-pad 操作で stale Places error を解除
-          '''
-          if text.count(old) != 1:
+          anchor = '  function searchKeydown(key) {\n'
+          replacement = anchor + '    placeDetailsRequestId++; // 検索操作を再開したら未完了の Place Details callback を無効化\n'
+          if text.count(anchor) != 1:
               raise SystemExit("expected searchKeydown anchor exactly once")
-          path.write_text(text.replace(old, new, 1))
+          path.write_text(text.replace(anchor, replacement, 1))
           PY
 
       - name: Verify patch
