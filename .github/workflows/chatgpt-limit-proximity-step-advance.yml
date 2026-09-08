@@ -1,0 +1,75 @@
+name: ChatGPT limit proximity step advance
+
+on:
+  push:
+    branches:
+      - chatgpt/limit-proximity-step-advance
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chatgpt/limit-proximity-step-advance
+
+      - name: Apply atomic navigation-step fix
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('js/app.js')
+          text = path.read_text()
+          old = '''    // 通過した手順を進める。25m 圏をサンプルしなくても、短い移動区間が曲がり角を横切れば補完する。
+              while (navStepIdx < navSteps.length - 1) {
+                const currentStep = navSteps[navStepIdx];
+                const end = currentStep.end_location;
+                const crossedSinceLast = segmentPassesNear(continuityPrevious, here, end, 25) &&
+                  stepRemainingDistance(here, currentStep, continuityPrevious) < 1;
+                if (meters(here, end) >= 25 && !crossedSinceLast) break;
+                navStepIdx++;
+              }
+          '''
+          new = '''    // 通過した手順を進める。1つの GPS fix では「25m以内」だけを根拠に複数手順を飛ばさない。
+              // 複数手順を一気に進めるのは、前回→今回の移動区間が各終端を実際に横切った場合だけ。
+              let advancedThisFix = false;
+              while (navStepIdx < navSteps.length - 1) {
+                const currentStep = navSteps[navStepIdx];
+                const end = currentStep.end_location;
+                const crossedSinceLast = segmentPassesNear(continuityPrevious, here, end, 25) &&
+                  stepRemainingDistance(here, currentStep, continuityPrevious) < 1;
+                const nearEnd = meters(here, end) < 25;
+                if (!crossedSinceLast && (!nearEnd || advancedThisFix)) break;
+                navStepIdx++;
+                advancedThisFix = true;
+              }
+          '''
+          if text.count(old) != 1:
+              raise SystemExit(f'expected one navigation-step block, found {text.count(old)}')
+          path.write_text(text.replace(old, new))
+          PY
+
+      - name: Static verification
+        shell: bash
+        run: |
+          node --check js/app.js
+          git diff --check
+          grep -Fq 'let advancedThisFix = false;' js/app.js
+          grep -Fq 'if (!crossedSinceLast && (!nearEnd || advancedThisFix)) break;' js/app.js
+
+      - name: Remove helper and commit patch
+        shell: bash
+        run: |
+          rm .github/workflows/chatgpt-limit-proximity-step-advance.yml
+          git diff --check
+          test "$(git diff --name-only | sort | tr '\n' ' ')" = ".github/workflows/chatgpt-limit-proximity-step-advance.yml js/app.js "
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add js/app.js .github/workflows/chatgpt-limit-proximity-step-advance.yml
+          git commit -m 'Limit proximity-only navigation step advances'
+          git push origin HEAD:chatgpt/limit-proximity-step-advance
