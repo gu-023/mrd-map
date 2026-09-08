@@ -1,0 +1,86 @@
+name: ChatGPT route distance turn UI patch
+
+on:
+  push:
+    branches:
+      - chatgpt/route-distance-turn-ui
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chatgpt/route-distance-turn-ui
+          fetch-depth: 0
+      - name: Apply atomic patch
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('js/app.js')
+          text = path.read_text()
+          old = '''    const step = navSteps[navStepIdx];
+    const d = meters(here, step.end_location);
+    const isLast = navStepIdx === navSteps.length - 1;
+
+    if (isLast && d < 20) {
+'''
+          new = '''    const step = navSteps[navStepIdx];
+    const directEndDist = meters(here, step.end_location);
+    const turnDist = stepRemainingDistance(here, step);
+    const isLast = navStepIdx === navSteps.length - 1;
+
+    if (isLast && directEndDist < 20) {
+'''
+          if text.count(old) != 1:
+              raise SystemExit(f'expected one distance anchor, found {text.count(old)}')
+          text = text.replace(old, new)
+          if text.count('${fmtDist(d)}') != 1:
+              raise SystemExit(f'expected one nav distance display, found {text.count("${fmtDist(d)}")}')
+          text = text.replace('${fmtDist(d)}', '${fmtDist(turnDist)}')
+          old_zoom = '    if (followMode) autoZoomForTurn(d, isLast); // 全体表示中は自動ズームしない\n'
+          new_zoom = '    if (followMode) autoZoomForTurn(turnDist, isLast); // 全体表示中は自動ズームしない\n'
+          if text.count(old_zoom) != 1:
+              raise SystemExit(f'expected one auto-zoom anchor, found {text.count(old_zoom)}')
+          text = text.replace(old_zoom, new_zoom)
+          path.write_text(text)
+          PY
+      - name: Verify patch
+        shell: bash
+        run: |
+          node --check js/app.js
+          git diff --check
+          python3 - <<'PY'
+          from pathlib import Path
+          text = Path('js/app.js').read_text()
+          checks = [
+              'const directEndDist = meters(here, step.end_location);',
+              'const turnDist = stepRemainingDistance(here, step);',
+              'if (isLast && directEndDist < 20)',
+              '${fmtDist(turnDist)}',
+              'autoZoomForTurn(turnDist, isLast)',
+          ]
+          missing = [item for item in checks if item not in text]
+          if missing:
+              raise SystemExit('missing expected patch text: ' + repr(missing))
+          if 'const d = meters(here, step.end_location);' in text:
+              raise SystemExit('legacy turn-distance variable still present')
+          PY
+          git diff -- js/app.js
+      - name: Commit patch
+        shell: bash
+        run: |
+          if git diff --quiet -- js/app.js; then
+            echo 'No app.js change to commit'
+            exit 1
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add js/app.js
+          git commit -m 'Use route distance for turn UI'
+          git push origin HEAD:chatgpt/route-distance-turn-ui
