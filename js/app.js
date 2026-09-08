@@ -532,12 +532,12 @@
       d.className = "key" + (searchZone === "keys" && i === keyIdx ? " focused" : "");
       d.textContent = k;
       d.addEventListener("click", () => {
-      searchZone = "keys";
-      keyIdx = i;
-      placeDetailsRequestId++;
-      clearError("places");
-      pressKey(k);
-    });
+        searchZone = "keys";
+        keyIdx = i;
+        placeDetailsRequestId++;
+        clearError("places");
+        pressKey(k);
+      });
       els.searchKeyboard.appendChild(d);
     });
     els.searchPreds.innerHTML = "";
