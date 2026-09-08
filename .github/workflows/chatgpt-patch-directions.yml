@@ -1,0 +1,67 @@
+name: ChatGPT patch Directions error recovery
+
+on:
+  push:
+    branches:
+      - chatgpt/clear-directions-error-success
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chatgpt/clear-directions-error-success
+          fetch-depth: 0
+
+      - name: Apply atomic patch
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("js/app.js")
+          text = path.read_text()
+
+          replacements = [
+              (
+                  '        if (status === "OK" && res.routes[0]) {\n          travelMode = routeTravelMode;',
+                  '        if (status === "OK" && res.routes[0]) {\n          clearError("directions");\n          travelMode = routeTravelMode;',
+              ),
+              (
+                  '          showError(\n            "経路を取得できません",\n            "ステータス: <code>REQUEST_DENIED</code><br>" +\n            "APIキーの「APIの制限」に <b>Directions API</b> を追加してください。"\n          );',
+                  '          showError(\n            "経路を取得できません",\n            "ステータス: <code>REQUEST_DENIED</code><br>" +\n            "APIキーの「APIの制限」に <b>Directions API</b> を追加してください。",\n            "directions"\n          );',
+              ),
+              (
+                  '          showError("経路を取得できません", `ステータス: <code>${status}</code>`);',
+                  '          showError("経路を取得できません", `ステータス: <code>${status}</code>`, "directions");',
+              ),
+          ]
+
+          for old, new in replacements:
+              if text.count(old) != 1:
+                  raise SystemExit(f"expected exactly one replacement anchor, found {text.count(old)}: {old[:80]!r}")
+              text = text.replace(old, new, 1)
+
+          path.write_text(text)
+          PY
+
+      - name: Static verification
+        run: |
+          node --check js/app.js
+          git diff --check
+          test "$(grep -Fc 'clearError("directions");' js/app.js)" -eq 1
+          test "$(grep -Fc '"directions"' js/app.js)" -ge 3
+          git diff -- js/app.js
+
+      - name: Commit patch and remove helper
+        run: |
+          rm .github/workflows/chatgpt-patch-directions.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add js/app.js .github/workflows/chatgpt-patch-directions.yml
+          git commit -m "Clear Directions errors after route recovery"
+          git push origin HEAD:chatgpt/clear-directions-error-success
