@@ -23,28 +23,27 @@ jobs:
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
-
           path = Path("js/app.js")
-          text = path.read_text()
-          old = '''      d.addEventListener("click", () => {
-      searchZone = "keys";
-      keyIdx = i;
-      placeDetailsRequestId++;
-      clearError("places");
-      pressKey(k);
-    });'''
-          new = '''      d.addEventListener("click", () => {
-        searchZone = "keys";
-        keyIdx = i;
-        placeDetailsRequestId++;
-        clearError("places");
-        pressKey(k);
-      });'''
-          if text.count(old) != 1:
-              raise SystemExit(f"expected exactly one malformed block, found {text.count(old)}")
-          path.write_text(text.replace(old, new, 1))
+          lines = path.read_text().splitlines(keepends=True)
+          needle = '      d.addEventListener("click", () => {\n'
+          matches = [i for i, line in enumerate(lines) if line == needle]
+          if len(matches) != 1:
+              raise SystemExit(f"expected exactly one expanded search-key handler, found {len(matches)}")
+          i = matches[0]
+          expected = [
+              '      searchZone = "keys";\n',
+              '      keyIdx = i;\n',
+              '      placeDetailsRequestId++;\n',
+              '      clearError("places");\n',
+              '      pressKey(k);\n',
+              '    });\n',
+          ]
+          if lines[i + 1:i + 7] != expected:
+              raise SystemExit("search-key handler body did not match expected unformatted patch")
+          for j in range(i + 1, i + 7):
+              lines[j] = "  " + lines[j]
+          path.write_text("".join(lines))
           PY
-
           rm .github/workflows/chatgpt-fix-key-click-indent.yml
 
       - name: Verify patch
