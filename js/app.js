@@ -618,10 +618,12 @@
         case "ArrowLeft":  if (keyIdx % SEARCH_COLS > 0) keyIdx--; break;
         case "ArrowRight": if (keyIdx % SEARCH_COLS < SEARCH_COLS - 1 && keyIdx + 1 < SEARCH_KEYS.length) keyIdx++; break;
         case "ArrowUp":    if (keyIdx - SEARCH_COLS >= 0) keyIdx -= SEARCH_COLS; break;
-        case "ArrowDown":
-          if (keyIdx + SEARCH_COLS < SEARCH_KEYS.length) keyIdx += SEARCH_COLS;
+        case "ArrowDown": {
+          const nextRowStart = (Math.floor(keyIdx / SEARCH_COLS) + 1) * SEARCH_COLS;
+          if (nextRowStart < SEARCH_KEYS.length) keyIdx = Math.min(keyIdx + SEARCH_COLS, SEARCH_KEYS.length - 1);
           else if (searchPredictions.length) { searchZone = "preds"; predIdx = 0; }
           break;
+        }
         case "Enter": case " ": pressKey(SEARCH_KEYS[keyIdx]); return;
         default: return;
       }
