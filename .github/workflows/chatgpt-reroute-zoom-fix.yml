@@ -1,0 +1,40 @@
+name: ChatGPT reroute zoom fix
+
+on:
+  push:
+    branches:
+      - chatgpt/reset-reroute-turn-zoom
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chatgpt/reset-reroute-turn-zoom
+          fetch-depth: 0
+
+      - name: Apply and validate atomic fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -c 'from pathlib import Path; p=Path("js/app.js"); s=p.read_text(); old="          navBounds = res.routes[0].bounds || null;\n          zoomedForTurn = false;\n"; new="          navBounds = res.routes[0].bounds || null;\n          if (isReroute && zoomedForTurn) {\n            map.setZoom(routeTravelMode === \"DRIVING\" ? 17 : 18);\n          }\n          zoomedForTurn = false;\n"; assert s.count(old) == 1, s.count(old); p.write_text(s.replace(old, new, 1))'
+          node --check js/app.js
+          git diff --check
+          grep -F 'if (isReroute && zoomedForTurn) {' js/app.js
+          git diff -- js/app.js
+
+      - name: Commit fix and remove helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/chatgpt-reroute-zoom-fix.yml
+          git add js/app.js
+          git commit -m "Reset turn zoom after reroute"
+          git push origin HEAD:chatgpt/reset-reroute-turn-zoom
