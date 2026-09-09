@@ -1,0 +1,170 @@
+name: ChatGPT Place Details single-flight helper
+
+on:
+  push:
+    branches:
+      - chatgpt/place-details-single-flight
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chatgpt/place-details-single-flight
+          fetch-depth: 0
+
+      - name: Patch Place Details lifecycle
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("js/app.js")
+          text = path.read_text()
+
+          def replace_once(old, new, label):
+              global text
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected 1 match, found {count}")
+              text = text.replace(old, new, 1)
+
+          replace_once(
+              '  let searchLoading = false;\n'
+              '  let searchEmpty = false;\n'
+              '  let searchZone = "keys";',
+              '  let searchLoading = false;\n'
+              '  let searchEmpty = false;\n'
+              '  let placeDetailsLoading = false;\n'
+              '  let searchZone = "keys";',
+              'state declaration',
+          )
+
+          replace_once(
+              '    searchLoading = false;\n'
+              '    searchEmpty = false;\n'
+              '    searchZone = "keys";',
+              '    searchLoading = false;\n'
+              '    searchEmpty = false;\n'
+              '    placeDetailsLoading = false;\n'
+              '    searchZone = "keys";',
+              'openSearch reset',
+          )
+
+          replace_once(
+              '    clearError("places"); // 明示的に検索を閉じたら Places 由来の stale error も解除\n'
+              '    searchOpen = false;',
+              '    clearError("places"); // 明示的に検索を閉じたら Places 由来の stale error も解除\n'
+              '    placeDetailsLoading = false;\n'
+              '    searchOpen = false;',
+              'closeSearch reset',
+          )
+
+          replace_once(
+              '        keyIdx = i;\n'
+              '        placeDetailsRequestId++;\n'
+              '        clearError("places");',
+              '        keyIdx = i;\n'
+              '        placeDetailsLoading = false;\n'
+              '        placeDetailsRequestId++;\n'
+              '        clearError("places");',
+              'keyboard click cancellation',
+          )
+
+          replace_once(
+              '    if (searchLoading || searchEmpty) {\n'
+              '      const li = document.createElement("li");\n'
+              '      li.className = "pred";\n'
+              '      li.textContent = searchLoading ? "検索中…" : "候補がありません";\n'
+              '      els.searchPreds.appendChild(li);\n'
+              '    }',
+              '    if (searchLoading || searchEmpty || placeDetailsLoading) {\n'
+              '      const li = document.createElement("li");\n'
+              '      li.className = "pred";\n'
+              '      li.textContent = placeDetailsLoading\n'
+              '        ? "場所を確認中…"\n'
+              '        : searchLoading ? "検索中…" : "候補がありません";\n'
+              '      els.searchPreds.appendChild(li);\n'
+              '    }',
+              'loading row',
+          )
+
+          replace_once(
+              '  function selectPrediction(p) {\n'
+              '    if (!p) return;\n'
+              '    clearError("places"); // 再試行中は古い Places error だけ解除\n'
+              '    const requestId = ++placeDetailsRequestId;',
+              '  function selectPrediction(p) {\n'
+              '    if (!p || placeDetailsLoading) return;\n'
+              '    clearError("places"); // 再試行中は古い Places error だけ解除\n'
+              '    const requestId = ++placeDetailsRequestId;\n'
+              '    placeDetailsLoading = true;\n'
+              '    renderSearch();',
+              'single-flight start',
+          )
+
+          replace_once(
+              '      (res, status) => {\n'
+              '        if (requestId !== placeDetailsRequestId || !searchOpen) return;\n'
+              '        if (status === "OK" && res && res.geometry && res.geometry.location) {',
+              '      (res, status) => {\n'
+              '        if (requestId !== placeDetailsRequestId || !searchOpen) return;\n'
+              '        placeDetailsLoading = false;\n'
+              '        if (status === "OK" && res && res.geometry && res.geometry.location) {',
+              'current callback reset',
+          )
+
+          replace_once(
+              '          showError("場所を取得できません", `ステータス: <code>${status}</code>${hint}`, "places");\n'
+              '        }',
+              '          showError("場所を取得できません", `ステータス: <code>${status}</code>${hint}`, "places");\n'
+              '          renderSearch();\n'
+              '        }',
+              'failure rerender',
+          )
+
+          replace_once(
+              '  function searchKeydown(key) {\n'
+              '    placeDetailsRequestId++; // 検索操作を再開したら未完了の Place Details callback を無効化\n'
+              '    clearError("places"); // 検索を続ける D-pad 操作で stale Places error を解除',
+              '  function searchKeydown(key) {\n'
+              '    if (placeDetailsLoading && (key === "Enter" || key === " ")) return;\n'
+              '    placeDetailsLoading = false;\n'
+              '    placeDetailsRequestId++; // 検索操作を再開したら未完了の Place Details callback を無効化\n'
+              '    clearError("places"); // 検索を続ける D-pad 操作で stale Places error を解除',
+              'D-pad duplicate guard',
+          )
+
+          path.write_text(text)
+          PY
+
+      - name: Static verification
+        shell: bash
+        run: |
+          node --check js/app.js
+          git diff --check
+          python3 - <<'PY'
+          from pathlib import Path
+          text = Path("js/app.js").read_text()
+          assert text.count("let placeDetailsLoading = false;") == 1
+          assert text.count("placeDetailsLoading = true;") == 1
+          assert 'if (!p || placeDetailsLoading) return;' in text
+          assert 'if (placeDetailsLoading && (key === "Enter" || key === " ")) return;' in text
+          assert '"場所を確認中…"' in text
+          assert text.count("renderSearch();") >= 1
+          PY
+
+      - name: Remove helper and commit
+        shell: bash
+        run: |
+          rm .github/workflows/chatgpt-place-details-single-flight.yml
+          git diff --check
+          git add js/app.js .github/workflows/chatgpt-place-details-single-flight.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Make Place Details selection single-flight"
+          git push origin HEAD:chatgpt/place-details-single-flight
