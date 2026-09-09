@@ -49,6 +49,7 @@
   let directionsRenderer = null;
   let pickMode = false; // 目的地選択（中央十字）モード
   let navMode = false; // ナビ中
+  let navArrived = false; // 到着後はナビ終了/再計算まで到着状態を保持
   let navSteps = [];
   let navStepIdx = 0;
   let navLastPosition = null; // 前回のナビ位置（曲がり角通過の取りこぼし補完）
@@ -691,6 +692,7 @@
             navFullPath.push(...path);
           });
           navMode = true;
+          navArrived = false;
           followMode = true;
           if (!isReroute) {
             map.setZoom(routeTravelMode === "DRIVING" ? 17 : 18);
@@ -731,6 +733,7 @@
     signalRequestId++; // 未完了の Overpass callback で信号が復活しないよう無効化
     navRerouting = false;
     navMode = false;
+    navArrived = false;
     navLastPosition = null;
     navSteps = [];
     navFullPath = [];
@@ -944,7 +947,7 @@
 
   // 位置更新ごとに「次の曲がり角」と残り・オフルートを更新
   function updateNav(p) {
-    if (!navMode || !navSteps.length) return;
+    if (!navMode || !navSteps.length || navArrived) return;
     const here = new google.maps.LatLng(p.lat, p.lng);
     const previous = navLastPosition;
     const continuityPrevious = previous && meters(previous, here) <= 250 ? previous : null;
@@ -970,6 +973,8 @@
     const isLast = navStepIdx === navSteps.length - 1;
 
     if (isLast && directEndDist < 20 && turnDist < 20) {
+      navArrived = true;
+      offRouteCount = 0;
       setNavBanner('<div class="nav-main"><span class="nav-arrow">🏁</span> 目的地に到着</div>');
       return;
     }
