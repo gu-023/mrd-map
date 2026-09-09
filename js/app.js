@@ -975,6 +975,7 @@
     if (isLast && directEndDist < 20 && turnDist < 20) {
       navArrived = true;
       offRouteCount = 0;
+      if (followMode) autoZoomForTurn(turnDist, true);
       setNavBanner('<div class="nav-main"><span class="nav-arrow">🏁</span> 目的地に到着</div>');
       return;
     }
