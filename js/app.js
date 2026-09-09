@@ -612,7 +612,10 @@
           closeSearch();
           computeRoute(res.geometry.location, false, p.description);
         } else {
-          showError("場所を取得できません", `ステータス: <code>${status}</code>`, "places");
+          const hint = status === "REQUEST_DENIED"
+            ? "<br>APIキーの制限と <b>Places API</b> の有効化を確認してください。"
+            : "";
+          showError("場所を取得できません", `ステータス: <code>${status}</code>${hint}`, "places");
         }
       }
     );
