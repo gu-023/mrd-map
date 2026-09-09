@@ -584,6 +584,7 @@
     autocompleteService.getPlacePredictions(req, (preds, status) => {
       if (requestId !== predictionRequestId || !searchOpen) return;
       searchPredictions = status === "OK" && preds ? preds.slice(0, 6) : [];
+      if (!searchPredictions.length && searchZone === "preds") searchZone = "keys";
       if (predIdx >= searchPredictions.length) predIdx = 0;
       renderSearch();
     });
