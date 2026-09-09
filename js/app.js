@@ -78,6 +78,7 @@
   let searchOpen = false;
   let searchQuery = "";
   let searchPredictions = [];
+  let searchLoading = false;
   let searchZone = "keys"; // keys / preds
   let keyIdx = 0;
   let predIdx = 0;
@@ -516,6 +517,7 @@
     searchOpen = true;
     searchQuery = "";
     searchPredictions = [];
+    searchLoading = false;
     searchZone = "keys";
     keyIdx = 0;
     predIdx = 0;
@@ -548,6 +550,12 @@
       els.searchKeyboard.appendChild(d);
     });
     els.searchPreds.innerHTML = "";
+    if (searchLoading) {
+      const li = document.createElement("li");
+      li.className = "pred";
+      li.textContent = "検索中…";
+      els.searchPreds.appendChild(li);
+    }
     searchPredictions.forEach((p, i) => {
       const li = document.createElement("li");
       li.className = "pred" + (searchZone === "preds" && i === predIdx ? " focused" : "");
@@ -576,7 +584,8 @@
     if (searchZone === "preds") searchZone = "keys";
     predIdx = 0;
     const q = searchQuery.trim();
-    if (q.length < 1) return;
+    searchLoading = q.length > 0;
+    if (!searchLoading) return;
     const req = {
       input: q,
       sessionToken: searchToken,
@@ -586,6 +595,7 @@
     if (pos) { req.location = pos; req.radius = 50000; }
     autocompleteService.getPlacePredictions(req, (preds, status) => {
       if (requestId !== predictionRequestId || !searchOpen) return;
+      searchLoading = false;
       if (status !== "OK" && status !== "ZERO_RESULTS") {
         const hint = status === "REQUEST_DENIED"
           ? "<br>APIキーの制限と <b>Places API</b> の有効化を確認してください。"
