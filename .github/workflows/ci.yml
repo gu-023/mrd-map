@@ -35,3 +35,12 @@ jobs:
             echo "::error::js/config.template.js must keep the deployment placeholder"
             exit 1
           fi
+
+      - name: Reject tracked Google API keys
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git grep -nE 'AIza[0-9A-Za-z_-]{35}' -- .; then
+            echo "::error::A Google API key pattern is present in a tracked file"
+            exit 1
+          fi
