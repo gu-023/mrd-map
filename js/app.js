@@ -583,6 +583,14 @@
     if (pos) { req.location = pos; req.radius = 50000; }
     autocompleteService.getPlacePredictions(req, (preds, status) => {
       if (requestId !== predictionRequestId || !searchOpen) return;
+      if (status !== "OK" && status !== "ZERO_RESULTS") {
+        const hint = status === "REQUEST_DENIED"
+          ? "<br>APIキーの制限と <b>Places API</b> の有効化を確認してください。"
+          : "";
+        showError("場所を検索できません", `ステータス: <code>${status}</code>${hint}`, "places");
+      } else {
+        clearError("places");
+      }
       searchPredictions = status === "OK" && preds ? preds.slice(0, 6) : [];
       if (!searchPredictions.length && searchZone === "preds") searchZone = "keys";
       if (predIdx >= searchPredictions.length) predIdx = 0;
