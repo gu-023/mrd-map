@@ -242,7 +242,7 @@ html, body {
   border-color: var(--focus); color: var(--focus);
   background: rgba(77, 214, 160, 0.15); box-shadow: 0 0 12px var(--focus);
 }
-#search-preds { list-style: none; flex: 1; overflow-y: auto; margin-top: 8px; }
+#search-preds { list-style: none; flex: 1; min-height: 0; overflow-y: auto; margin-top: 8px; }
 #search-preds .pred {
   font-size: 22px; padding: 8px 10px;
   border: 2px solid transparent; border-radius: 8px;
