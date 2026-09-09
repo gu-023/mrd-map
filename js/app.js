@@ -607,8 +607,8 @@
     clearError("places"); // 検索を続ける D-pad 操作で stale Places error を解除
     if (searchZone === "keys") {
       switch (key) {
-        case "ArrowLeft":  keyIdx = Math.max(0, keyIdx - 1); break;
-        case "ArrowRight": keyIdx = Math.min(SEARCH_KEYS.length - 1, keyIdx + 1); break;
+        case "ArrowLeft":  if (keyIdx % SEARCH_COLS > 0) keyIdx--; break;
+        case "ArrowRight": if (keyIdx % SEARCH_COLS < SEARCH_COLS - 1 && keyIdx + 1 < SEARCH_KEYS.length) keyIdx++; break;
         case "ArrowUp":    if (keyIdx - SEARCH_COLS >= 0) keyIdx -= SEARCH_COLS; break;
         case "ArrowDown":
           if (keyIdx + SEARCH_COLS < SEARCH_KEYS.length) keyIdx += SEARCH_COLS;
