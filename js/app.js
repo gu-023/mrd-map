@@ -602,11 +602,12 @@
     if (!p) return;
     clearError("places"); // 再試行中は古い Places error だけ解除
     const requestId = ++placeDetailsRequestId;
+    const requestToken = searchToken;
+    searchToken = new google.maps.places.AutocompleteSessionToken(); // Place Details request で現在の Autocomplete セッションを終了
     placesService.getDetails(
-      { placeId: p.place_id, fields: ["geometry"], sessionToken: searchToken },
+      { placeId: p.place_id, fields: ["geometry"], sessionToken: requestToken },
       (res, status) => {
         if (requestId !== placeDetailsRequestId || !searchOpen) return;
-        searchToken = new google.maps.places.AutocompleteSessionToken(); // セッション更新
         if (status === "OK" && res && res.geometry && res.geometry.location) {
           clearError("places");
           closeSearch();
