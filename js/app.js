@@ -738,6 +738,9 @@
           navLastPosition = null;
           offRouteCount = 0;
           navBounds = res.routes[0].bounds || null;
+          if (isReroute && zoomedForTurn) {
+            map.setZoom(routeTravelMode === "DRIVING" ? 17 : 18);
+          }
           zoomedForTurn = false;
           // オフルート判定用に詳細経路点を平坦化
           navFullPath = [];
