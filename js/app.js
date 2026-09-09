@@ -79,6 +79,7 @@
   let searchQuery = "";
   let searchPredictions = [];
   let searchLoading = false;
+  let searchEmpty = false;
   let searchZone = "keys"; // keys / preds
   let keyIdx = 0;
   let predIdx = 0;
@@ -518,6 +519,7 @@
     searchQuery = "";
     searchPredictions = [];
     searchLoading = false;
+    searchEmpty = false;
     searchZone = "keys";
     keyIdx = 0;
     predIdx = 0;
@@ -550,10 +552,10 @@
       els.searchKeyboard.appendChild(d);
     });
     els.searchPreds.innerHTML = "";
-    if (searchLoading) {
+    if (searchLoading || searchEmpty) {
       const li = document.createElement("li");
       li.className = "pred";
-      li.textContent = "検索中…";
+      li.textContent = searchLoading ? "検索中…" : "候補がありません";
       els.searchPreds.appendChild(li);
     }
     searchPredictions.forEach((p, i) => {
@@ -581,6 +583,7 @@
   function refreshPredictions() {
     const requestId = ++predictionRequestId;
     searchPredictions = [];
+    searchEmpty = false;
     if (searchZone === "preds") searchZone = "keys";
     predIdx = 0;
     const q = searchQuery.trim();
@@ -605,6 +608,7 @@
         clearError("places");
       }
       searchPredictions = status === "OK" && preds ? preds.slice(0, 6) : [];
+      searchEmpty = status === "ZERO_RESULTS" || (status === "OK" && searchPredictions.length === 0);
       if (!searchPredictions.length && searchZone === "preds") searchZone = "keys";
       if (predIdx >= searchPredictions.length) predIdx = 0;
       renderSearch();
