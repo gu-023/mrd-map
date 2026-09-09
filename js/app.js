@@ -740,6 +740,7 @@
     navSteps = [];
     navFullPath = [];
     navDestination = null;
+    clearError("directions");
     clearRoute();
     clearSignals();
     signalData = [];
