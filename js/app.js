@@ -655,6 +655,7 @@
       showError("現在地が未取得", "先に ◎ で現在地を取得してください。", "geolocation");
       return;
     }
+    clearError("directions"); // 再試行中は古い Directions error だけ解除
     const requestId = ++routeRequestId;
     const routeTravelMode = requestedTravelMode || travelMode;
     navRerouting = true; // 経路要求中は既存ルートからの自動リルートを抑止
