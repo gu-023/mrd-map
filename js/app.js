@@ -1119,6 +1119,7 @@
   }
 
   function setPanMode(on) {
+    if (on && compassOn) disableCompass(); // Keep D-pad pan aligned with the screen.
     panMode = on;
     els.app.classList.toggle("pan-mode", on);
     if (on) followMode = false;
