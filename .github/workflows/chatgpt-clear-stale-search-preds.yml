@@ -1,0 +1,71 @@
+name: ChatGPT clear stale search predictions
+
+on:
+  push:
+    branches:
+      - chatgpt/clear-stale-search-predictions
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chatgpt/clear-stale-search-predictions
+          fetch-depth: 0
+
+      - name: Patch stale prediction lifecycle
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("js/app.js")
+          text = path.read_text()
+          old = '''  function refreshPredictions() {
+            const requestId = ++predictionRequestId;
+            const q = searchQuery.trim();
+            if (q.length < 1) {
+              searchPredictions = [];
+              if (searchZone === "preds") searchZone = "keys";
+              predIdx = 0;
+              return;
+            }
+          '''
+          new = '''  function refreshPredictions() {
+            const requestId = ++predictionRequestId;
+            searchPredictions = [];
+            if (searchZone === "preds") searchZone = "keys";
+            predIdx = 0;
+            const q = searchQuery.trim();
+            if (q.length < 1) return;
+          '''
+          if text.count(old) != 1:
+              raise SystemExit(f"expected one refreshPredictions anchor, found {text.count(old)}")
+          path.write_text(text.replace(old, new, 1))
+          PY
+
+          node --check js/app.js
+          git diff --check
+          grep -Fq 'searchPredictions = [];' js/app.js
+          grep -Fq 'if (q.length < 1) return;' js/app.js
+
+      - name: Commit final one-purpose diff
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/chatgpt-clear-stale-search-preds.yml
+          changed="$(git status --short)"
+          printf '%s\n' "$changed"
+          test "$(printf '%s\n' "$changed" | wc -l)" -eq 2
+          printf '%s\n' "$changed" | grep -q '^ M js/app.js$'
+          printf '%s\n' "$changed" | grep -q '^ D .github/workflows/chatgpt-clear-stale-search-preds.yml$'
+          git config user.name 'gu-023'
+          git config user.email '59335552+gu-023@users.noreply.github.com'
+          git add js/app.js .github/workflows/chatgpt-clear-stale-search-preds.yml
+          git commit -m 'Clear stale search predictions while refreshing'
+          git push origin HEAD:chatgpt/clear-stale-search-predictions
