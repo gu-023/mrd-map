@@ -573,7 +573,12 @@
   function refreshPredictions() {
     const requestId = ++predictionRequestId;
     const q = searchQuery.trim();
-    if (q.length < 1) { searchPredictions = []; return; }
+    if (q.length < 1) {
+      searchPredictions = [];
+      if (searchZone === "preds") searchZone = "keys";
+      predIdx = 0;
+      return;
+    }
     const req = {
       input: q,
       sessionToken: searchToken,
