@@ -409,6 +409,10 @@
       li.addEventListener("click", () => { menuIdx = i; renderMenu(); it.action(); });
       els.menuList.appendChild(li);
     });
+    const focused = els.menuList.querySelector(".focused");
+    if (focused && typeof focused.scrollIntoView === "function") {
+      focused.scrollIntoView({ block: "nearest" });
+    }
   }
   function menuMove(d) {
     menuIdx = (menuIdx + d + menuItems.length) % menuItems.length;
