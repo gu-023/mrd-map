@@ -80,6 +80,7 @@
   let searchPredictions = [];
   let searchLoading = false;
   let searchEmpty = false;
+  let placeDetailsLoading = false;
   let searchZone = "keys"; // keys / preds
   let keyIdx = 0;
   let predIdx = 0;
@@ -520,6 +521,7 @@
     searchPredictions = [];
     searchLoading = false;
     searchEmpty = false;
+    placeDetailsLoading = false;
     searchZone = "keys";
     keyIdx = 0;
     predIdx = 0;
@@ -531,6 +533,7 @@
     predictionRequestId++; // 閉じた検索の callback が後から UI を更新しないよう無効化
     placeDetailsRequestId++; // 閉じた検索の Place Details callback も無効化
     clearError("places"); // 明示的に検索を閉じたら Places 由来の stale error も解除
+    placeDetailsLoading = false;
     searchOpen = false;
     els.search.classList.add("hidden");
   }
@@ -545,6 +548,7 @@
       d.addEventListener("click", () => {
         searchZone = "keys";
         keyIdx = i;
+        placeDetailsLoading = false;
         placeDetailsRequestId++;
         clearError("places");
         pressKey(k);
@@ -552,10 +556,12 @@
       els.searchKeyboard.appendChild(d);
     });
     els.searchPreds.innerHTML = "";
-    if (searchLoading || searchEmpty) {
+    if (searchLoading || searchEmpty || placeDetailsLoading) {
       const li = document.createElement("li");
       li.className = "pred";
-      li.textContent = searchLoading ? "検索中…" : "候補がありません";
+      li.textContent = placeDetailsLoading
+        ? "場所を確認中…"
+        : searchLoading ? "検索中…" : "候補がありません";
       els.searchPreds.appendChild(li);
     }
     searchPredictions.forEach((p, i) => {
@@ -616,15 +622,18 @@
   }
 
   function selectPrediction(p) {
-    if (!p) return;
+    if (!p || placeDetailsLoading) return;
     clearError("places"); // 再試行中は古い Places error だけ解除
     const requestId = ++placeDetailsRequestId;
+    placeDetailsLoading = true;
+    renderSearch();
     const requestToken = searchToken;
     searchToken = new google.maps.places.AutocompleteSessionToken(); // Place Details request で現在の Autocomplete セッションを終了
     placesService.getDetails(
       { placeId: p.place_id, fields: ["geometry"], sessionToken: requestToken },
       (res, status) => {
         if (requestId !== placeDetailsRequestId || !searchOpen) return;
+        placeDetailsLoading = false;
         if (status === "OK" && res && res.geometry && res.geometry.location) {
           clearError("places");
           closeSearch();
@@ -634,6 +643,7 @@
             ? "<br>APIキーの制限と <b>Places API</b> の有効化を確認してください。"
             : "";
           showError("場所を取得できません", `ステータス: <code>${status}</code>${hint}`, "places");
+          renderSearch();
         }
       }
     );
@@ -641,6 +651,8 @@
 
   // 検索画面のキー操作
   function searchKeydown(key) {
+    if (placeDetailsLoading && (key === "Enter" || key === " ")) return;
+    placeDetailsLoading = false;
     placeDetailsRequestId++; // 検索操作を再開したら未完了の Place Details callback を無効化
     clearError("places"); // 検索を続ける D-pad 操作で stale Places error を解除
     if (searchZone === "keys") {
