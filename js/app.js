@@ -555,6 +555,10 @@
       li.addEventListener("click", () => { searchZone = "preds"; predIdx = i; selectPrediction(p); });
       els.searchPreds.appendChild(li);
     });
+    const focusedPrediction = els.searchPreds.querySelector(".focused");
+    if (focusedPrediction && typeof focusedPrediction.scrollIntoView === "function") {
+      focusedPrediction.scrollIntoView({ block: "nearest" });
+    }
   }
 
   function pressKey(k) {
