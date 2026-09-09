@@ -1,0 +1,71 @@
+name: ChatGPT one-shot nav instruction escaping
+
+on:
+  push:
+    branches:
+      - chatgpt/escape-nav-instruction-text
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply atomic patch and validate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('js/app.js')
+          text = path.read_text()
+
+          old = '''  function stripHtml(html) {
+            const d = document.createElement("div");
+            d.innerHTML = html || "";
+            return d.textContent || "進む";
+          }
+'''
+          new = old + '''
+          function escapeHtml(text) {
+            return String(text).replace(/[&<>"']/g, (c) => ({
+              "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+            }[c]));
+          }
+'''
+          if text.count(old) != 1:
+              raise SystemExit(f'stripHtml anchor count was {text.count(old)}, expected 1')
+          text = text.replace(old, new, 1)
+
+          old_use = '${stripHtml(step.instructions)}'
+          new_use = '${escapeHtml(stripHtml(step.instructions))}'
+          if text.count(old_use) != 1:
+              raise SystemExit(f'instruction interpolation count was {text.count(old_use)}, expected 1')
+          text = text.replace(old_use, new_use, 1)
+
+          path.write_text(text)
+          PY
+
+          node --check js/app.js
+          git diff --check
+          grep -Fq 'function escapeHtml(text)' js/app.js
+          grep -Fq '${escapeHtml(stripHtml(step.instructions))}' js/app.js
+
+      - name: Commit final tree without helper workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/chatgpt-one-shot.yml
+          git add js/app.js .github/workflows/chatgpt-one-shot.yml
+          git diff --cached --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Escape navigation instruction text"
+          git push origin HEAD:chatgpt/escape-nav-instruction-text
