@@ -551,6 +551,10 @@
     placeDetailsLoading = false;
     searchOpen = false;
     els.search.classList.add("hidden");
+    if (followMode) {
+      const currentPosition = userMarker && userMarker.getPosition();
+      if (currentPosition) map.panTo(currentPosition);
+    }
   }
 
   function renderSearch() {
