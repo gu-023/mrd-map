@@ -1143,7 +1143,7 @@
     setGps(true, "GPS");
     els.accText.textContent = accuracy ? `±${Math.round(accuracy)}m` : "";
     if (followMode && !pickMode) map.panTo(p); // 目的地選択中は追従しない
-    if (navMode && !pickMode && !searchOpen) updateNav(p); // 目的地選択/検索中は案内更新/自動リルートを停止
+    if (navMode && !pickMode && !searchOpen && !menuOpen) updateNav(p); // 目的地選択/検索/メニュー中は案内更新/自動リルートを停止
   }
 
   function onGeoError(err) {
