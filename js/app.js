@@ -704,7 +704,7 @@
   function exitPickMode() {
     pickMode = false;
     els.picker.classList.add("hidden");
-    if (!navMode) setNavBanner(null);
+    setNavBanner(null);
   }
 
   function confirmDestination() {
