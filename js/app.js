@@ -511,7 +511,7 @@
       label: (travelMode === m ? "● " : "○ ") + label,
       action: () => {
         if (navMode && navDestination) {
-          closeMenu();
+          closeMenuToMap();
           if (m !== travelMode) {
             computeRoute(navDestination, false, undefined, m); // 成功時だけ移動手段を確定
           }
