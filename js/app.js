@@ -677,8 +677,8 @@
         case "ArrowRight": if (keyIdx % SEARCH_COLS < SEARCH_COLS - 1 && keyIdx + 1 < SEARCH_KEYS.length) keyIdx++; break;
         case "ArrowUp":    if (keyIdx - SEARCH_COLS >= 0) keyIdx -= SEARCH_COLS; break;
         case "ArrowDown": {
-          const nextRowStart = (Math.floor(keyIdx / SEARCH_COLS) + 1) * SEARCH_COLS;
-          if (nextRowStart < SEARCH_KEYS.length) keyIdx = Math.min(keyIdx + SEARCH_COLS, SEARCH_KEYS.length - 1);
+          const below = keyIdx + SEARCH_COLS;
+          if (below < SEARCH_KEYS.length) keyIdx = below;
           else if (searchPredictions.length) { searchZone = "preds"; predIdx = 0; }
           break;
         }
