@@ -1,0 +1,58 @@
+name: ChatGPT one-shot clear picker banner
+
+on:
+  push:
+    branches:
+      - chatgpt/clear-picker-banner-before-route
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+
+      - name: Apply atomic fix and verify
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("js/app.js")
+          text = path.read_text()
+          old = '''  function exitPickMode() {
+            pickMode = false;
+            els.picker.classList.add("hidden");
+            if (!navMode) setNavBanner(null);
+          }
+          '''
+          new = '''  function exitPickMode() {
+            pickMode = false;
+            els.picker.classList.add("hidden");
+            setNavBanner(null);
+          }
+          '''
+          if text.count(old) != 1:
+              raise SystemExit(f"expected one exitPickMode target, found {text.count(old)}")
+          path.write_text(text.replace(old, new))
+          PY
+          node --check js/app.js
+          git diff --check
+          test "$(git diff --name-only)" = "js/app.js"
+          grep -F '    setNavBanner(null);' js/app.js >/dev/null
+
+      - name: Commit source change and remove helper
+        shell: bash
+        run: |
+          git config user.name "ChatGPT Codex Connector"
+          git config user.email "59335552+gu-023@users.noreply.github.com"
+          git rm .github/workflows/chatgpt-clear-picker-banner.yml
+          git add js/app.js
+          git diff --cached --check
+          git commit -m "Clear picker banner before route request"
+          git push origin HEAD:${{ github.ref_name }}
