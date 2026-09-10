@@ -2,8 +2,7 @@ name: ChatGPT fix search keyboard down geometry
 
 on:
   push:
-    branches:
-      - chatgpt/fix-search-keyboard-down-geometry
+    branches: [chatgpt/fix-search-keyboard-down-geometry]
 
 permissions:
   contents: write
@@ -19,37 +18,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-          path = Path('js/app.js')
-          text = path.read_text()
-          old = '''        case "ArrowDown": {
-          const nextRowStart = (Math.floor(keyIdx / SEARCH_COLS) + 1) * SEARCH_COLS;
-          if (nextRowStart < SEARCH_KEYS.length) keyIdx = Math.min(keyIdx + SEARCH_COLS, SEARCH_KEYS.length - 1);
-          else if (searchPredictions.length) { searchZone = "preds"; predIdx = 0; }
-          break;
-        }'''
-          new = '''        case "ArrowDown": {
-          const below = keyIdx + SEARCH_COLS;
-          if (below < SEARCH_KEYS.length) keyIdx = below;
-          else if (searchPredictions.length) { searchZone = "preds"; predIdx = 0; }
-          break;
-        }'''
-          if text.count(old) != 1:
-              raise SystemExit(f'expected one target block, found {text.count(old)}')
-          path.write_text(text.replace(old, new))
-          PY
+          python3 -c "from pathlib import Path; p=Path('js/app.js'); s=p.read_text(); old='const nextRowStart = (Math.floor(keyIdx / SEARCH_COLS) + 1) * SEARCH_COLS;'; new='const below = keyIdx + SEARCH_COLS;'; assert s.count(old) == 1, s.count(old); s=s.replace(old,new); old='if (nextRowStart < SEARCH_KEYS.length) keyIdx = Math.min(keyIdx + SEARCH_COLS, SEARCH_KEYS.length - 1);'; new='if (below < SEARCH_KEYS.length) keyIdx = below;'; assert s.count(old) == 1, s.count(old); p.write_text(s.replace(old,new))"
           rm .github/workflows/chatgpt-fix-search-keyboard-down.yml
           node --check js/app.js
           git diff --check
-          git add -A
-          git reset --soft 549e3877c041c949622216b23568d950092da15b
-          git diff --cached --check
-          test "$(git diff --cached --name-only)" = "js/app.js"
-          test "$(git diff --cached --numstat)" = $'2\t2\tjs/app.js'
           grep -F 'const below = keyIdx + SEARCH_COLS;' js/app.js
           grep -F 'if (below < SEARCH_KEYS.length) keyIdx = below;' js/app.js
+          git add -A
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git commit -m 'Keep search keyboard down movement in-grid'
-          git push --force-with-lease origin HEAD:${GITHUB_REF_NAME}
+          git push origin HEAD:${GITHUB_REF_NAME}
