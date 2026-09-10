@@ -468,7 +468,7 @@
           signalsOn = !signalsOn;
           if (signalsOn && !signalData.length) fetchSignals();
           else plotSignals();
-          closeMenu();
+          closeMenuToMap();
         },
       });
       const lat = navDestination.lat(), lng = navDestination.lng();
