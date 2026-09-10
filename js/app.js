@@ -518,6 +518,11 @@
 
   /* ---------- 場所検索（オンスクリーンキーボード＋Autocomplete） ---------- */
   function openSearch() {
+    if (navRerouting) {
+      routeRequestId++; // 検索が D-pad を引き継いだら進行中の Directions callback を無効化
+      navRerouting = false;
+      clearError("directions");
+    }
     closeMenu();
     if (!autocompleteService) autocompleteService = new google.maps.places.AutocompleteService();
     if (!placesService) placesService = new google.maps.places.PlacesService(map);
