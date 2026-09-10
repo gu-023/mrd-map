@@ -436,6 +436,12 @@
   }
 
   function openDestinationMenu() {
+    if (navRerouting && !navMode) {
+      routeRequestId++; // 目的地メニューを開いたら未完了の初回 Directions callback を無効化
+      navRerouting = false;
+      clearError("directions");
+      setNavBanner(null);
+    }
     const items = [];
     items.push({ label: "🔍 場所を検索", action: openSearch });
     items.push({ label: "📍 地図で目的地を選ぶ", action: () => { closeMenu(); enterPickMode(); } });
