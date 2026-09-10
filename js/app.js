@@ -689,7 +689,7 @@
       switch (key) {
         case "ArrowUp":   if (predIdx > 0) predIdx--; else searchZone = "keys"; break;
         case "ArrowDown": predIdx = Math.min(searchPredictions.length - 1, predIdx + 1); break;
-        case "ArrowLeft": searchZone = "keys"; break;
+        case "ArrowLeft": break;
         case "Enter": case " ": selectPrediction(searchPredictions[predIdx]); return;
         default: return;
       }
