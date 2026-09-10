@@ -885,6 +885,12 @@
     return d.textContent || "進む";
   }
 
+  function escapeHtml(text) {
+    const d = document.createElement("div");
+    d.textContent = text;
+    return d.innerHTML;
+  }
+
   // 曲がり角の種類 → 大きな方向アイコン
   function maneuverArrow(m) {
     if (!m) return "⬆";
@@ -1044,7 +1050,7 @@
     setNavBanner(
       `<div class="nav-main"><span class="nav-arrow">${maneuverArrow(step.maneuver)}</span> ` +
       `<span class="nav-dist">${fmtDist(turnDist)}</span></div>` +
-      `<div class="nav-sub">${stripHtml(step.instructions)}` +
+      `<div class="nav-sub">${escapeHtml(stripHtml(step.instructions))}` +
       ` ・ 残り ${fmtDist(rem.dist)} ${fmtMin(rem.sec)} ・ ${arrivalClock(rem.sec)}着</div>`
     );
 
