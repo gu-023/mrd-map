@@ -689,6 +689,11 @@
   }
 
   function enterPickMode() {
+    if (navRerouting) {
+      routeRequestId++; // picker が D-pad を引き継いだら進行中の Directions callback を無効化
+      navRerouting = false;
+      clearError("directions");
+    }
     if (compassOn) disableCompass(); // 回転中はパン方向が分かりにくいので解除
     pickMode = true;
     followMode = false;
