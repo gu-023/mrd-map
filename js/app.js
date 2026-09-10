@@ -404,6 +404,13 @@
     menuOpen = false;
     els.menu.classList.add("hidden");
   }
+  function closeMenuToMap() {
+    closeMenu();
+    if (followMode) {
+      const currentPosition = userMarker && userMarker.getPosition();
+      if (currentPosition) map.panTo(currentPosition);
+    }
+  }
   function renderMenu() {
     els.menuList.innerHTML = "";
     menuItems.forEach((it, i) => {
@@ -472,7 +479,7 @@
       }
       items.push({ label: "⏹ ナビを終了", action: () => { cancelNav(); closeMenu(); } });
     }
-    items.push({ label: "← 戻る", action: closeMenu });
+    items.push({ label: "← 戻る", action: closeMenuToMap });
     openMenu("目的地", items);
   }
 
