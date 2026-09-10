@@ -58,6 +58,7 @@
   let offRouteCount = 0;
   let navRerouting = false;
   let routeRequestId = 0; // 古い Directions callback を無視するための世代番号
+  let routePreviousNavBanner = null; // 経路要求前の案内（キャンセル/失敗時の復元用）
   let navBounds = null; // ルート全体の範囲（プレビュー用）
   let zoomedForTurn = false; // 曲がり角ズーム中か
   // 信号機（OpenStreetMap）
@@ -522,6 +523,8 @@
       routeRequestId++; // 検索が D-pad を引き継いだら進行中の Directions callback を無効化
       navRerouting = false;
       clearError("directions");
+      if (navMode) setNavBanner(routePreviousNavBanner);
+      routePreviousNavBanner = null;
     }
     closeMenu();
     if (!autocompleteService) autocompleteService = new google.maps.places.AutocompleteService();
@@ -728,7 +731,7 @@
     const requestId = ++routeRequestId;
     const routeTravelMode = requestedTravelMode || travelMode;
     navRerouting = true; // 経路要求中は既存ルートからの自動リルートを抑止
-    const previousNavBanner = navMode && !els.navBanner.classList.contains("hidden")
+    routePreviousNavBanner = navMode && !els.navBanner.classList.contains("hidden")
       ? els.navBanner.innerHTML
       : null;
     setNavBanner(isReroute ? "ルートを再計算中…" : "経路を計算中…");
@@ -736,6 +739,8 @@
       { origin, destination: dest, travelMode: google.maps.TravelMode[routeTravelMode] },
       (res, status) => {
         if (requestId !== routeRequestId) return;
+        const previousNavBanner = routePreviousNavBanner;
+        routePreviousNavBanner = null;
         navRerouting = false;
         if (status === "OK" && res.routes[0]) {
           clearError("directions");
