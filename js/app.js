@@ -473,9 +473,9 @@
       });
       const lat = navDestination.lat(), lng = navDestination.lng();
       if (isFav(lat, lng)) {
-        items.push({ label: "⭐ お気に入りから削除", action: () => { removeFav(lat, lng); closeMenu(); } });
+        items.push({ label: "⭐ お気に入りから削除", action: () => { removeFav(lat, lng); closeMenuToMap(); } });
       } else {
-        items.push({ label: "⭐ この目的地をお気に入り登録", action: () => { addFav({ name: placeKey(lat, lng), lat, lng }); resolvePlaceName(lat, lng); closeMenu(); } });
+        items.push({ label: "⭐ この目的地をお気に入り登録", action: () => { addFav({ name: placeKey(lat, lng), lat, lng }); resolvePlaceName(lat, lng); closeMenuToMap(); } });
       }
       items.push({ label: "⏹ ナビを終了", action: () => { cancelNav(); closeMenu(); } });
     }
