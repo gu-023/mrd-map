@@ -1155,7 +1155,7 @@
     setGps(true, "GPS");
     els.accText.textContent = accuracy ? `±${Math.round(accuracy)}m` : "";
     if (followMode && !pickMode && !searchOpen && !menuOpen) map.panTo(p); // D-pad overlay 中は追従しない
-    if (navMode && !pickMode && !searchOpen && !menuOpen) updateNav(p); // 目的地選択/検索/メニュー中は案内更新/自動リルートを停止
+    if (navMode && !navRerouting && !pickMode && !searchOpen && !menuOpen) updateNav(p); // 経路要求/目的地選択/検索/メニュー中は案内更新を停止
   }
 
   function onGeoError(err) {
