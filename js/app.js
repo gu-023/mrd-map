@@ -437,11 +437,12 @@
   }
 
   function openDestinationMenu() {
-    if (navRerouting && !navMode) {
-      routeRequestId++; // 目的地メニューを開いたら未完了の初回 Directions callback を無効化
+    if (navRerouting) {
+      routeRequestId++; // 目的地メニューが D-pad を引き継いだら進行中の Directions callback を無効化
       navRerouting = false;
       clearError("directions");
-      setNavBanner(null);
+      setNavBanner(navMode ? routePreviousNavBanner : null);
+      routePreviousNavBanner = null;
     }
     const items = [];
     items.push({ label: "🔍 場所を検索", action: openSearch });
