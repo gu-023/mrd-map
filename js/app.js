@@ -477,7 +477,7 @@
       } else {
         items.push({ label: "⭐ この目的地をお気に入り登録", action: () => { addFav({ name: placeKey(lat, lng), lat, lng }); resolvePlaceName(lat, lng); closeMenuToMap(); } });
       }
-      items.push({ label: "⏹ ナビを終了", action: () => { cancelNav(); closeMenu(); } });
+      items.push({ label: "⏹ ナビを終了", action: () => { cancelNav(); closeMenuToMap(); } });
     }
     items.push({ label: "← 戻る", action: closeMenuToMap });
     openMenu("目的地", items);
