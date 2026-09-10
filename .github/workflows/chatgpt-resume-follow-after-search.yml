@@ -1,0 +1,46 @@
+name: ChatGPT one-shot resume follow after search
+
+on:
+  push:
+    branches: [chatgpt/resume-follow-after-search]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply atomic search-close follow fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("js/app.js")
+          text = path.read_text()
+          old = '''    placeDetailsLoading = false;\n    searchOpen = false;\n    els.search.classList.add("hidden");\n  }'''
+          new = '''    placeDetailsLoading = false;\n    searchOpen = false;\n    els.search.classList.add("hidden");\n    if (followMode) {\n      const currentPosition = userMarker && userMarker.getPosition();\n      if (currentPosition) map.panTo(currentPosition);\n    }\n  }'''
+          if text.count(old) != 1:
+              raise SystemExit(f"expected one closeSearch target, found {text.count(old)}")
+          path.write_text(text.replace(old, new, 1))
+          PY
+          node --check js/app.js
+          git diff --check
+
+      - name: Commit atomic change
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "gu-023"
+          git config user.email "59335552+gu-023@users.noreply.github.com"
+          git rm .github/workflows/chatgpt-resume-follow-after-search.yml
+          git add js/app.js
+          git diff --cached --check
+          git commit -m "Resume follow mode after search closes"
+          git push origin HEAD:chatgpt/resume-follow-after-search
