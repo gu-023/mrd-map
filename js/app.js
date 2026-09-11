@@ -496,7 +496,7 @@
     const list = loadList(key);
     const items = list.map((p) => ({
       label: p.name,
-      action: () => { closeMenu(); computeRoute(new google.maps.LatLng(p.lat, p.lng), false, p.name); },
+      action: () => { closeMenuToMap(); computeRoute(new google.maps.LatLng(p.lat, p.lng), false, p.name); },
     }));
     items.push({ label: "← 戻る", action: openDestinationMenu });
     openMenu(title, items);
