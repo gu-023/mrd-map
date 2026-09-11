@@ -1108,6 +1108,7 @@
 
     // 通過した手順を進める。1つの GPS fix では「25m以内」だけを根拠に複数手順を飛ばさない。
     // 複数手順を一気に進めるのは、前回→今回の移動区間が各終端を実際に横切った場合だけ。
+    const proximityAccuracy = lastPositionAccuracy !== null ? lastPositionAccuracy : 0;
     let advancedThisFix = false;
     while (navStepIdx < navSteps.length - 1) {
       const currentStep = navSteps[navStepIdx];
@@ -1115,7 +1116,7 @@
       const routeRemaining = stepRemainingDistance(here, currentStep, continuityPrevious);
       const crossedSinceLast = segmentPassesNear(continuityPrevious, here, end, 25) &&
         routeRemaining < 1;
-      const nearEnd = meters(here, end) < 25 && routeRemaining < 25;
+      const nearEnd = meters(here, end) + proximityAccuracy < 25 && routeRemaining < 25;
       if (!crossedSinceLast && (!nearEnd || advancedThisFix)) break;
       navStepIdx++;
       advancedThisFix = true;
@@ -1125,7 +1126,7 @@
     const turnDist = stepRemainingDistance(here, step, continuityPrevious);
     const isLast = navStepIdx === navSteps.length - 1;
 
-    if (isLast && directEndDist < 20 && turnDist < 20) {
+    if (isLast && directEndDist + proximityAccuracy < 20 && turnDist < 20) {
       navArrived = true;
       offRouteCount = 0;
       lastOffRouteEvidenceTimestamp = null;
