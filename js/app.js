@@ -748,6 +748,7 @@
       showError("現在地が未取得", "先に ◎ で現在地を取得してください。", "geolocation");
       return;
     }
+    const originAccuracy = lastPositionAccuracy !== null ? lastPositionAccuracy : 0;
     clearError("directions"); // 再試行中は古い Directions error だけ解除
     const requestId = ++routeRequestId;
     const routeTravelMode = requestedTravelMode || travelMode;
@@ -808,8 +809,10 @@
           signalData = [];
           if (signalsOn) fetchSignals(); // ルート周辺の信号機を取得
           const navPosition = currentPosition || origin;
+          const currentAccuracy = lastPositionAccuracy !== null ? lastPositionAccuracy : 0;
+          const requestMovementThreshold = 35 + originAccuracy + currentAccuracy;
           const confirmOffRouteImmediately = !isReroute && currentPosition &&
-            meters(currentPosition, origin) > 35;
+            meters(currentPosition, origin) > requestMovementThreshold;
           updateNav(
             { lat: navPosition.lat(), lng: navPosition.lng() },
             confirmOffRouteImmediately
