@@ -1,0 +1,80 @@
+name: ChatGPT nav proximity one-shot
+
+on:
+  push:
+    branches: [chatgpt/guard-nav-proximity-by-accuracy]
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: chatgpt/guard-nav-proximity-by-accuracy
+
+      - name: Apply accuracy-aware proximity guard
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("js/app.js")
+          text = path.read_text()
+          old = '''    let advancedThisFix = false;
+    while (navStepIdx < navSteps.length - 1) {
+      const currentStep = navSteps[navStepIdx];
+      const end = currentStep.end_location;
+      const routeRemaining = stepRemainingDistance(here, currentStep, continuityPrevious);
+      const crossedSinceLast = segmentPassesNear(continuityPrevious, here, end, 25) &&
+        routeRemaining < 1;
+      const nearEnd = meters(here, end) < 25 && routeRemaining < 25;
+'''
+          new = '''    const proximityAccuracy = lastPositionAccuracy !== null ? lastPositionAccuracy : 0;
+    let advancedThisFix = false;
+    while (navStepIdx < navSteps.length - 1) {
+      const currentStep = navSteps[navStepIdx];
+      const end = currentStep.end_location;
+      const routeRemaining = stepRemainingDistance(here, currentStep, continuityPrevious);
+      const crossedSinceLast = segmentPassesNear(continuityPrevious, here, end, 25) &&
+        routeRemaining < 1;
+      const nearEnd = meters(here, end) + proximityAccuracy < 25 && routeRemaining < 25;
+'''
+          if text.count(old) != 1:
+              raise SystemExit(f"expected one nearEnd anchor, found {text.count(old)}")
+          text = text.replace(old, new)
+
+          old_arrival = '''    if (isLast && directEndDist < 20 && turnDist < 20) {
+'''
+          new_arrival = '''    if (isLast && directEndDist + proximityAccuracy < 20 && turnDist < 20) {
+'''
+          if text.count(old_arrival) != 1:
+              raise SystemExit(f"expected one arrival anchor, found {text.count(old_arrival)}")
+          text = text.replace(old_arrival, new_arrival)
+          path.write_text(text)
+
+      - name: Verify change
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check js/app.js
+          git diff --check
+          grep -Fq 'const proximityAccuracy = lastPositionAccuracy !== null ? lastPositionAccuracy : 0;' js/app.js
+          grep -Fq 'const nearEnd = meters(here, end) + proximityAccuracy < 25 && routeRemaining < 25;' js/app.js
+          grep -Fq 'if (isLast && directEndDist + proximityAccuracy < 20 && turnDist < 20) {' js/app.js
+          if git grep -nE 'AIza[0-9A-Za-z_-]{35}' -- .; then
+            echo '::error::A Google API key pattern is present in a tracked file'
+            exit 1
+          fi
+
+      - name: Commit final change and remove helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'ChatGPT Codex Connector'
+          git config user.email '1144995+chatgpt-codex-connector[bot]@users.noreply.github.com'
+          git rm .github/workflows/chatgpt-nav-proximity-one-shot.yml
+          git add js/app.js
+          git commit -m 'Guard navigation proximity with GPS accuracy'
+          git push origin HEAD:chatgpt/guard-nav-proximity-by-accuracy
