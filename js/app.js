@@ -709,6 +709,9 @@
   }
 
   function enterPickMode() {
+    if (navMode && !navRerouting && !els.navBanner.classList.contains("hidden")) {
+      routePreviousNavBanner = els.navBanner.innerHTML; // picker failure 時に旧ナビ案内を復元
+    }
     if (navRerouting) {
       routeRequestId++; // picker が D-pad を引き継いだら進行中の Directions callback を無効化
       navRerouting = false;
@@ -743,9 +746,11 @@
     const requestId = ++routeRequestId;
     const routeTravelMode = requestedTravelMode || travelMode;
     navRerouting = true; // 経路要求中は既存ルートからの自動リルートを抑止
-    routePreviousNavBanner = navMode && !els.navBanner.classList.contains("hidden")
-      ? els.navBanner.innerHTML
-      : null;
+    if (!(resumeFollowOnFailure && navMode && routePreviousNavBanner)) {
+      routePreviousNavBanner = navMode && !els.navBanner.classList.contains("hidden")
+        ? els.navBanner.innerHTML
+        : null;
+    }
     setNavBanner(isReroute ? "ルートを再計算中…" : "経路を計算中…");
     directionsService.route(
       { origin, destination: dest, travelMode: google.maps.TravelMode[routeTravelMode] },
