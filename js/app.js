@@ -55,6 +55,9 @@
   let navLastPosition = null; // 前回のナビ位置（曲がり角通過の取りこぼし補完）
   let navLastPositionTimestamp = null; // 前回ナビ位置の GPS fix 時刻
   let navLastPositionAccuracy = null; // 前回ナビ位置の GPS 精度半径 (m)
+  let navStepProgressIdx = -1; // off-route 判定で通過済み current-step geometry を除外する進捗 anchor
+  let navStepProgressSegment = 0;
+  let navStepProgressT = 0;
   let navDestination = null; // リルート用に目的地を保持
   let navFullPath = []; // オフルート判定用の詳細経路点
   let offRouteCount = 0;
@@ -801,6 +804,9 @@
           navLastPosition = null;
           navLastPositionTimestamp = null;
           navLastPositionAccuracy = null;
+          navStepProgressIdx = -1;
+          navStepProgressSegment = 0;
+          navStepProgressT = 0;
           offRouteCount = 0;
           lastOffRouteEvidenceTimestamp = null;
           navBounds = res.routes[0].bounds || null;
@@ -878,6 +884,9 @@
     navLastPosition = null;
     navLastPositionTimestamp = null;
     navLastPositionAccuracy = null;
+    navStepProgressIdx = -1;
+    navStepProgressSegment = 0;
+    navStepProgressT = 0;
     navSteps = [];
     navFullPath = [];
     navDestination = null;
@@ -990,9 +999,12 @@
   }
 
   // 現在ステップの polyline 上で現在地に最も近い区間を求め、終端までの道なり距離を返す。
-  function stepRemainingDistance(here, step, previous = null, accuracy = 0) {
+  function stepRemainingDistance(here, step, previous = null, accuracy = 0, progressOut = null) {
     const path = step.path || [];
-    if (path.length < 2) return meters(here, step.end_location);
+    if (path.length < 2) {
+      if (progressOut) { progressOut.segment = 0; progressOut.t = 0; }
+      return meters(here, step.end_location);
+    }
 
     const hereLat = here.lat();
     const hereLng = here.lng();
@@ -1045,6 +1057,11 @@
         nearestSegment = i;
         nearestT = t;
       }
+    }
+
+    if (progressOut) {
+      progressOut.segment = nearestSegment;
+      progressOut.t = nearestT;
     }
 
     let dist = 0;
@@ -1147,7 +1164,10 @@
     }
     const step = navSteps[navStepIdx];
     const directEndDist = meters(here, step.end_location);
-    const turnDist = stepRemainingDistance(here, step, snapPrevious, proximityAccuracy);
+    const stepProgress = {};
+    const turnDist = stepRemainingDistance(
+      here, step, snapPrevious, proximityAccuracy, stepProgress
+    );
     const isLast = navStepIdx === navSteps.length - 1;
 
     if (isLast && directEndDist + proximityAccuracy < 20 && turnDist < 20) {
@@ -1168,7 +1188,19 @@
     );
 
     if (followMode) autoZoomForTurn(turnDist, isLast); // 全体表示中は自動ズームしない
-    rerouteIfOffRoute(here, confirmOffRouteImmediately);
+    const confidentlyOnRoute = rerouteIfOffRoute(here, confirmOffRouteImmediately);
+    if (confidentlyOnRoute && Number.isInteger(stepProgress.segment) && Number.isFinite(stepProgress.t)) {
+      const progressT = Math.max(0, Math.min(1, stepProgress.t));
+      if (
+        navStepProgressIdx !== navStepIdx ||
+        stepProgress.segment > navStepProgressSegment ||
+        (stepProgress.segment === navStepProgressSegment && progressT > navStepProgressT)
+      ) {
+        navStepProgressIdx = navStepIdx;
+        navStepProgressSegment = stepProgress.segment;
+        navStepProgressT = progressT;
+      }
+    }
   }
 
   // 到着予想時刻（現在時刻 + 残り秒）
@@ -1207,7 +1239,7 @@
 
   // ルートから外れ続けたら現在地から再計算
   function rerouteIfOffRoute(here, confirmImmediately = false) {
-    if (navRerouting || !navFullPath.length || !navDestination) return;
+    if (navRerouting || !navFullPath.length || !navDestination) return false;
     const accuracyMargin = lastPositionAccuracy !== null ? lastPositionAccuracy : 0;
     const offRouteThreshold = 35 + accuracyMargin;
     const onRouteThreshold = Math.max(0, 35 - accuracyMargin);
@@ -1218,8 +1250,17 @@
         ? step.path
         : [step.start_location, step.end_location];
       if (path.length === 1) min = Math.min(min, meters(here, path[0]));
-      for (let i = 0; i < path.length - 1; i++) {
-        const dd = distanceToSegment(here, path[i], path[i + 1]);
+      const hasProgressAnchor = stepIdx === navStepIdx &&
+        navStepProgressIdx === navStepIdx && path.length > 1;
+      const firstSegment = hasProgressAnchor
+        ? Math.min(navStepProgressSegment, path.length - 2)
+        : 0;
+      const firstT = hasProgressAnchor ? navStepProgressT : 0;
+      for (let i = firstSegment; i < path.length - 1; i++) {
+        const segmentStart = i === firstSegment && firstT > 0
+          ? google.maps.geometry.spherical.interpolate(path[i], path[i + 1], firstT)
+          : path[i];
+        const dd = distanceToSegment(here, segmentStart, path[i + 1]);
         if (dd < min) min = dd;
         if (min <= offRouteThreshold) break;
       }
@@ -1245,6 +1286,7 @@
       offRouteCount = 0;
       lastOffRouteEvidenceTimestamp = null;
     }
+    return min <= onRouteThreshold;
   }
 
   function onPosition(pos) {
