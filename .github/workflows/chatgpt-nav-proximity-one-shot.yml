@@ -16,43 +16,25 @@ jobs:
           ref: chatgpt/guard-nav-proximity-by-accuracy
 
       - name: Apply accuracy-aware proximity guard
-        shell: python
+        shell: bash
         run: |
+          set -euo pipefail
+          python3 - <<'PY'
           from pathlib import Path
-
           path = Path("js/app.js")
           text = path.read_text()
-          old = '''    let advancedThisFix = false;
-    while (navStepIdx < navSteps.length - 1) {
-      const currentStep = navSteps[navStepIdx];
-      const end = currentStep.end_location;
-      const routeRemaining = stepRemainingDistance(here, currentStep, continuityPrevious);
-      const crossedSinceLast = segmentPassesNear(continuityPrevious, here, end, 25) &&
-        routeRemaining < 1;
-      const nearEnd = meters(here, end) < 25 && routeRemaining < 25;
-'''
-          new = '''    const proximityAccuracy = lastPositionAccuracy !== null ? lastPositionAccuracy : 0;
-    let advancedThisFix = false;
-    while (navStepIdx < navSteps.length - 1) {
-      const currentStep = navSteps[navStepIdx];
-      const end = currentStep.end_location;
-      const routeRemaining = stepRemainingDistance(here, currentStep, continuityPrevious);
-      const crossedSinceLast = segmentPassesNear(continuityPrevious, here, end, 25) &&
-        routeRemaining < 1;
-      const nearEnd = meters(here, end) + proximityAccuracy < 25 && routeRemaining < 25;
-'''
+          old = "    let advancedThisFix = false;\n    while (navStepIdx < navSteps.length - 1) {\n      const currentStep = navSteps[navStepIdx];\n      const end = currentStep.end_location;\n      const routeRemaining = stepRemainingDistance(here, currentStep, continuityPrevious);\n      const crossedSinceLast = segmentPassesNear(continuityPrevious, here, end, 25) &&\n        routeRemaining < 1;\n      const nearEnd = meters(here, end) < 25 && routeRemaining < 25;\n"
+          new = "    const proximityAccuracy = lastPositionAccuracy !== null ? lastPositionAccuracy : 0;\n    let advancedThisFix = false;\n    while (navStepIdx < navSteps.length - 1) {\n      const currentStep = navSteps[navStepIdx];\n      const end = currentStep.end_location;\n      const routeRemaining = stepRemainingDistance(here, currentStep, continuityPrevious);\n      const crossedSinceLast = segmentPassesNear(continuityPrevious, here, end, 25) &&\n        routeRemaining < 1;\n      const nearEnd = meters(here, end) + proximityAccuracy < 25 && routeRemaining < 25;\n"
           if text.count(old) != 1:
               raise SystemExit(f"expected one nearEnd anchor, found {text.count(old)}")
           text = text.replace(old, new)
-
-          old_arrival = '''    if (isLast && directEndDist < 20 && turnDist < 20) {
-'''
-          new_arrival = '''    if (isLast && directEndDist + proximityAccuracy < 20 && turnDist < 20) {
-'''
+          old_arrival = "    if (isLast && directEndDist < 20 && turnDist < 20) {\n"
+          new_arrival = "    if (isLast && directEndDist + proximityAccuracy < 20 && turnDist < 20) {\n"
           if text.count(old_arrival) != 1:
               raise SystemExit(f"expected one arrival anchor, found {text.count(old_arrival)}")
           text = text.replace(old_arrival, new_arrival)
           path.write_text(text)
+          PY
 
       - name: Verify change
         shell: bash
