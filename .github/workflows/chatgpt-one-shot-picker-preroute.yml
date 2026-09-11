@@ -1,0 +1,79 @@
+name: ChatGPT one-shot picker pre-route follow fix
+
+on:
+  push:
+    branches:
+      - chatgpt/resume-picker-follow-before-route
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-verify:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: chatgpt/resume-picker-follow-before-route
+
+      - name: Apply atomic picker pre-route recovery fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('js/app.js')
+          text = path.read_text()
+          old = '''    if (!origin) {
+              showError("現在地が未取得", "先に ◎ で現在地を取得してください。", "geolocation");
+              return;
+            }
+          '''
+          new = '''    if (!origin) {
+              if (resumeFollowOnFailure) {
+                followMode = true;
+                setNavBanner(navMode ? routePreviousNavBanner : null);
+                routePreviousNavBanner = null;
+              }
+              showError("現在地が未取得", "先に ◎ で現在地を取得してください。", "geolocation");
+              return;
+            }
+          '''
+          if text.count(old) != 1:
+              raise SystemExit(f'expected exactly one pre-route origin guard, found {text.count(old)}')
+          path.write_text(text.replace(old, new, 1))
+          PY
+
+      - name: Verify change
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check js/app.js
+          git diff --check
+          python3 - <<'PY'
+          from pathlib import Path
+          text = Path('js/app.js').read_text()
+          required = [
+              'if (resumeFollowOnFailure) {',
+              'followMode = true;',
+              'setNavBanner(navMode ? routePreviousNavBanner : null);',
+              'routePreviousNavBanner = null;',
+          ]
+          for item in required:
+              if item not in text:
+                  raise SystemExit(f'missing expected source: {item}')
+          PY
+          changed=$(git diff --name-only)
+          test "$changed" = "js/app.js"
+
+      - name: Commit code and remove helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/chatgpt-one-shot-picker-preroute.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add js/app.js .github/workflows/chatgpt-one-shot-picker-preroute.yml
+          git commit -m 'Resume follow mode when picker route cannot start'
+          git push
