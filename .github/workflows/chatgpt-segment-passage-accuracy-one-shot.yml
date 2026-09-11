@@ -1,0 +1,104 @@
+name: ChatGPT segment passage accuracy one-shot
+
+on:
+  push:
+    branches: [chatgpt/guard-segment-passage-by-accuracy]
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: chatgpt/guard-segment-passage-by-accuracy
+
+      - name: Apply accuracy-aware segment passage guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("js/app.js")
+          text = path.read_text()
+
+          replacements = [
+              (
+                  "  let navLastPositionTimestamp = null; // 前回ナビ位置の GPS fix 時刻\n  let navDestination = null; // リルート用に目的地を保持\n",
+                  "  let navLastPositionTimestamp = null; // 前回ナビ位置の GPS fix 時刻\n  let navLastPositionAccuracy = null; // 前回ナビ位置の GPS 精度半径 (m)\n  let navDestination = null; // リルート用に目的地を保持\n",
+                  "navigation accuracy state",
+              ),
+              (
+                  "          navLastPosition = null;\n          navLastPositionTimestamp = null;\n          offRouteCount = 0;\n",
+                  "          navLastPosition = null;\n          navLastPositionTimestamp = null;\n          navLastPositionAccuracy = null;\n          offRouteCount = 0;\n",
+                  "route reset",
+              ),
+              (
+                  "    navLastPosition = null;\n    navLastPositionTimestamp = null;\n    navSteps = [];\n",
+                  "    navLastPosition = null;\n    navLastPositionTimestamp = null;\n    navLastPositionAccuracy = null;\n    navSteps = [];\n",
+                  "cancel reset",
+              ),
+              (
+                  "  function segmentPassesNear(a, b, target, radius) {\n",
+                  "  function segmentPassesNear(a, b, target, radius, aAccuracy = 0, bAccuracy = 0) {\n",
+                  "segment signature",
+              ),
+              (
+                  "    const px = ax + t * dx;\n    const py = ay + t * dy;\n    return px * px + py * py < radius * radius;\n",
+                  "    const px = ax + t * dx;\n    const py = ay + t * dy;\n    const safeAAccuracy = Number.isFinite(aAccuracy) ? Math.max(0, aAccuracy) : 0;\n    const safeBAccuracy = Number.isFinite(bAccuracy) ? Math.max(0, bAccuracy) : 0;\n    const passageAccuracy = safeAAccuracy * (1 - t) + safeBAccuracy * t;\n    return Math.hypot(px, py) + passageAccuracy < radius;\n",
+                  "segment uncertainty",
+              ),
+              (
+                  "    const previous = navLastPosition;\n    const previousTimestamp = navLastPositionTimestamp;\n    const continuityTimestamp = lastPositionTimestamp;\n",
+                  "    const previous = navLastPosition;\n    const previousTimestamp = navLastPositionTimestamp;\n    const previousAccuracy = navLastPositionAccuracy;\n    const continuityTimestamp = lastPositionTimestamp;\n    const proximityAccuracy = lastPositionAccuracy !== null ? lastPositionAccuracy : 0;\n",
+                  "previous accuracy capture",
+              ),
+              (
+                  "    const continuityPrevious = previous && continuousInTime && meters(previous, here) <= 250 ? previous : null;\n    navLastPosition = here;\n    navLastPositionTimestamp = continuityTimestamp;\n\n    // 通過した手順を進める。1つの GPS fix では「25m以内」だけを根拠に複数手順を飛ばさない。\n    // 複数手順を一気に進めるのは、前回→今回の移動区間が各終端を実際に横切った場合だけ。\n    const proximityAccuracy = lastPositionAccuracy !== null ? lastPositionAccuracy : 0;\n",
+                  "    const continuityPrevious = previous && continuousInTime && meters(previous, here) <= 250 ? previous : null;\n    const continuityPreviousAccuracy = continuityPrevious && previousAccuracy !== null ? previousAccuracy : 0;\n    navLastPosition = here;\n    navLastPositionTimestamp = continuityTimestamp;\n    navLastPositionAccuracy = lastPositionAccuracy;\n\n    // 通過した手順を進める。1つの GPS fix では「25m以内」だけを根拠に複数手順を飛ばさない。\n    // 複数手順を一気に進めるのは、前回→今回の移動区間が各終端を実際に横切った場合だけ。\n",
+                  "continuity accuracy",
+              ),
+              (
+                  "      const crossedSinceLast = segmentPassesNear(continuityPrevious, here, end, 25) &&\n",
+                  "      const crossedSinceLast = segmentPassesNear(\n        continuityPrevious, here, end, 25, continuityPreviousAccuracy, proximityAccuracy\n      ) &&\n",
+                  "accuracy-aware crossing call",
+              ),
+          ]
+
+          for old, new, label in replacements:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"expected one {label} anchor, found {count}")
+              text = text.replace(old, new)
+
+          path.write_text(text)
+          PY
+
+      - name: Verify change
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check js/app.js
+          git diff --check
+          grep -Fq 'let navLastPositionAccuracy = null;' js/app.js
+          grep -Fq 'const passageAccuracy = safeAAccuracy * (1 - t) + safeBAccuracy * t;' js/app.js
+          grep -Fq 'continuityPrevious, here, end, 25, continuityPreviousAccuracy, proximityAccuracy' js/app.js
+          test "$(git diff --name-only | sort)" = "js/app.js"
+          if git grep -nE 'AIza[0-9A-Za-z_-]{35}' -- .; then
+            echo '::error::A Google API key pattern is present in a tracked file'
+            exit 1
+          fi
+
+      - name: Commit final change and remove helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'ChatGPT Codex Connector'
+          git config user.email '1144995+chatgpt-codex-connector[bot]@users.noreply.github.com'
+          git rm .github/workflows/chatgpt-segment-passage-accuracy-one-shot.yml
+          git add js/app.js
+          git commit -m 'Guard segment passage with GPS accuracy'
+          git push origin HEAD:chatgpt/guard-segment-passage-by-accuracy
