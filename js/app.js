@@ -1211,10 +1211,18 @@
     const accuracyMargin = lastPositionAccuracy !== null ? lastPositionAccuracy : 0;
     const offRouteThreshold = 35 + accuracyMargin;
     const onRouteThreshold = Math.max(0, 35 - accuracyMargin);
-    let min = navFullPath.length === 1 ? meters(here, navFullPath[0]) : Infinity;
-    for (let i = 0; i < navFullPath.length - 1; i++) {
-      const dd = distanceToSegment(here, navFullPath[i], navFullPath[i + 1]);
-      if (dd < min) min = dd;
+    let min = Infinity;
+    for (let stepIdx = navStepIdx; stepIdx < navSteps.length; stepIdx++) {
+      const step = navSteps[stepIdx];
+      const path = step.path && step.path.length
+        ? step.path
+        : [step.start_location, step.end_location];
+      if (path.length === 1) min = Math.min(min, meters(here, path[0]));
+      for (let i = 0; i < path.length - 1; i++) {
+        const dd = distanceToSegment(here, path[i], path[i + 1]);
+        if (dd < min) min = dd;
+        if (min <= offRouteThreshold) break;
+      }
       if (min <= offRouteThreshold) break;
     }
     const evidenceExpired = offRouteCount > 0 &&
