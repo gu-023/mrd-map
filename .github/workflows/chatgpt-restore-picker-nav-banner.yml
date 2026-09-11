@@ -25,25 +25,14 @@ jobs:
           path = Path("js/app.js")
           text = path.read_text()
 
-          old_enter = '''  function enterPickMode() {
-              if (navRerouting) {'''.replace('              ', '    ')
-          new_enter = '''  function enterPickMode() {
-              if (navMode && !navRerouting && !els.navBanner.classList.contains("hidden")) {
-                routePreviousNavBanner = els.navBanner.innerHTML; // picker failure 時に旧ナビ案内を復元
-              }
-              if (navRerouting) {'''.replace('              ', '    ')
+          old_enter = '  function enterPickMode() {\n    if (navRerouting) {'
+          new_enter = '  function enterPickMode() {\n    if (navMode && !navRerouting && !els.navBanner.classList.contains("hidden")) {\n      routePreviousNavBanner = els.navBanner.innerHTML; // picker failure 時に旧ナビ案内を復元\n    }\n    if (navRerouting) {'
           if text.count(old_enter) != 1:
               raise SystemExit(f"enterPickMode anchor count={text.count(old_enter)}")
           text = text.replace(old_enter, new_enter, 1)
 
-          old_capture = '''    routePreviousNavBanner = navMode && !els.navBanner.classList.contains("hidden")
-              ? els.navBanner.innerHTML
-              : null;'''.replace('              ', '      ')
-          new_capture = '''    if (!(resumeFollowOnFailure && navMode && routePreviousNavBanner)) {
-              routePreviousNavBanner = navMode && !els.navBanner.classList.contains("hidden")
-                ? els.navBanner.innerHTML
-                : null;
-              }'''.replace('              ', '      ')
+          old_capture = '    routePreviousNavBanner = navMode && !els.navBanner.classList.contains("hidden")\n      ? els.navBanner.innerHTML\n      : null;'
+          new_capture = '    if (!(resumeFollowOnFailure && navMode && routePreviousNavBanner)) {\n      routePreviousNavBanner = navMode && !els.navBanner.classList.contains("hidden")\n        ? els.navBanner.innerHTML\n        : null;\n    }'
           if text.count(old_capture) != 1:
               raise SystemExit(f"route banner capture anchor count={text.count(old_capture)}")
           text = text.replace(old_capture, new_capture, 1)
