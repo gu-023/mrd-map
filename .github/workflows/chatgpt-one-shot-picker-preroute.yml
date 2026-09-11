@@ -25,23 +25,17 @@ jobs:
           from pathlib import Path
           path = Path('js/app.js')
           text = path.read_text()
-          old = '''    if (!origin) {
-              showError("現在地が未取得", "先に ◎ で現在地を取得してください。", "geolocation");
-              return;
-            }
-          '''
-          new = '''    if (!origin) {
-              if (resumeFollowOnFailure) {
-                followMode = true;
-                setNavBanner(navMode ? routePreviousNavBanner : null);
-                routePreviousNavBanner = null;
-              }
-              showError("現在地が未取得", "先に ◎ で現在地を取得してください。", "geolocation");
-              return;
-            }
-          '''
+          old = '      showError("現在地が未取得", "先に ◎ で現在地を取得してください。", "geolocation");\n'
+          new = (
+              '      if (resumeFollowOnFailure) {\n'
+              '        followMode = true;\n'
+              '        setNavBanner(navMode ? routePreviousNavBanner : null);\n'
+              '        routePreviousNavBanner = null;\n'
+              '      }\n'
+              + old
+          )
           if text.count(old) != 1:
-              raise SystemExit(f'expected exactly one pre-route origin guard, found {text.count(old)}')
+              raise SystemExit(f'expected exactly one pre-route geolocation error, found {text.count(old)}')
           path.write_text(text.replace(old, new, 1))
           PY
 
@@ -54,15 +48,19 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           text = Path('js/app.js').read_text()
-          required = [
-              'if (resumeFollowOnFailure) {',
-              'followMode = true;',
-              'setNavBanner(navMode ? routePreviousNavBanner : null);',
-              'routePreviousNavBanner = null;',
-          ]
-          for item in required:
-              if item not in text:
-                  raise SystemExit(f'missing expected source: {item}')
+          expected = (
+              '    if (!origin) {\n'
+              '      if (resumeFollowOnFailure) {\n'
+              '        followMode = true;\n'
+              '        setNavBanner(navMode ? routePreviousNavBanner : null);\n'
+              '        routePreviousNavBanner = null;\n'
+              '      }\n'
+              '      showError("現在地が未取得", "先に ◎ で現在地を取得してください。", "geolocation");\n'
+              '      return;\n'
+              '    }\n'
+          )
+          if text.count(expected) != 1:
+              raise SystemExit(f'expected final pre-route recovery block once, found {text.count(expected)}')
           PY
           changed=$(git diff --name-only)
           test "$changed" = "js/app.js"
