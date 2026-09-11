@@ -807,7 +807,12 @@
           signalData = [];
           if (signalsOn) fetchSignals(); // ルート周辺の信号機を取得
           const navPosition = currentPosition || origin;
-          updateNav({ lat: navPosition.lat(), lng: navPosition.lng() });
+          const confirmOffRouteImmediately = !isReroute && currentPosition &&
+            meters(currentPosition, origin) > 35;
+          updateNav(
+            { lat: navPosition.lat(), lng: navPosition.lng() },
+            confirmOffRouteImmediately
+          );
         } else {
           if (resumeFollowOnFailure) {
             followMode = true;
@@ -1064,7 +1069,7 @@
   }
 
   // 位置更新ごとに「次の曲がり角」と残り・オフルートを更新
-  function updateNav(p) {
+  function updateNav(p, confirmOffRouteImmediately = false) {
     if (!navMode || !navSteps.length || navArrived) return;
     const here = new google.maps.LatLng(p.lat, p.lng);
     const previous = navLastPosition;
@@ -1107,7 +1112,7 @@
     );
 
     if (followMode) autoZoomForTurn(turnDist, isLast); // 全体表示中は自動ズームしない
-    rerouteIfOffRoute(here);
+    rerouteIfOffRoute(here, confirmOffRouteImmediately);
   }
 
   // 到着予想時刻（現在時刻 + 残り秒）
@@ -1145,7 +1150,7 @@
   }
 
   // ルートから外れ続けたら現在地から再計算
-  function rerouteIfOffRoute(here) {
+  function rerouteIfOffRoute(here, confirmImmediately = false) {
     if (navRerouting || !navFullPath.length || !navDestination) return;
     let min = navFullPath.length === 1 ? meters(here, navFullPath[0]) : Infinity;
     for (let i = 0; i < navFullPath.length - 1; i++) {
@@ -1154,7 +1159,7 @@
       if (min <= 35) break;
     }
     if (min > 35) {
-      offRouteCount++;
+      offRouteCount = confirmImmediately ? 3 : offRouteCount + 1;
       if (offRouteCount >= 3) {
         offRouteCount = 0;
         computeRoute(navDestination, true);
