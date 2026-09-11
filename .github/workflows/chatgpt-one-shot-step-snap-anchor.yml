@@ -26,35 +26,27 @@ jobs:
           path = Path("js/app.js")
           text = path.read_text()
 
-          old = '''    const continuityPrevious = previous && continuousInTime && meters(previous, here) <= 250 ? previous : null;
-          const continuityPreviousAccuracy = continuityPrevious && previousAccuracy !== null ? previousAccuracy : 0;
-          '''
-          new = '''    const snapPrevious = previous && meters(previous, here) <= 250 ? previous : null;
-          const continuityPrevious = snapPrevious && continuousInTime ? snapPrevious : null;
-          const continuityPreviousAccuracy = continuityPrevious && previousAccuracy !== null ? previousAccuracy : 0;
-          '''
+          old = "    const continuityPrevious = previous && continuousInTime && meters(previous, here) <= 250 ? previous : null;\n"
+          new = (
+              "    const snapPrevious = previous && meters(previous, here) <= 250 ? previous : null;\n"
+              "    const continuityPrevious = snapPrevious && continuousInTime ? snapPrevious : null;\n"
+          )
           if text.count(old) != 1:
               raise SystemExit(f"expected one continuity anchor, found {text.count(old)}")
           text = text.replace(old, new, 1)
 
           replacements = [
               (
-                  '''        here, currentStep, continuityPrevious, proximityAccuracy
-          ''',
-                  '''        here, currentStep, snapPrevious, proximityAccuracy
-          ''',
+                  "        here, currentStep, continuityPrevious, proximityAccuracy\n",
+                  "        here, currentStep, snapPrevious, proximityAccuracy\n",
               ),
               (
-                  '''    const turnDist = stepRemainingDistance(here, step, continuityPrevious, proximityAccuracy);
-          ''',
-                  '''    const turnDist = stepRemainingDistance(here, step, snapPrevious, proximityAccuracy);
-          ''',
+                  "    const turnDist = stepRemainingDistance(here, step, continuityPrevious, proximityAccuracy);\n",
+                  "    const turnDist = stepRemainingDistance(here, step, snapPrevious, proximityAccuracy);\n",
               ),
               (
-                  '''    const rem = remaining(here, continuityPrevious, proximityAccuracy);
-          ''',
-                  '''    const rem = remaining(here, snapPrevious, proximityAccuracy);
-          ''',
+                  "    const rem = remaining(here, continuityPrevious, proximityAccuracy);\n",
+                  "    const rem = remaining(here, snapPrevious, proximityAccuracy);\n",
               ),
           ]
           for old_part, new_part in replacements:
