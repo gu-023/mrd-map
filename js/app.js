@@ -730,10 +730,10 @@
   function confirmDestination() {
     const dest = map.getCenter();
     exitPickMode();
-    computeRoute(dest);
+    computeRoute(dest, false, undefined, undefined, true);
   }
 
-  function computeRoute(dest, isReroute, name, requestedTravelMode) {
+  function computeRoute(dest, isReroute, name, requestedTravelMode, resumeFollowOnFailure) {
     const origin = userMarker.getPosition();
     if (!origin) {
       showError("現在地が未取得", "先に ◎ で現在地を取得してください。", "geolocation");
@@ -797,16 +797,22 @@
           signalData = [];
           if (signalsOn) fetchSignals(); // ルート周辺の信号機を取得
           updateNav({ lat: origin.lat(), lng: origin.lng() });
-        } else if (status === "REQUEST_DENIED") {
-          showError(
-            "経路を取得できません",
-            "ステータス: <code>REQUEST_DENIED</code><br>" +
-            "APIキーの「APIの制限」に <b>Directions API</b> を追加してください。",
-            "directions"
-          );
-          setNavBanner(previousNavBanner);
         } else {
-          showError("経路を取得できません", `ステータス: <code>${status}</code>`, "directions");
+          if (resumeFollowOnFailure) {
+            followMode = true;
+            const currentPosition = userMarker && userMarker.getPosition();
+            if (currentPosition) map.panTo(currentPosition);
+          }
+          if (status === "REQUEST_DENIED") {
+            showError(
+              "経路を取得できません",
+              "ステータス: <code>REQUEST_DENIED</code><br>" +
+              "APIキーの「APIの制限」に <b>Directions API</b> を追加してください。",
+              "directions"
+            );
+          } else {
+            showError("経路を取得できません", `ステータス: <code>${status}</code>`, "directions");
+          }
           setNavBanner(previousNavBanner);
         }
       }
