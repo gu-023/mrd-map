@@ -209,6 +209,7 @@
    * そのため自動取得はせず、◎ボタン押下の中で getCurrentPosition を直接呼ぶ。
    */
   let geoWatchStarted = false;
+  let lastPositionAccuracy = null; // 最新 GPS fix の精度半径 (m)
   let gpsStatusText = ""; // コンパス中も最新の GPS 状態文言を保持
 
   function startGeolocation() {
@@ -1152,13 +1153,17 @@
   // ルートから外れ続けたら現在地から再計算
   function rerouteIfOffRoute(here, confirmImmediately = false) {
     if (navRerouting || !navFullPath.length || !navDestination) return;
+    const accuracyMargin = confirmImmediately && lastPositionAccuracy !== null
+      ? lastPositionAccuracy
+      : 0;
+    const offRouteThreshold = 35 + accuracyMargin;
     let min = navFullPath.length === 1 ? meters(here, navFullPath[0]) : Infinity;
     for (let i = 0; i < navFullPath.length - 1; i++) {
       const dd = distanceToSegment(here, navFullPath[i], navFullPath[i + 1]);
       if (dd < min) min = dd;
-      if (min <= 35) break;
+      if (min <= offRouteThreshold) break;
     }
-    if (min > 35) {
+    if (min > offRouteThreshold) {
       offRouteCount = confirmImmediately ? 3 : offRouteCount + 1;
       if (offRouteCount >= 3) {
         offRouteCount = 0;
@@ -1173,6 +1178,7 @@
     clearError("geolocation"); // 取得できたら位置情報エラーだけを消す
     const { latitude, longitude, accuracy } = pos.coords;
     const p = { lat: latitude, lng: longitude };
+    lastPositionAccuracy = Number.isFinite(accuracy) ? Math.max(0, accuracy) : null;
     userMarker.setPosition(p);
     accuracyCircle.setCenter(p);
     accuracyCircle.setRadius(accuracy || 0);
