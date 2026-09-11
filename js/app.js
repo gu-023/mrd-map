@@ -739,6 +739,11 @@
   function computeRoute(dest, isReroute, name, requestedTravelMode, resumeFollowOnFailure) {
     const origin = userMarker.getPosition();
     if (!origin) {
+      if (resumeFollowOnFailure) {
+        followMode = true;
+        setNavBanner(navMode ? routePreviousNavBanner : null);
+        routePreviousNavBanner = null;
+      }
       showError("現在地が未取得", "先に ◎ で現在地を取得してください。", "geolocation");
       return;
     }
