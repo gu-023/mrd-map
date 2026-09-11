@@ -1,0 +1,97 @@
+name: ChatGPT one-shot step snap anchor
+
+on:
+  push:
+    branches:
+      - chatgpt/preserve-step-snap-anchor-after-gap
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Apply atomic navigation snap fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("js/app.js")
+          text = path.read_text()
+
+          old = '''    const continuityPrevious = previous && continuousInTime && meters(previous, here) <= 250 ? previous : null;
+          const continuityPreviousAccuracy = continuityPrevious && previousAccuracy !== null ? previousAccuracy : 0;
+          '''
+          new = '''    const snapPrevious = previous && meters(previous, here) <= 250 ? previous : null;
+          const continuityPrevious = snapPrevious && continuousInTime ? snapPrevious : null;
+          const continuityPreviousAccuracy = continuityPrevious && previousAccuracy !== null ? previousAccuracy : 0;
+          '''
+          if text.count(old) != 1:
+              raise SystemExit(f"expected one continuity anchor, found {text.count(old)}")
+          text = text.replace(old, new, 1)
+
+          replacements = [
+              (
+                  '''        here, currentStep, continuityPrevious, proximityAccuracy
+          ''',
+                  '''        here, currentStep, snapPrevious, proximityAccuracy
+          ''',
+              ),
+              (
+                  '''    const turnDist = stepRemainingDistance(here, step, continuityPrevious, proximityAccuracy);
+          ''',
+                  '''    const turnDist = stepRemainingDistance(here, step, snapPrevious, proximityAccuracy);
+          ''',
+              ),
+              (
+                  '''    const rem = remaining(here, continuityPrevious, proximityAccuracy);
+          ''',
+                  '''    const rem = remaining(here, snapPrevious, proximityAccuracy);
+          ''',
+              ),
+          ]
+          for old_part, new_part in replacements:
+              if text.count(old_part) != 1:
+                  raise SystemExit(f"expected one source occurrence for {old_part!r}, found {text.count(old_part)}")
+              text = text.replace(old_part, new_part, 1)
+
+          path.write_text(text)
+          PY
+
+      - name: Static verification
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check js/app.js
+          git diff --check
+          grep -q 'const snapPrevious = previous && meters(previous, here) <= 250 ? previous : null;' js/app.js
+          grep -q 'const continuityPrevious = snapPrevious && continuousInTime ? snapPrevious : null;' js/app.js
+          test "$(grep -c 'stepRemainingDistance(here, step, snapPrevious, proximityAccuracy)' js/app.js)" -eq 1
+          test "$(grep -c 'remaining(here, snapPrevious, proximityAccuracy)' js/app.js)" -eq 1
+          if git grep -nE 'AIza[0-9A-Za-z_-]{35}' -- .; then
+            echo "::error::A Google API key pattern is present in a tracked file"
+            exit 1
+          fi
+
+      - name: Remove helper, verify final diff, commit, and push
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/chatgpt-one-shot-step-snap-anchor.yml
+          git fetch origin main
+          changed="$(git diff --name-only origin/main | sort)"
+          test "$changed" = "js/app.js"
+          git diff --check origin/main
+          git config user.name "ChatGPT Codex Connector"
+          git config user.email "1144995+chatgpt-codex-connector[bot]@users.noreply.github.com"
+          git add js/app.js .github/workflows/chatgpt-one-shot-step-snap-anchor.yml
+          git diff --cached --check
+          git commit -m "Preserve step snap context after navigation gaps"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
