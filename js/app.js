@@ -989,7 +989,7 @@
   }
 
   // 現在ステップの polyline 上で現在地に最も近い区間を求め、終端までの道なり距離を返す。
-  function stepRemainingDistance(here, step, previous = null) {
+  function stepRemainingDistance(here, step, previous = null, accuracy = 0) {
     const path = step.path || [];
     if (path.length < 2) return meters(here, step.end_location);
 
@@ -1000,7 +1000,8 @@
     let nearestT = 0;
     let nearestOffsetSq = Infinity;
     let nearestPreviousOffsetSq = Infinity;
-    const continuityTie = 3 / 111320; // 現在地が約3m以内で同程度なら前回fixに近い区間を優先
+    const safeAccuracy = Number.isFinite(accuracy) ? Math.max(0, accuracy) : 0;
+    const continuityTie = Math.max(3, safeAccuracy) / 111320; // GPS誤差内で競合する区間は前回fixとの連続性を優先
     const previousX = previous ? (previous.lng() - hereLng) * cosLat : 0;
     const previousY = previous ? previous.lat() - hereLat : 0;
 
@@ -1060,9 +1061,9 @@
   }
 
   // 残り距離・時間（現在地から終点まで）
-  function remaining(here, previous = null) {
+  function remaining(here, previous = null, accuracy = 0) {
     const cur = navSteps[navStepIdx];
-    let dist = stepRemainingDistance(here, cur, previous);
+    let dist = stepRemainingDistance(here, cur, previous, accuracy);
     let sec = 0;
     const curDist = cur.distance ? cur.distance.value : dist;
     const curSec = cur.duration ? cur.duration.value : 0;
@@ -1122,7 +1123,9 @@
     while (navStepIdx < navSteps.length - 1) {
       const currentStep = navSteps[navStepIdx];
       const end = currentStep.end_location;
-      const routeRemaining = stepRemainingDistance(here, currentStep, continuityPrevious);
+      const routeRemaining = stepRemainingDistance(
+        here, currentStep, continuityPrevious, proximityAccuracy
+      );
       const crossedSinceLast = segmentPassesNear(
         continuityPrevious, here, end, 25, continuityPreviousAccuracy, proximityAccuracy
       ) &&
@@ -1134,7 +1137,7 @@
     }
     const step = navSteps[navStepIdx];
     const directEndDist = meters(here, step.end_location);
-    const turnDist = stepRemainingDistance(here, step, continuityPrevious);
+    const turnDist = stepRemainingDistance(here, step, continuityPrevious, proximityAccuracy);
     const isLast = navStepIdx === navSteps.length - 1;
 
     if (isLast && directEndDist + proximityAccuracy < 20 && turnDist < 20) {
@@ -1146,7 +1149,7 @@
       return;
     }
 
-    const rem = remaining(here, continuityPrevious);
+    const rem = remaining(here, continuityPrevious, proximityAccuracy);
     setNavBanner(
       `<div class="nav-main"><span class="nav-arrow">${maneuverArrow(step.maneuver)}</span> ` +
       `<span class="nav-dist">${fmtDist(turnDist)}</span></div>` +
