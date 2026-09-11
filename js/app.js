@@ -1111,7 +1111,8 @@
       continuityTimestamp !== null &&
       continuityTimestamp > previousTimestamp &&
       continuityTimestamp - previousTimestamp <= NAV_POSITION_CONTINUITY_MAX_GAP_MS;
-    const continuityPrevious = previous && continuousInTime && meters(previous, here) <= 250 ? previous : null;
+    const snapPrevious = previous && meters(previous, here) <= 250 ? previous : null;
+    const continuityPrevious = snapPrevious && continuousInTime ? snapPrevious : null;
     const continuityPreviousAccuracy = continuityPrevious && previousAccuracy !== null ? previousAccuracy : 0;
     navLastPosition = here;
     navLastPositionTimestamp = continuityTimestamp;
@@ -1124,7 +1125,7 @@
       const currentStep = navSteps[navStepIdx];
       const end = currentStep.end_location;
       const routeRemaining = stepRemainingDistance(
-        here, currentStep, continuityPrevious, proximityAccuracy
+        here, currentStep, snapPrevious, proximityAccuracy
       );
       const crossedSinceLast = segmentPassesNear(
         continuityPrevious, here, end, 25, continuityPreviousAccuracy, proximityAccuracy
@@ -1137,7 +1138,7 @@
     }
     const step = navSteps[navStepIdx];
     const directEndDist = meters(here, step.end_location);
-    const turnDist = stepRemainingDistance(here, step, continuityPrevious, proximityAccuracy);
+    const turnDist = stepRemainingDistance(here, step, snapPrevious, proximityAccuracy);
     const isLast = navStepIdx === navSteps.length - 1;
 
     if (isLast && directEndDist + proximityAccuracy < 20 && turnDist < 20) {
@@ -1149,7 +1150,7 @@
       return;
     }
 
-    const rem = remaining(here, continuityPrevious, proximityAccuracy);
+    const rem = remaining(here, snapPrevious, proximityAccuracy);
     setNavBanner(
       `<div class="nav-main"><span class="nav-arrow">${maneuverArrow(step.maneuver)}</span> ` +
       `<span class="nav-dist">${fmtDist(turnDist)}</span></div>` +
