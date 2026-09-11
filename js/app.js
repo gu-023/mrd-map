@@ -1170,6 +1170,7 @@
     if (navRerouting || !navFullPath.length || !navDestination) return;
     const accuracyMargin = lastPositionAccuracy !== null ? lastPositionAccuracy : 0;
     const offRouteThreshold = 35 + accuracyMargin;
+    const onRouteThreshold = Math.max(0, 35 - accuracyMargin);
     let min = navFullPath.length === 1 ? meters(here, navFullPath[0]) : Infinity;
     for (let i = 0; i < navFullPath.length - 1; i++) {
       const dd = distanceToSegment(here, navFullPath[i], navFullPath[i + 1]);
@@ -1182,7 +1183,7 @@
         offRouteCount = 0;
         computeRoute(navDestination, true);
       }
-    } else {
+    } else if (min <= onRouteThreshold) {
       offRouteCount = 0;
     }
   }
