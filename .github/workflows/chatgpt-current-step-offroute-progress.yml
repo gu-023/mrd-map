@@ -1,0 +1,109 @@
+name: ChatGPT one-shot current-step off-route progress
+
+on:
+  push:
+    branches: [chatgpt/trim-current-step-offroute-corridor]
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-verify:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: chatgpt/trim-current-step-offroute-corridor
+
+      - name: Apply atomic product change
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('js/app.js')
+          text = path.read_text()
+
+          replacements = [
+              (
+                  '  let navLastPositionAccuracy = null; // 前回ナビ位置の GPS 精度半径 (m)\n  let navDestination = null;',
+                  '  let navLastPositionAccuracy = null; // 前回ナビ位置の GPS 精度半径 (m)\n  let navStepProgressIdx = -1; // off-route 判定で通過済み current-step geometry を除外する進捗 anchor\n  let navStepProgressSegment = 0;\n  let navStepProgressT = 0;\n  let navDestination = null;'
+              ),
+              (
+                  '          navLastPositionAccuracy = null;\n          offRouteCount = 0;',
+                  '          navLastPositionAccuracy = null;\n          navStepProgressIdx = -1;\n          navStepProgressSegment = 0;\n          navStepProgressT = 0;\n          offRouteCount = 0;'
+              ),
+              (
+                  '    navLastPositionAccuracy = null;\n    navSteps = [];',
+                  '    navLastPositionAccuracy = null;\n    navStepProgressIdx = -1;\n    navStepProgressSegment = 0;\n    navStepProgressT = 0;\n    navSteps = [];'
+              ),
+              (
+                  '  function stepRemainingDistance(here, step, previous = null, accuracy = 0) {',
+                  '  function stepRemainingDistance(here, step, previous = null, accuracy = 0, progressOut = null) {'
+              ),
+              (
+                  '    if (path.length < 2) return meters(here, step.end_location);',
+                  '    if (path.length < 2) {\n      if (progressOut) { progressOut.segment = 0; progressOut.t = 0; }\n      return meters(here, step.end_location);\n    }'
+              ),
+              (
+                  '    }\n\n    let dist = 0;\n    let pathDist = 0;',
+                  '    }\n\n    if (progressOut) {\n      progressOut.segment = nearestSegment;\n      progressOut.t = nearestT;\n    }\n\n    let dist = 0;\n    let pathDist = 0;'
+              ),
+              (
+                  '    const turnDist = stepRemainingDistance(here, step, snapPrevious, proximityAccuracy);',
+                  '    const stepProgress = {};\n    const turnDist = stepRemainingDistance(\n      here, step, snapPrevious, proximityAccuracy, stepProgress\n    );'
+              ),
+              (
+                  '    rerouteIfOffRoute(here, confirmOffRouteImmediately);',
+                  '    const confidentlyOnRoute = rerouteIfOffRoute(here, confirmOffRouteImmediately);\n    if (confidentlyOnRoute && Number.isInteger(stepProgress.segment) && Number.isFinite(stepProgress.t)) {\n      const progressT = Math.max(0, Math.min(1, stepProgress.t));\n      if (\n        navStepProgressIdx !== navStepIdx ||\n        stepProgress.segment > navStepProgressSegment ||\n        (stepProgress.segment === navStepProgressSegment && progressT > navStepProgressT)\n      ) {\n        navStepProgressIdx = navStepIdx;\n        navStepProgressSegment = stepProgress.segment;\n        navStepProgressT = progressT;\n      }\n    }'
+              ),
+              (
+                  '    if (navRerouting || !navFullPath.length || !navDestination) return;',
+                  '    if (navRerouting || !navFullPath.length || !navDestination) return false;'
+              ),
+              (
+                  '      if (path.length === 1) min = Math.min(min, meters(here, path[0]));\n      for (let i = 0; i < path.length - 1; i++) {\n        const dd = distanceToSegment(here, path[i], path[i + 1]);',
+                  '      if (path.length === 1) min = Math.min(min, meters(here, path[0]));\n      const hasProgressAnchor = stepIdx === navStepIdx &&\n        navStepProgressIdx === navStepIdx && path.length > 1;\n      const firstSegment = hasProgressAnchor\n        ? Math.min(navStepProgressSegment, path.length - 2)\n        : 0;\n      const firstT = hasProgressAnchor ? navStepProgressT : 0;\n      for (let i = firstSegment; i < path.length - 1; i++) {\n        const segmentStart = i === firstSegment && firstT > 0\n          ? google.maps.geometry.spherical.interpolate(path[i], path[i + 1], firstT)\n          : path[i];\n        const dd = distanceToSegment(here, segmentStart, path[i + 1]);'
+              ),
+              (
+                  '    } else if (min <= onRouteThreshold) {\n      offRouteCount = 0;\n      lastOffRouteEvidenceTimestamp = null;\n    }\n  }\n\n  function onPosition(pos) {',
+                  '    } else if (min <= onRouteThreshold) {\n      offRouteCount = 0;\n      lastOffRouteEvidenceTimestamp = null;\n    }\n    return min <= onRouteThreshold;\n  }\n\n  function onPosition(pos) {'
+              ),
+          ]
+
+          for old, new in replacements:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'expected exactly one source anchor, found {count}: {old[:80]!r}')
+              text = text.replace(old, new, 1)
+
+          path.write_text(text)
+          PY
+
+      - name: Static verification
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check js/app.js
+          git diff --check
+          grep -q 'navStepProgressIdx = -1' js/app.js
+          grep -q 'const confidentlyOnRoute = rerouteIfOffRoute' js/app.js
+          grep -q 'spherical.interpolate(path\[i\], path\[i + 1\], firstT)' js/app.js
+          if git grep -nE 'AIza[0-9A-Za-z_-]{35}' -- .; then
+            echo '::error::A Google API key pattern is present in a tracked file'
+            exit 1
+          fi
+
+      - name: Commit product change and remove helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'ChatGPT Codex Connector'
+          git config user.email '1144995+chatgpt-codex-connector[bot]@users.noreply.github.com'
+          rm .github/workflows/chatgpt-current-step-offroute-progress.yml
+          git add -A
+          git diff --cached --check
+          git commit -m 'Trim current-step off-route corridor behind progress'
+          git push origin HEAD:chatgpt/trim-current-step-offroute-corridor
