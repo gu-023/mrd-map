@@ -806,7 +806,8 @@
           clearSignals();
           signalData = [];
           if (signalsOn) fetchSignals(); // ルート周辺の信号機を取得
-          updateNav({ lat: origin.lat(), lng: origin.lng() });
+          const navPosition = currentPosition || origin;
+          updateNav({ lat: navPosition.lat(), lng: navPosition.lng() });
         } else {
           if (resumeFollowOnFailure) {
             followMode = true;
