@@ -1089,9 +1089,11 @@
   }
 
   // 残り距離・時間（現在地から終点まで）
-  function remaining(here, previous = null, accuracy = 0) {
+  function remaining(here, previous = null, accuracy = 0, currentStepRemaining = null) {
     const cur = navSteps[navStepIdx];
-    let dist = stepRemainingDistance(here, cur, previous, accuracy);
+    let dist = Number.isFinite(currentStepRemaining)
+      ? Math.max(0, currentStepRemaining)
+      : stepRemainingDistance(here, cur, previous, accuracy);
     let sec = 0;
     const curDist = cur.distance ? cur.distance.value : dist;
     const curSec = cur.duration ? cur.duration.value : 0;
@@ -1101,6 +1103,18 @@
       sec += navSteps[i].duration ? navSteps[i].duration.value : 0;
     }
     return { dist, sec };
+  }
+
+  // self-near な経路投影で表示上の進捗だけが実移動より大きく飛ばないようにする上限。
+  function maxPlausibleProgressAdvance(here, accuracy = 0) {
+    const anchorAccuracy = Number.isFinite(navStepProgressAccuracy)
+      ? Math.max(0, navStepProgressAccuracy)
+      : 0;
+    const safeAccuracy = Number.isFinite(accuracy) ? Math.max(0, accuracy) : 0;
+    return navStepProgressPosition
+      ? meters(navStepProgressPosition, here) + anchorAccuracy + safeAccuracy +
+        NAV_PROGRESS_ADVANCE_SLACK_M
+      : Infinity;
   }
 
   // GPS 更新が曲がり角の 25m 圏を飛び越えた場合、前回→今回の短い移動区間で通過を補完する。
@@ -1175,29 +1189,36 @@
     const step = navSteps[navStepIdx];
     const directEndDist = meters(here, step.end_location);
     const stepProgress = {};
-    const turnDist = stepRemainingDistance(
+    const projectedTurnDist = stepRemainingDistance(
       here, step, snapPrevious, proximityAccuracy, stepProgress
     );
+    const maxDisplayAdvance = navStepProgressIdx === navStepIdx
+      ? maxPlausibleProgressAdvance(here, proximityAccuracy)
+      : Infinity;
+    const displayTurnDist =
+      navStepProgressIdx === navStepIdx && navStepProgressRemaining !== null
+        ? Math.max(projectedTurnDist, navStepProgressRemaining - maxDisplayAdvance)
+        : projectedTurnDist;
     const isLast = navStepIdx === navSteps.length - 1;
 
-    if (isLast && directEndDist + proximityAccuracy < 20 && turnDist < 20) {
+    if (isLast && directEndDist + proximityAccuracy < 20 && projectedTurnDist < 20) {
       navArrived = true;
       offRouteCount = 0;
       lastOffRouteEvidenceTimestamp = null;
-      if (followMode) autoZoomForTurn(turnDist, true);
+      if (followMode) autoZoomForTurn(projectedTurnDist, true);
       setNavBanner('<div class="nav-main"><span class="nav-arrow">🏁</span> 目的地に到着</div>');
       return;
     }
 
-    const rem = remaining(here, snapPrevious, proximityAccuracy);
+    const rem = remaining(here, snapPrevious, proximityAccuracy, displayTurnDist);
     setNavBanner(
       `<div class="nav-main"><span class="nav-arrow">${maneuverArrow(step.maneuver)}</span> ` +
-      `<span class="nav-dist">${fmtDist(turnDist)}</span></div>` +
+      `<span class="nav-dist">${fmtDist(displayTurnDist)}</span></div>` +
       `<div class="nav-sub">${escapeHtml(stripHtml(step.instructions))}` +
       ` ・ 残り ${fmtDist(rem.dist)} ${fmtMin(rem.sec)} ・ ${arrivalClock(rem.sec)}着</div>`
     );
 
-    if (followMode) autoZoomForTurn(turnDist, isLast); // 全体表示中は自動ズームしない
+    if (followMode) autoZoomForTurn(displayTurnDist, isLast); // 全体表示中は自動ズームしない
     const confidentlyOnRoute = rerouteIfOffRoute(here, confirmOffRouteImmediately);
     if (confidentlyOnRoute && Number.isInteger(stepProgress.segment) && Number.isFinite(stepProgress.t)) {
       const progressT = Math.max(0, Math.min(1, stepProgress.t));
@@ -1205,19 +1226,15 @@
       const advancesAnchor = stepChanged ||
         stepProgress.segment > navStepProgressSegment ||
         (stepProgress.segment === navStepProgressSegment && progressT > navStepProgressT);
-      const anchorAccuracy = navStepProgressAccuracy !== null ? navStepProgressAccuracy : 0;
-      const maxPlausibleAdvance = navStepProgressPosition
-        ? meters(navStepProgressPosition, here) + anchorAccuracy + proximityAccuracy +
-          NAV_PROGRESS_ADVANCE_SLACK_M
-        : Infinity;
+      const maxPlausibleAdvance = maxPlausibleProgressAdvance(here, proximityAccuracy);
       const projectedAdvance = navStepProgressRemaining !== null
-        ? navStepProgressRemaining - turnDist
+        ? navStepProgressRemaining - projectedTurnDist
         : 0;
       if (advancesAnchor && (stepChanged || projectedAdvance <= maxPlausibleAdvance)) {
         navStepProgressIdx = navStepIdx;
         navStepProgressSegment = stepProgress.segment;
         navStepProgressT = progressT;
-        navStepProgressRemaining = turnDist;
+        navStepProgressRemaining = projectedTurnDist;
         navStepProgressPosition = here;
         navStepProgressAccuracy = proximityAccuracy;
       }
