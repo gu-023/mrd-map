@@ -54,6 +54,7 @@
   let navStepIdx = 0;
   let navLastPosition = null; // 前回のナビ位置（曲がり角通過の取りこぼし補完）
   let navLastPositionTimestamp = null; // 前回ナビ位置の GPS fix 時刻
+  let navLastPositionAccuracy = null; // 前回ナビ位置の GPS 精度半径 (m)
   let navDestination = null; // リルート用に目的地を保持
   let navFullPath = []; // オフルート判定用の詳細経路点
   let offRouteCount = 0;
@@ -798,6 +799,7 @@
           navStepIdx = 0;
           navLastPosition = null;
           navLastPositionTimestamp = null;
+          navLastPositionAccuracy = null;
           offRouteCount = 0;
           lastOffRouteEvidenceTimestamp = null;
           navBounds = res.routes[0].bounds || null;
@@ -874,6 +876,7 @@
     else zoomedForTurn = false;
     navLastPosition = null;
     navLastPositionTimestamp = null;
+    navLastPositionAccuracy = null;
     navSteps = [];
     navFullPath = [];
     navDestination = null;
@@ -1072,7 +1075,7 @@
   }
 
   // GPS 更新が曲がり角の 25m 圏を飛び越えた場合、前回→今回の短い移動区間で通過を補完する。
-  function segmentPassesNear(a, b, target, radius) {
+  function segmentPassesNear(a, b, target, radius, aAccuracy = 0, bAccuracy = 0) {
     if (!a || meters(a, b) > 250) return false; // 大きな GPS ジャンプは通過根拠にしない
     const metersPerDegree = (Math.PI * 6371008.8) / 180;
     const cosLat = Math.cos((target.lat() * Math.PI) / 180);
@@ -1088,7 +1091,10 @@
       : 0;
     const px = ax + t * dx;
     const py = ay + t * dy;
-    return px * px + py * py < radius * radius;
+    const safeAAccuracy = Number.isFinite(aAccuracy) ? Math.max(0, aAccuracy) : 0;
+    const safeBAccuracy = Number.isFinite(bAccuracy) ? Math.max(0, bAccuracy) : 0;
+    const passageAccuracy = safeAAccuracy * (1 - t) + safeBAccuracy * t;
+    return Math.hypot(px, py) + passageAccuracy < radius;
   }
 
   // 位置更新ごとに「次の曲がり角」と残り・オフルートを更新
@@ -1097,24 +1103,29 @@
     const here = new google.maps.LatLng(p.lat, p.lng);
     const previous = navLastPosition;
     const previousTimestamp = navLastPositionTimestamp;
+    const previousAccuracy = navLastPositionAccuracy;
     const continuityTimestamp = lastPositionTimestamp;
+    const proximityAccuracy = lastPositionAccuracy !== null ? lastPositionAccuracy : 0;
     const continuousInTime = previousTimestamp !== null &&
       continuityTimestamp !== null &&
       continuityTimestamp > previousTimestamp &&
       continuityTimestamp - previousTimestamp <= NAV_POSITION_CONTINUITY_MAX_GAP_MS;
     const continuityPrevious = previous && continuousInTime && meters(previous, here) <= 250 ? previous : null;
+    const continuityPreviousAccuracy = continuityPrevious && previousAccuracy !== null ? previousAccuracy : 0;
     navLastPosition = here;
     navLastPositionTimestamp = continuityTimestamp;
+    navLastPositionAccuracy = lastPositionAccuracy;
 
     // 通過した手順を進める。1つの GPS fix では「25m以内」だけを根拠に複数手順を飛ばさない。
     // 複数手順を一気に進めるのは、前回→今回の移動区間が各終端を実際に横切った場合だけ。
-    const proximityAccuracy = lastPositionAccuracy !== null ? lastPositionAccuracy : 0;
     let advancedThisFix = false;
     while (navStepIdx < navSteps.length - 1) {
       const currentStep = navSteps[navStepIdx];
       const end = currentStep.end_location;
       const routeRemaining = stepRemainingDistance(here, currentStep, continuityPrevious);
-      const crossedSinceLast = segmentPassesNear(continuityPrevious, here, end, 25) &&
+      const crossedSinceLast = segmentPassesNear(
+        continuityPrevious, here, end, 25, continuityPreviousAccuracy, proximityAccuracy
+      ) &&
         routeRemaining < 1;
       const nearEnd = meters(here, end) + proximityAccuracy < 25 && routeRemaining < 25;
       if (!crossedSinceLast && (!nearEnd || advancedThisFix)) break;
