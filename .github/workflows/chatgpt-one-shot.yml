@@ -1,0 +1,90 @@
+name: ChatGPT one-shot stale snap anchor guard
+
+on:
+  push:
+    branches:
+      - chatgpt/limit-stale-step-snap-anchor
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-verify:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: chatgpt/limit-stale-step-snap-anchor
+          fetch-depth: 0
+
+      - name: Apply atomic patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('js/app.js')
+          text = path.read_text()
+
+          old_const = '  const NAV_POSITION_CONTINUITY_MAX_GAP_MS = 30000; // 長い更新停止を直線移動区間として補完しない\n'
+          new_const = old_const + '  const NAV_SNAP_STALE_MOVEMENT_BASE_M = 35; // 時間連続性が切れた snap 文脈は局所移動＋両 fix 誤差だけ許容\n'
+          if text.count(old_const) != 1:
+              raise SystemExit(f'expected one continuity constant anchor, found {text.count(old_const)}')
+          text = text.replace(old_const, new_const, 1)
+
+          old_block = '''    const continuousInTime = previousTimestamp !== null &&
+              continuityTimestamp !== null &&
+              continuityTimestamp > previousTimestamp &&
+              continuityTimestamp - previousTimestamp <= NAV_POSITION_CONTINUITY_MAX_GAP_MS;
+            const snapPrevious = previous && meters(previous, here) <= 250 ? previous : null;
+            const continuityPrevious = snapPrevious && continuousInTime ? snapPrevious : null;
+            const continuityPreviousAccuracy = continuityPrevious && previousAccuracy !== null ? previousAccuracy : 0;
+          '''
+          new_block = '''    const continuousInTime = previousTimestamp !== null &&
+              continuityTimestamp !== null &&
+              continuityTimestamp > previousTimestamp &&
+              continuityTimestamp - previousTimestamp <= NAV_POSITION_CONTINUITY_MAX_GAP_MS;
+            const previousDistance = previous ? meters(previous, here) : Infinity;
+            const previousProximityAccuracy = previousAccuracy !== null ? previousAccuracy : 0;
+            const staleSnapMovementLimit =
+              NAV_SNAP_STALE_MOVEMENT_BASE_M + previousProximityAccuracy + proximityAccuracy;
+            const snapPrevious = previous &&
+              previousDistance <= 250 &&
+              (continuousInTime || previousDistance <= staleSnapMovementLimit)
+              ? previous
+              : null;
+            const continuityPrevious = snapPrevious && continuousInTime ? snapPrevious : null;
+            const continuityPreviousAccuracy = continuityPrevious ? previousProximityAccuracy : 0;
+          '''
+          if text.count(old_block) != 1:
+              raise SystemExit(f'expected one updateNav snap anchor, found {text.count(old_block)}')
+          text = text.replace(old_block, new_block, 1)
+          path.write_text(text)
+          PY
+
+      - name: Verify patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check js/app.js
+          git diff --check
+          grep -Fq 'const NAV_SNAP_STALE_MOVEMENT_BASE_M = 35;' js/app.js
+          grep -Fq '(continuousInTime || previousDistance <= staleSnapMovementLimit)' js/app.js
+          if git grep -nE 'AIza[0-9A-Za-z_-]{35}' -- .; then
+            echo '::error::A Google API key pattern is present in a tracked file'
+            exit 1
+          fi
+
+      - name: Remove helper and commit product change
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/chatgpt-one-shot.yml
+          git diff --check
+          git config user.name 'ChatGPT Codex Connector'
+          git config user.email '1144995+chatgpt-codex-connector[bot]@users.noreply.github.com'
+          git add js/app.js
+          git commit -m 'Limit stale step snap anchors after navigation gaps'
+          git push origin HEAD:chatgpt/limit-stale-step-snap-anchor
