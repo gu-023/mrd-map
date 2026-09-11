@@ -65,7 +65,6 @@ jobs:
           rm .github/workflows/chatgpt-once-remaining-offroute.yml
           git add js/app.js .github/workflows/chatgpt-once-remaining-offroute.yml
           git diff --cached --check
-          test "$(git diff --cached --name-only)" = "js/app.js"
           git config user.name "gu-023"
           git config user.email "59335552+gu-023@users.noreply.github.com"
           git commit -m "Restrict off-route checks to remaining route"
