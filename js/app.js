@@ -214,6 +214,7 @@
   const ROUTE_ORIGIN_MAX_AGE_MS = 30000; // watchPosition の cache 上限より古い fix では経路を開始しない
   const OFF_ROUTE_EVIDENCE_MAX_GAP_MS = 30000; // 長い曖昧区間をまたぐ off-route 証拠は連続扱いしない
   const NAV_POSITION_CONTINUITY_MAX_GAP_MS = 30000; // 長い更新停止を直線移動区間として補完しない
+  const NAV_SNAP_STALE_MOVEMENT_BASE_M = 35; // 時間連続性が切れた snap 文脈は局所移動＋両 fix 誤差だけ許容
   let geoWatchStarted = false;
   let lastPositionAccuracy = null; // 最新 GPS fix の精度半径 (m)
   let lastPositionTimestamp = null; // 最新 GPS fix の取得時刻 (epoch ms)
@@ -1111,9 +1112,17 @@
       continuityTimestamp !== null &&
       continuityTimestamp > previousTimestamp &&
       continuityTimestamp - previousTimestamp <= NAV_POSITION_CONTINUITY_MAX_GAP_MS;
-    const snapPrevious = previous && meters(previous, here) <= 250 ? previous : null;
+    const previousDistance = previous ? meters(previous, here) : Infinity;
+    const previousProximityAccuracy = previousAccuracy !== null ? previousAccuracy : 0;
+    const staleSnapMovementLimit =
+      NAV_SNAP_STALE_MOVEMENT_BASE_M + previousProximityAccuracy + proximityAccuracy;
+    const snapPrevious = previous &&
+      previousDistance <= 250 &&
+      (continuousInTime || previousDistance <= staleSnapMovementLimit)
+      ? previous
+      : null;
     const continuityPrevious = snapPrevious && continuousInTime ? snapPrevious : null;
-    const continuityPreviousAccuracy = continuityPrevious && previousAccuracy !== null ? previousAccuracy : 0;
+    const continuityPreviousAccuracy = continuityPrevious ? previousProximityAccuracy : 0;
     navLastPosition = here;
     navLastPositionTimestamp = continuityTimestamp;
     navLastPositionAccuracy = lastPositionAccuracy;
