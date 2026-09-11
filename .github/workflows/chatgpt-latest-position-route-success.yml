@@ -1,0 +1,62 @@
+name: ChatGPT use latest position on route success
+
+on:
+  push:
+    branches:
+      - chatgpt/use-latest-position-on-route-success
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: chatgpt/use-latest-position-on-route-success
+          fetch-depth: 0
+
+      - name: Apply atomic navigation fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("js/app.js")
+          text = path.read_text()
+          old = "          updateNav({ lat: origin.lat(), lng: origin.lng() });"
+          new = "          const navPosition = currentPosition || origin;\n          updateNav({ lat: navPosition.lat(), lng: navPosition.lng() });"
+          count = text.count(old)
+          if count != 1:
+              raise SystemExit(f"expected exactly one route-success updateNav anchor, found {count}")
+          path.write_text(text.replace(old, new, 1))
+          PY
+
+      - name: Verify source and diff
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fq 'const navPosition = currentPosition || origin;' js/app.js
+          grep -Fq 'updateNav({ lat: navPosition.lat(), lng: navPosition.lng() });' js/app.js
+          if grep -Fq 'updateNav({ lat: origin.lat(), lng: origin.lng() });' js/app.js; then
+            echo "::error::stale route-success origin update remains"
+            exit 1
+          fi
+          node --check js/app.js
+          git diff --check
+
+      - name: Commit app change and remove helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm .github/workflows/chatgpt-latest-position-route-success.yml
+          changed="$(git diff --name-only HEAD^ -- js/app.js 2>/dev/null || true)"
+          test -n "$changed" || true
+          git add js/app.js
+          git diff --cached --check
+          git commit -m 'Use latest GPS position after route calculation'
+          git push origin HEAD:chatgpt/use-latest-position-on-route-success
