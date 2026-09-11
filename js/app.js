@@ -784,6 +784,8 @@
           navMode = true;
           navArrived = false;
           followMode = true;
+          const currentPosition = userMarker && userMarker.getPosition();
+          if (currentPosition) map.panTo(currentPosition);
           if (!isReroute) {
             map.setZoom(routeTravelMode === "DRIVING" ? 17 : 18);
             if (requestedTravelMode === undefined) {
