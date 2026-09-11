@@ -58,6 +58,9 @@
   let navStepProgressIdx = -1; // off-route 判定で通過済み current-step geometry を除外する進捗 anchor
   let navStepProgressSegment = 0;
   let navStepProgressT = 0;
+  let navStepProgressRemaining = null;
+  let navStepProgressPosition = null;
+  let navStepProgressAccuracy = null;
   let navDestination = null; // リルート用に目的地を保持
   let navFullPath = []; // オフルート判定用の詳細経路点
   let offRouteCount = 0;
@@ -218,6 +221,7 @@
   const OFF_ROUTE_EVIDENCE_MAX_GAP_MS = 30000; // 長い曖昧区間をまたぐ off-route 証拠は連続扱いしない
   const NAV_POSITION_CONTINUITY_MAX_GAP_MS = 30000; // 長い更新停止を直線移動区間として補完しない
   const NAV_SNAP_STALE_MOVEMENT_BASE_M = 35; // 時間連続性が切れた snap 文脈は局所移動＋両 fix 誤差だけ許容
+  const NAV_PROGRESS_ADVANCE_SLACK_M = 35; // 経路上の進捗がGPS実移動を大幅に超える self-near jump を防ぐ余裕
   let geoWatchStarted = false;
   let lastPositionAccuracy = null; // 最新 GPS fix の精度半径 (m)
   let lastPositionTimestamp = null; // 最新 GPS fix の取得時刻 (epoch ms)
@@ -807,6 +811,9 @@
           navStepProgressIdx = -1;
           navStepProgressSegment = 0;
           navStepProgressT = 0;
+          navStepProgressRemaining = null;
+          navStepProgressPosition = null;
+          navStepProgressAccuracy = null;
           offRouteCount = 0;
           lastOffRouteEvidenceTimestamp = null;
           navBounds = res.routes[0].bounds || null;
@@ -887,6 +894,9 @@
     navStepProgressIdx = -1;
     navStepProgressSegment = 0;
     navStepProgressT = 0;
+    navStepProgressRemaining = null;
+    navStepProgressPosition = null;
+    navStepProgressAccuracy = null;
     navSteps = [];
     navFullPath = [];
     navDestination = null;
@@ -1191,14 +1201,25 @@
     const confidentlyOnRoute = rerouteIfOffRoute(here, confirmOffRouteImmediately);
     if (confidentlyOnRoute && Number.isInteger(stepProgress.segment) && Number.isFinite(stepProgress.t)) {
       const progressT = Math.max(0, Math.min(1, stepProgress.t));
-      if (
-        navStepProgressIdx !== navStepIdx ||
+      const stepChanged = navStepProgressIdx !== navStepIdx;
+      const advancesAnchor = stepChanged ||
         stepProgress.segment > navStepProgressSegment ||
-        (stepProgress.segment === navStepProgressSegment && progressT > navStepProgressT)
-      ) {
+        (stepProgress.segment === navStepProgressSegment && progressT > navStepProgressT);
+      const anchorAccuracy = navStepProgressAccuracy !== null ? navStepProgressAccuracy : 0;
+      const maxPlausibleAdvance = navStepProgressPosition
+        ? meters(navStepProgressPosition, here) + anchorAccuracy + proximityAccuracy +
+          NAV_PROGRESS_ADVANCE_SLACK_M
+        : Infinity;
+      const projectedAdvance = navStepProgressRemaining !== null
+        ? navStepProgressRemaining - turnDist
+        : 0;
+      if (advancesAnchor && (stepChanged || projectedAdvance <= maxPlausibleAdvance)) {
         navStepProgressIdx = navStepIdx;
         navStepProgressSegment = stepProgress.segment;
         navStepProgressT = progressT;
+        navStepProgressRemaining = turnDist;
+        navStepProgressPosition = here;
+        navStepProgressAccuracy = proximityAccuracy;
       }
     }
   }
