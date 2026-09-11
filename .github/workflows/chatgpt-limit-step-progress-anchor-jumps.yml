@@ -1,0 +1,112 @@
+name: ChatGPT one-shot progress anchor guard
+
+on:
+  push:
+    branches:
+      - chatgpt/limit-step-progress-anchor-jumps
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-verify:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+      - name: Apply atomic patch and verify
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("js/app.js")
+          text = path.read_text()
+
+          old = "  const NAV_SNAP_STALE_MOVEMENT_BASE_M = 35; // 時間連続性が切れた snap 文脈は局所移動＋両 fix 誤差だけ許容\n"
+          new = old + "  const NAV_PROGRESS_ADVANCE_SLACK_M = 35; // 経路上の進捗がGPS実移動を大幅に超える self-near jump を防ぐ余裕\n"
+          assert text.count(old) == 1, f"expected one navigation constant anchor, found {text.count(old)}"
+          text = text.replace(old, new, 1)
+
+          old = "  let navStepProgressT = 0;\n  let navDestination = null;"
+          new = "  let navStepProgressT = 0;\n  let navStepProgressRemaining = null;\n  let navStepProgressPosition = null;\n  let navStepProgressAccuracy = null;\n  let navDestination = null;"
+          assert text.count(old) == 1, f"expected one progress state anchor, found {text.count(old)}"
+          text = text.replace(old, new, 1)
+
+          old = "          navStepProgressIdx = -1;\n          navStepProgressSegment = 0;\n          navStepProgressT = 0;\n"
+          new = old + "          navStepProgressRemaining = null;\n          navStepProgressPosition = null;\n          navStepProgressAccuracy = null;\n"
+          assert text.count(old) == 1, f"expected one route-reset anchor, found {text.count(old)}"
+          text = text.replace(old, new, 1)
+
+          old = "    navStepProgressIdx = -1;\n    navStepProgressSegment = 0;\n    navStepProgressT = 0;\n"
+          new = old + "    navStepProgressRemaining = null;\n    navStepProgressPosition = null;\n    navStepProgressAccuracy = null;\n"
+          assert text.count(old) == 1, f"expected one stop-reset anchor, found {text.count(old)}"
+          text = text.replace(old, new, 1)
+
+          old = """    const confidentlyOnRoute = rerouteIfOffRoute(here, confirmOffRouteImmediately);
+    if (confidentlyOnRoute && Number.isInteger(stepProgress.segment) && Number.isFinite(stepProgress.t)) {
+      const progressT = Math.max(0, Math.min(1, stepProgress.t));
+      if (
+        navStepProgressIdx !== navStepIdx ||
+        stepProgress.segment > navStepProgressSegment ||
+        (stepProgress.segment === navStepProgressSegment && progressT > navStepProgressT)
+      ) {
+        navStepProgressIdx = navStepIdx;
+        navStepProgressSegment = stepProgress.segment;
+        navStepProgressT = progressT;
+      }
+    }
+"""
+          new = """    const confidentlyOnRoute = rerouteIfOffRoute(here, confirmOffRouteImmediately);
+    if (confidentlyOnRoute && Number.isInteger(stepProgress.segment) && Number.isFinite(stepProgress.t)) {
+      const progressT = Math.max(0, Math.min(1, stepProgress.t));
+      const stepChanged = navStepProgressIdx !== navStepIdx;
+      const advancesAnchor = stepChanged ||
+        stepProgress.segment > navStepProgressSegment ||
+        (stepProgress.segment === navStepProgressSegment && progressT > navStepProgressT);
+      const anchorAccuracy = navStepProgressAccuracy !== null ? navStepProgressAccuracy : 0;
+      const maxPlausibleAdvance = navStepProgressPosition
+        ? meters(navStepProgressPosition, here) + anchorAccuracy + proximityAccuracy +
+          NAV_PROGRESS_ADVANCE_SLACK_M
+        : Infinity;
+      const projectedAdvance = navStepProgressRemaining !== null
+        ? navStepProgressRemaining - turnDist
+        : 0;
+      if (advancesAnchor && (stepChanged || projectedAdvance <= maxPlausibleAdvance)) {
+        navStepProgressIdx = navStepIdx;
+        navStepProgressSegment = stepProgress.segment;
+        navStepProgressT = progressT;
+        navStepProgressRemaining = turnDist;
+        navStepProgressPosition = here;
+        navStepProgressAccuracy = proximityAccuracy;
+      }
+    }
+"""
+          assert text.count(old) == 1, f"expected one progress update block, found {text.count(old)}"
+          text = text.replace(old, new, 1)
+
+          path.write_text(text)
+          PY
+
+          node --check js/app.js
+          git diff --check
+          grep -F 'const NAV_PROGRESS_ADVANCE_SLACK_M = 35;' js/app.js
+          grep -F 'projectedAdvance <= maxPlausibleAdvance' js/app.js
+          if git grep -nE 'AIza[0-9A-Za-z_-]{30,}' -- ':!README.md'; then
+            echo 'Tracked Google API key-like value found' >&2
+            exit 1
+          fi
+
+          rm .github/workflows/chatgpt-limit-step-progress-anchor-jumps.yml
+          git diff --check
+          test "$(git diff --name-only | sort)" = "js/app.js"
+
+          git config user.name "ChatGPT Codex Connector"
+          git config user.email "1144995+chatgpt-codex-connector[bot]@users.noreply.github.com"
+          git add js/app.js .github/workflows/chatgpt-limit-step-progress-anchor-jumps.yml
+          git commit -m "Limit implausible step progress anchor jumps"
+          git push origin HEAD:${GITHUB_REF_NAME}
