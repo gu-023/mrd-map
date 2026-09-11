@@ -52,37 +52,39 @@ jobs:
                   raise SystemExit(f"expected exactly one source anchor, found {count}: {old!r}")
               text = text.replace(old, new, 1)
 
-          old_block = """    if (min > offRouteThreshold) {
-              offRouteCount = confirmImmediately ? 3 : offRouteCount + 1;
-              if (offRouteCount >= 3) {
-                offRouteCount = 0;
-                computeRoute(navDestination, true);
-              }
-            } else if (min <= onRouteThreshold) {
-              offRouteCount = 0;
-            }
-          """
-          new_block = """    const evidenceExpired = offRouteCount > 0 &&
-              lastOffRouteEvidenceTimestamp !== null &&
-              lastPositionTimestamp !== null &&
-              lastPositionTimestamp - lastOffRouteEvidenceTimestamp > OFF_ROUTE_EVIDENCE_MAX_GAP_MS;
-            if (evidenceExpired) {
-              offRouteCount = 0;
-              lastOffRouteEvidenceTimestamp = null;
-            }
-            if (min > offRouteThreshold) {
-              offRouteCount = confirmImmediately ? 3 : offRouteCount + 1;
-              lastOffRouteEvidenceTimestamp = lastPositionTimestamp;
-              if (offRouteCount >= 3) {
-                offRouteCount = 0;
-                lastOffRouteEvidenceTimestamp = null;
-                computeRoute(navDestination, true);
-              }
-            } else if (min <= onRouteThreshold) {
-              offRouteCount = 0;
-              lastOffRouteEvidenceTimestamp = null;
-            }
-          """
+          old_block = "\n".join([
+              "    if (min > offRouteThreshold) {",
+              "      offRouteCount = confirmImmediately ? 3 : offRouteCount + 1;",
+              "      if (offRouteCount >= 3) {",
+              "        offRouteCount = 0;",
+              "        computeRoute(navDestination, true);",
+              "      }",
+              "    } else if (min <= onRouteThreshold) {",
+              "      offRouteCount = 0;",
+              "    }",
+          ]) + "\n"
+          new_block = "\n".join([
+              "    const evidenceExpired = offRouteCount > 0 &&",
+              "      lastOffRouteEvidenceTimestamp !== null &&",
+              "      lastPositionTimestamp !== null &&",
+              "      lastPositionTimestamp - lastOffRouteEvidenceTimestamp > OFF_ROUTE_EVIDENCE_MAX_GAP_MS;",
+              "    if (evidenceExpired) {",
+              "      offRouteCount = 0;",
+              "      lastOffRouteEvidenceTimestamp = null;",
+              "    }",
+              "    if (min > offRouteThreshold) {",
+              "      offRouteCount = confirmImmediately ? 3 : offRouteCount + 1;",
+              "      lastOffRouteEvidenceTimestamp = lastPositionTimestamp;",
+              "      if (offRouteCount >= 3) {",
+              "        offRouteCount = 0;",
+              "        lastOffRouteEvidenceTimestamp = null;",
+              "        computeRoute(navDestination, true);",
+              "      }",
+              "    } else if (min <= onRouteThreshold) {",
+              "      offRouteCount = 0;",
+              "      lastOffRouteEvidenceTimestamp = null;",
+              "    }",
+          ]) + "\n"
           count = text.count(old_block)
           if count != 1:
               raise SystemExit(f"expected exactly one reroute block, found {count}")
