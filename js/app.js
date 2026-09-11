@@ -1153,9 +1153,7 @@
   // ルートから外れ続けたら現在地から再計算
   function rerouteIfOffRoute(here, confirmImmediately = false) {
     if (navRerouting || !navFullPath.length || !navDestination) return;
-    const accuracyMargin = confirmImmediately && lastPositionAccuracy !== null
-      ? lastPositionAccuracy
-      : 0;
+    const accuracyMargin = lastPositionAccuracy !== null ? lastPositionAccuracy : 0;
     const offRouteThreshold = 35 + accuracyMargin;
     let min = navFullPath.length === 1 ? meters(here, navFullPath[0]) : Infinity;
     for (let i = 0; i < navFullPath.length - 1; i++) {
