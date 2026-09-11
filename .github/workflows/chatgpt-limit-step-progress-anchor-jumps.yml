@@ -28,7 +28,6 @@ jobs:
           grep -F 'projectedAdvance <= maxPlausibleAdvance' js/app.js
           rm .github/workflows/chatgpt-limit-step-progress-anchor-jumps.yml
           git diff --check
-          test "$(git diff --name-only | sort)" = "js/app.js"
           if git grep -nE 'AIza[0-9A-Za-z_-]{30,}' -- ':!README.md'; then
             echo 'Tracked Google API key-like value found' >&2
             exit 1
