@@ -1,0 +1,76 @@
+name: ChatGPT stale route origin guard
+
+on:
+  push:
+    branches: [chatgpt/guard-stale-route-origin]
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Apply atomic change
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("js/app.js")
+          text = path.read_text()
+
+          old_geo_state = '''  let geoWatchStarted = false;\n  let lastPositionAccuracy = null; // 最新 GPS fix の精度半径 (m)\n  let gpsStatusText = ""; // コンパス中も最新の GPS 状態文言を保持\n'''
+          new_geo_state = '''  const ROUTE_ORIGIN_MAX_AGE_MS = 30000; // watchPosition の cache 上限より古い fix では経路を開始しない\n  let geoWatchStarted = false;\n  let lastPositionAccuracy = null; // 最新 GPS fix の精度半径 (m)\n  let lastPositionTimestamp = null; // 最新 GPS fix の取得時刻 (epoch ms)\n  let gpsStatusText = ""; // コンパス中も最新の GPS 状態文言を保持\n'''
+          if text.count(old_geo_state) != 1:
+              raise SystemExit(f"expected one geolocation state anchor, found {text.count(old_geo_state)}")
+          text = text.replace(old_geo_state, new_geo_state, 1)
+
+          old_origin_guard = '''  function computeRoute(dest, isReroute, name, requestedTravelMode, resumeFollowOnFailure) {\n    const origin = userMarker.getPosition();\n    if (!origin) {\n      if (resumeFollowOnFailure) {\n        followMode = true;\n        setNavBanner(navMode ? routePreviousNavBanner : null);\n        routePreviousNavBanner = null;\n      }\n      showError("現在地が未取得", "先に ◎ で現在地を取得してください。", "geolocation");\n      return;\n    }\n    const originAccuracy = lastPositionAccuracy !== null ? lastPositionAccuracy : 0;\n'''
+          new_origin_guard = '''  function computeRoute(dest, isReroute, name, requestedTravelMode, resumeFollowOnFailure) {\n    const origin = userMarker.getPosition();\n    const originIsStale = lastPositionTimestamp !== null &&\n      Date.now() - lastPositionTimestamp > ROUTE_ORIGIN_MAX_AGE_MS;\n    if (!origin || originIsStale) {\n      if (resumeFollowOnFailure) {\n        followMode = true;\n        setNavBanner(navMode ? routePreviousNavBanner : null);\n        routePreviousNavBanner = null;\n      }\n      if (originIsStale) {\n        showError(\n          "現在地が古いため経路を開始できません",\n          "◎ で現在地を更新してから、目的地をもう一度選んでください。",\n          "geolocation"\n        );\n      } else {\n        showError("現在地が未取得", "先に ◎ で現在地を取得してください。", "geolocation");\n      }\n      return;\n    }\n    const originAccuracy = lastPositionAccuracy !== null ? lastPositionAccuracy : 0;\n'''
+          if text.count(old_origin_guard) != 1:
+              raise SystemExit(f"expected one route-origin guard anchor, found {text.count(old_origin_guard)}")
+          text = text.replace(old_origin_guard, new_origin_guard, 1)
+
+          old_position = '''    const { latitude, longitude, accuracy } = pos.coords;\n    const p = { lat: latitude, lng: longitude };\n    lastPositionAccuracy = Number.isFinite(accuracy) ? Math.max(0, accuracy) : null;\n'''
+          new_position = '''    const { latitude, longitude, accuracy } = pos.coords;\n    const p = { lat: latitude, lng: longitude };\n    lastPositionTimestamp = Number.isFinite(pos.timestamp) ? pos.timestamp : Date.now();\n    lastPositionAccuracy = Number.isFinite(accuracy) ? Math.max(0, accuracy) : null;\n'''
+          if text.count(old_position) != 1:
+              raise SystemExit(f"expected one position timestamp anchor, found {text.count(old_position)}")
+          text = text.replace(old_position, new_position, 1)
+
+          path.write_text(text)
+          PY
+
+      - name: Verify change
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check js/app.js
+          git diff --check
+          python3 - <<'PY'
+          from pathlib import Path
+          text = Path("js/app.js").read_text()
+          assert text.count("const ROUTE_ORIGIN_MAX_AGE_MS = 30000;") == 1
+          assert text.count("let lastPositionTimestamp = null;") == 1
+          assert text.count("lastPositionTimestamp = Number.isFinite(pos.timestamp) ? pos.timestamp : Date.now();") == 1
+          assert text.count("Date.now() - lastPositionTimestamp > ROUTE_ORIGIN_MAX_AGE_MS;") == 1
+          assert "現在地が古いため経路を開始できません" in text
+          assert "◎ で現在地を更新してから、目的地をもう一度選んでください。" in text
+          PY
+
+      - name: Commit app change and remove helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/chatgpt-stale-route-origin.yml
+          git add -A
+          git diff --cached --check
+          git config user.name "gu-023"
+          git config user.email "59335552+gu-023@users.noreply.github.com"
+          git commit -m "Reject stale route origins"
+          git push origin HEAD
