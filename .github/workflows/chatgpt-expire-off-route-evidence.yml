@@ -1,0 +1,125 @@
+name: ChatGPT one-shot expire off-route evidence
+
+on:
+  push:
+    branches:
+      - chatgpt/expire-stale-off-route-evidence
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: chatgpt/expire-stale-off-route-evidence
+          fetch-depth: 0
+
+      - name: Apply atomic fix
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path("js/app.js")
+          text = path.read_text()
+
+          replacements = [
+              (
+                  "  let offRouteCount = 0;\n",
+                  "  let offRouteCount = 0;\n  let lastOffRouteEvidenceTimestamp = null; // 最後の確実な off-route fix の時刻\n",
+              ),
+              (
+                  "  const ROUTE_ORIGIN_MAX_AGE_MS = 30000; // watchPosition の cache 上限より古い fix では経路を開始しない\n",
+                  "  const ROUTE_ORIGIN_MAX_AGE_MS = 30000; // watchPosition の cache 上限より古い fix では経路を開始しない\n  const OFF_ROUTE_EVIDENCE_MAX_GAP_MS = 30000; // 長い曖昧区間をまたぐ off-route 証拠は連続扱いしない\n",
+              ),
+              (
+                  "          offRouteCount = 0;\n          navBounds = res.routes[0].bounds || null;\n",
+                  "          offRouteCount = 0;\n          lastOffRouteEvidenceTimestamp = null;\n          navBounds = res.routes[0].bounds || null;\n",
+              ),
+              (
+                  "      navArrived = true;\n      offRouteCount = 0;\n      if (followMode) autoZoomForTurn(turnDist, true);\n",
+                  "      navArrived = true;\n      offRouteCount = 0;\n      lastOffRouteEvidenceTimestamp = null;\n      if (followMode) autoZoomForTurn(turnDist, true);\n",
+              ),
+          ]
+
+          for old, new in replacements:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"expected exactly one source anchor, found {count}: {old!r}")
+              text = text.replace(old, new, 1)
+
+          old_block = """    if (min > offRouteThreshold) {
+              offRouteCount = confirmImmediately ? 3 : offRouteCount + 1;
+              if (offRouteCount >= 3) {
+                offRouteCount = 0;
+                computeRoute(navDestination, true);
+              }
+            } else if (min <= onRouteThreshold) {
+              offRouteCount = 0;
+            }
+          """
+          new_block = """    const evidenceExpired = offRouteCount > 0 &&
+              lastOffRouteEvidenceTimestamp !== null &&
+              lastPositionTimestamp !== null &&
+              lastPositionTimestamp - lastOffRouteEvidenceTimestamp > OFF_ROUTE_EVIDENCE_MAX_GAP_MS;
+            if (evidenceExpired) {
+              offRouteCount = 0;
+              lastOffRouteEvidenceTimestamp = null;
+            }
+            if (min > offRouteThreshold) {
+              offRouteCount = confirmImmediately ? 3 : offRouteCount + 1;
+              lastOffRouteEvidenceTimestamp = lastPositionTimestamp;
+              if (offRouteCount >= 3) {
+                offRouteCount = 0;
+                lastOffRouteEvidenceTimestamp = null;
+                computeRoute(navDestination, true);
+              }
+            } else if (min <= onRouteThreshold) {
+              offRouteCount = 0;
+              lastOffRouteEvidenceTimestamp = null;
+            }
+          """
+          count = text.count(old_block)
+          if count != 1:
+              raise SystemExit(f"expected exactly one reroute block, found {count}")
+          text = text.replace(old_block, new_block, 1)
+          path.write_text(text)
+          PY
+
+      - name: Static verification
+        shell: bash
+        run: |
+          node --check js/app.js
+          git diff --check
+          if git grep -nE 'AIza[0-9A-Za-z_-]{35}' -- .; then
+            echo 'Tracked Google API key pattern detected' >&2
+            exit 1
+          fi
+          python3 <<'PY'
+          from pathlib import Path
+          text = Path("js/app.js").read_text()
+          required = [
+              "const OFF_ROUTE_EVIDENCE_MAX_GAP_MS = 30000;",
+              "let lastOffRouteEvidenceTimestamp = null;",
+              "const evidenceExpired = offRouteCount > 0 &&",
+              "lastPositionTimestamp - lastOffRouteEvidenceTimestamp > OFF_ROUTE_EVIDENCE_MAX_GAP_MS;",
+              "lastOffRouteEvidenceTimestamp = lastPositionTimestamp;",
+          ]
+          for needle in required:
+              if needle not in text:
+                  raise SystemExit(f"missing expected source: {needle}")
+          PY
+
+      - name: Commit verified change and remove helper
+        shell: bash
+        run: |
+          git rm .github/workflows/chatgpt-expire-off-route-evidence.yml
+          git config user.name "ChatGPT Codex Connector"
+          git config user.email "1144995+chatgpt-codex-connector[bot]@users.noreply.github.com"
+          git add js/app.js
+          git commit -m "Expire stale off-route confirmation evidence"
+          git push origin HEAD:chatgpt/expire-stale-off-route-evidence
