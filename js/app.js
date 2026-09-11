@@ -53,6 +53,7 @@
   let navSteps = [];
   let navStepIdx = 0;
   let navLastPosition = null; // 前回のナビ位置（曲がり角通過の取りこぼし補完）
+  let navLastPositionTimestamp = null; // 前回ナビ位置の GPS fix 時刻
   let navDestination = null; // リルート用に目的地を保持
   let navFullPath = []; // オフルート判定用の詳細経路点
   let offRouteCount = 0;
@@ -211,6 +212,7 @@
    */
   const ROUTE_ORIGIN_MAX_AGE_MS = 30000; // watchPosition の cache 上限より古い fix では経路を開始しない
   const OFF_ROUTE_EVIDENCE_MAX_GAP_MS = 30000; // 長い曖昧区間をまたぐ off-route 証拠は連続扱いしない
+  const NAV_POSITION_CONTINUITY_MAX_GAP_MS = 30000; // 長い更新停止を直線移動区間として補完しない
   let geoWatchStarted = false;
   let lastPositionAccuracy = null; // 最新 GPS fix の精度半径 (m)
   let lastPositionTimestamp = null; // 最新 GPS fix の取得時刻 (epoch ms)
@@ -795,6 +797,7 @@
           navSteps = res.routes[0].legs[0].steps || [];
           navStepIdx = 0;
           navLastPosition = null;
+          navLastPositionTimestamp = null;
           offRouteCount = 0;
           lastOffRouteEvidenceTimestamp = null;
           navBounds = res.routes[0].bounds || null;
@@ -870,6 +873,7 @@
     if (followMode) autoZoomForTurn(0, true);
     else zoomedForTurn = false;
     navLastPosition = null;
+    navLastPositionTimestamp = null;
     navSteps = [];
     navFullPath = [];
     navDestination = null;
@@ -1092,8 +1096,15 @@
     if (!navMode || !navSteps.length || navArrived) return;
     const here = new google.maps.LatLng(p.lat, p.lng);
     const previous = navLastPosition;
-    const continuityPrevious = previous && meters(previous, here) <= 250 ? previous : null;
+    const previousTimestamp = navLastPositionTimestamp;
+    const continuityTimestamp = lastPositionTimestamp;
+    const continuousInTime = previousTimestamp !== null &&
+      continuityTimestamp !== null &&
+      continuityTimestamp > previousTimestamp &&
+      continuityTimestamp - previousTimestamp <= NAV_POSITION_CONTINUITY_MAX_GAP_MS;
+    const continuityPrevious = previous && continuousInTime && meters(previous, here) <= 250 ? previous : null;
     navLastPosition = here;
+    navLastPositionTimestamp = continuityTimestamp;
 
     // 通過した手順を進める。1つの GPS fix では「25m以内」だけを根拠に複数手順を飛ばさない。
     // 複数手順を一気に進めるのは、前回→今回の移動区間が各終端を実際に横切った場合だけ。
