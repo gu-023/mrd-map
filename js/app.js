@@ -56,6 +56,7 @@
   let navDestination = null; // リルート用に目的地を保持
   let navFullPath = []; // オフルート判定用の詳細経路点
   let offRouteCount = 0;
+  let lastOffRouteEvidenceTimestamp = null; // 最後の確実な off-route fix の時刻
   let navRerouting = false;
   let routeRequestId = 0; // 古い Directions callback を無視するための世代番号
   let routePreviousNavBanner = null; // 経路要求前の案内（キャンセル/失敗時の復元用）
@@ -209,6 +210,7 @@
    * そのため自動取得はせず、◎ボタン押下の中で getCurrentPosition を直接呼ぶ。
    */
   const ROUTE_ORIGIN_MAX_AGE_MS = 30000; // watchPosition の cache 上限より古い fix では経路を開始しない
+  const OFF_ROUTE_EVIDENCE_MAX_GAP_MS = 30000; // 長い曖昧区間をまたぐ off-route 証拠は連続扱いしない
   let geoWatchStarted = false;
   let lastPositionAccuracy = null; // 最新 GPS fix の精度半径 (m)
   let lastPositionTimestamp = null; // 最新 GPS fix の取得時刻 (epoch ms)
@@ -794,6 +796,7 @@
           navStepIdx = 0;
           navLastPosition = null;
           offRouteCount = 0;
+          lastOffRouteEvidenceTimestamp = null;
           navBounds = res.routes[0].bounds || null;
           if (isReroute && zoomedForTurn) {
             map.setZoom(routeTravelMode === "DRIVING" ? 17 : 18);
@@ -1114,6 +1117,7 @@
     if (isLast && directEndDist < 20 && turnDist < 20) {
       navArrived = true;
       offRouteCount = 0;
+      lastOffRouteEvidenceTimestamp = null;
       if (followMode) autoZoomForTurn(turnDist, true);
       setNavBanner('<div class="nav-main"><span class="nav-arrow">🏁</span> 目的地に到着</div>');
       return;
@@ -1177,14 +1181,25 @@
       if (dd < min) min = dd;
       if (min <= offRouteThreshold) break;
     }
+    const evidenceExpired = offRouteCount > 0 &&
+      lastOffRouteEvidenceTimestamp !== null &&
+      lastPositionTimestamp !== null &&
+      lastPositionTimestamp - lastOffRouteEvidenceTimestamp > OFF_ROUTE_EVIDENCE_MAX_GAP_MS;
+    if (evidenceExpired) {
+      offRouteCount = 0;
+      lastOffRouteEvidenceTimestamp = null;
+    }
     if (min > offRouteThreshold) {
       offRouteCount = confirmImmediately ? 3 : offRouteCount + 1;
+      lastOffRouteEvidenceTimestamp = lastPositionTimestamp;
       if (offRouteCount >= 3) {
         offRouteCount = 0;
+        lastOffRouteEvidenceTimestamp = null;
         computeRoute(navDestination, true);
       }
     } else if (min <= onRouteThreshold) {
       offRouteCount = 0;
+      lastOffRouteEvidenceTimestamp = null;
     }
   }
 
