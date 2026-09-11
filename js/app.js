@@ -208,8 +208,10 @@
    * 起点でないと通さず、ページ読み込み時の自動要求は即拒否する。
    * そのため自動取得はせず、◎ボタン押下の中で getCurrentPosition を直接呼ぶ。
    */
+  const ROUTE_ORIGIN_MAX_AGE_MS = 30000; // watchPosition の cache 上限より古い fix では経路を開始しない
   let geoWatchStarted = false;
   let lastPositionAccuracy = null; // 最新 GPS fix の精度半径 (m)
+  let lastPositionTimestamp = null; // 最新 GPS fix の取得時刻 (epoch ms)
   let gpsStatusText = ""; // コンパス中も最新の GPS 状態文言を保持
 
   function startGeolocation() {
@@ -739,13 +741,23 @@
 
   function computeRoute(dest, isReroute, name, requestedTravelMode, resumeFollowOnFailure) {
     const origin = userMarker.getPosition();
-    if (!origin) {
+    const originIsStale = lastPositionTimestamp !== null &&
+      Date.now() - lastPositionTimestamp > ROUTE_ORIGIN_MAX_AGE_MS;
+    if (!origin || originIsStale) {
       if (resumeFollowOnFailure) {
         followMode = true;
         setNavBanner(navMode ? routePreviousNavBanner : null);
         routePreviousNavBanner = null;
       }
-      showError("現在地が未取得", "先に ◎ で現在地を取得してください。", "geolocation");
+      if (originIsStale) {
+        showError(
+          "現在地が古いため経路を開始できません",
+          "◎ で現在地を更新してから、目的地をもう一度選んでください。",
+          "geolocation"
+        );
+      } else {
+        showError("現在地が未取得", "先に ◎ で現在地を取得してください。", "geolocation");
+      }
       return;
     }
     const originAccuracy = lastPositionAccuracy !== null ? lastPositionAccuracy : 0;
@@ -1179,6 +1191,7 @@
     clearError("geolocation"); // 取得できたら位置情報エラーだけを消す
     const { latitude, longitude, accuracy } = pos.coords;
     const p = { lat: latitude, lng: longitude };
+    lastPositionTimestamp = Number.isFinite(pos.timestamp) ? pos.timestamp : Date.now();
     lastPositionAccuracy = Number.isFinite(accuracy) ? Math.max(0, accuracy) : null;
     userMarker.setPosition(p);
     accuracyCircle.setCenter(p);
