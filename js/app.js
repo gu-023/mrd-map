@@ -1188,10 +1188,12 @@
   }
 
   function onPosition(pos) {
+    const positionTimestamp = Number.isFinite(pos.timestamp) ? pos.timestamp : Date.now();
+    if (lastPositionTimestamp !== null && positionTimestamp <= lastPositionTimestamp) return;
     clearError("geolocation"); // 取得できたら位置情報エラーだけを消す
     const { latitude, longitude, accuracy } = pos.coords;
     const p = { lat: latitude, lng: longitude };
-    lastPositionTimestamp = Number.isFinite(pos.timestamp) ? pos.timestamp : Date.now();
+    lastPositionTimestamp = positionTimestamp;
     lastPositionAccuracy = Number.isFinite(accuracy) ? Math.max(0, accuracy) : null;
     userMarker.setPosition(p);
     accuracyCircle.setCenter(p);
