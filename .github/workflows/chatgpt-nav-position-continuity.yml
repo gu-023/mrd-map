@@ -1,0 +1,116 @@
+name: ChatGPT one-shot nav position continuity
+
+on:
+  push:
+    branches:
+      - chatgpt/guard-nav-position-continuity
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: chatgpt/guard-nav-position-continuity
+          fetch-depth: 0
+
+      - name: Apply atomic fix
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path("js/app.js")
+          text = path.read_text()
+
+          replacements = [
+              (
+                  "  let navLastPosition = null; // 前回のナビ位置（曲がり角通過の取りこぼし補完）\n",
+                  "  let navLastPosition = null; // 前回のナビ位置（曲がり角通過の取りこぼし補完）\n  let navLastPositionTimestamp = null; // 前回ナビ位置の GPS fix 時刻\n",
+              ),
+              (
+                  "  const OFF_ROUTE_EVIDENCE_MAX_GAP_MS = 30000; // 長い曖昧区間をまたぐ off-route 証拠は連続扱いしない\n",
+                  "  const OFF_ROUTE_EVIDENCE_MAX_GAP_MS = 30000; // 長い曖昧区間をまたぐ off-route 証拠は連続扱いしない\n  const NAV_POSITION_CONTINUITY_MAX_GAP_MS = 30000; // 長い更新停止を直線移動区間として補完しない\n",
+              ),
+              (
+                  "          navStepIdx = 0;\n          navLastPosition = null;\n          offRouteCount = 0;\n",
+                  "          navStepIdx = 0;\n          navLastPosition = null;\n          navLastPositionTimestamp = null;\n          offRouteCount = 0;\n",
+              ),
+              (
+                  "    navLastPosition = null;\n    navSteps = [];\n",
+                  "    navLastPosition = null;\n    navLastPositionTimestamp = null;\n    navSteps = [];\n",
+              ),
+          ]
+
+          for old, new in replacements:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"expected exactly one source anchor, found {count}: {old!r}")
+              text = text.replace(old, new, 1)
+
+          old_block = "\n".join([
+              "    const here = new google.maps.LatLng(p.lat, p.lng);",
+              "    const previous = navLastPosition;",
+              "    const continuityPrevious = previous && meters(previous, here) <= 250 ? previous : null;",
+              "    navLastPosition = here;",
+          ]) + "\n"
+          new_block = "\n".join([
+              "    const here = new google.maps.LatLng(p.lat, p.lng);",
+              "    const previous = navLastPosition;",
+              "    const previousTimestamp = navLastPositionTimestamp;",
+              "    const continuityTimestamp = lastPositionTimestamp;",
+              "    const continuousInTime = previousTimestamp !== null &&",
+              "      continuityTimestamp !== null &&",
+              "      continuityTimestamp > previousTimestamp &&",
+              "      continuityTimestamp - previousTimestamp <= NAV_POSITION_CONTINUITY_MAX_GAP_MS;",
+              "    const continuityPrevious = previous && continuousInTime && meters(previous, here) <= 250 ? previous : null;",
+              "    navLastPosition = here;",
+              "    navLastPositionTimestamp = continuityTimestamp;",
+          ]) + "\n"
+          count = text.count(old_block)
+          if count != 1:
+              raise SystemExit(f"expected exactly one updateNav continuity block, found {count}")
+          text = text.replace(old_block, new_block, 1)
+          path.write_text(text)
+          PY
+
+      - name: Static verification
+        shell: bash
+        run: |
+          node --check js/app.js
+          git diff --check
+          if git grep -nE 'AIza[0-9A-Za-z_-]{35}' -- .; then
+            echo 'Tracked Google API key pattern detected' >&2
+            exit 1
+          fi
+          python3 <<'PY'
+          from pathlib import Path
+          text = Path("js/app.js").read_text()
+          required = [
+              "let navLastPositionTimestamp = null;",
+              "const NAV_POSITION_CONTINUITY_MAX_GAP_MS = 30000;",
+              "const continuousInTime = previousTimestamp !== null &&",
+              "continuityTimestamp - previousTimestamp <= NAV_POSITION_CONTINUITY_MAX_GAP_MS;",
+              "const continuityPrevious = previous && continuousInTime && meters(previous, here) <= 250 ? previous : null;",
+              "navLastPositionTimestamp = continuityTimestamp;",
+          ]
+          for needle in required:
+              if needle not in text:
+                  raise SystemExit(f"missing expected source: {needle}")
+          if text.count("navLastPositionTimestamp = null;") != 3:
+              raise SystemExit("expected declaration plus two reset sites")
+          PY
+
+      - name: Commit verified change and remove helper
+        shell: bash
+        run: |
+          git rm .github/workflows/chatgpt-nav-position-continuity.yml
+          git config user.name "ChatGPT Codex Connector"
+          git config user.email "1144995+chatgpt-codex-connector[bot]@users.noreply.github.com"
+          git add js/app.js
+          git commit -m "Guard navigation continuity by fix age"
+          git push origin HEAD:chatgpt/guard-nav-position-continuity
