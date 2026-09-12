@@ -1,0 +1,80 @@
+name: ChatGPT normalize route list distance
+
+on:
+  push:
+    branches:
+      - chatgpt/normalize-route-list-distance
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chatgpt/normalize-route-list-distance
+      - name: Apply atomic route-list distance fallback
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("js/app.js")
+          text = path.read_text()
+          old = '''  function openStepList() {
+            const items = navSteps.map((s, i) => ({
+              label: `${i + 1}. ${stripHtml(s.instructions)} (${s.distance ? s.distance.text : ""})`,
+              action: () => { followMode = false; map.panTo(s.start_location); closeMenu(); },
+            }));
+            items.push({ label: "← 戻る", action: openDestinationMenu });
+            openMenu("ルート一覧", items);
+          }
+          '''
+          new = '''  function openStepList() {
+            const items = navSteps.map((s, i) => {
+              const distanceText = s.distance &&
+                Number.isFinite(s.distance.value) &&
+                s.distance.value >= 0 &&
+                typeof s.distance.text === "string" &&
+                s.distance.text.trim()
+                ? s.distance.text
+                : fmtDist(stepDistanceMeters(s));
+              return {
+                label: `${i + 1}. ${stripHtml(s.instructions)} (${distanceText})`,
+                action: () => { followMode = false; map.panTo(s.start_location); closeMenu(); },
+              };
+            });
+            items.push({ label: "← 戻る", action: openDestinationMenu });
+            openMenu("ルート一覧", items);
+          }
+          '''
+          if text.count(old) != 1:
+              raise SystemExit(f"expected exactly one openStepList target, found {text.count(old)}")
+          path.write_text(text.replace(old, new))
+          PY
+      - name: Static verification
+        shell: bash
+        run: |
+          node --check js/app.js
+          git diff --check
+          grep -F 'const distanceText = s.distance &&' js/app.js
+          grep -F ': fmtDist(stepDistanceMeters(s));' js/app.js
+          if git grep -nE 'AIza[0-9A-Za-z_-]{30,}' -- . ':!js/config.js'; then
+            echo 'Potential Google API key pattern found in tracked files' >&2
+            exit 1
+          fi
+      - name: Remove helper and commit product change
+        shell: bash
+        run: |
+          rm .github/workflows/chatgpt-normalize-route-list-distance.yml
+          git diff --check
+          changed=$(git status --short | awk '{print $2}' | sort)
+          expected=$(printf '%s\n' '.github/workflows/chatgpt-normalize-route-list-distance.yml' 'js/app.js' | sort)
+          test "$changed" = "$expected"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'Normalize route list distance fallback'
+          git push origin HEAD:chatgpt/normalize-route-list-distance
