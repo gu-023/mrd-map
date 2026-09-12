@@ -1,0 +1,64 @@
+name: ChatGPT one-shot step progress seed guard
+
+on:
+  push:
+    branches:
+      - chatgpt/guard-new-step-progress-seed
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-verify:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chatgpt/guard-new-step-progress-seed
+          fetch-depth: 0
+
+      - name: Apply atomic fix
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('js/app.js')
+          s = p.read_text()
+          marker = "  // GPS 更新が曲がり角の 25m 圏を飛び越えた場合、前回→今回の短い移動区間で通過を補完する。\n"
+          helper = "  // step 切替直後に self-near な後段へ初期 anchor が飛ばないよう、step 始点からの実移動で上限化。\n  function maxPlausibleStepSeedProgress(here, step, accuracy = 0) {\n    const start = step && (step.start_location || (step.path && step.path[0]));\n    const safeAccuracy = Number.isFinite(accuracy) ? Math.max(0, accuracy) : 0;\n    return start\n      ? meters(start, here) + safeAccuracy + NAV_PROGRESS_ADVANCE_SLACK_M\n      : Infinity;\n  }\n\n"
+          if s.count(marker) != 1:
+              raise SystemExit(f'helper insertion marker count={s.count(marker)}')
+          s = s.replace(marker, helper + marker, 1)
+          old = "      const maxPlausibleAdvance = maxPlausibleProgressAdvance(here, proximityAccuracy);\n      const projectedAdvance = navStepProgressRemaining !== null\n        ? navStepProgressRemaining - projectedTurnDist\n        : 0;\n      if (advancesAnchor && (stepChanged || projectedAdvance <= maxPlausibleAdvance)) {\n"
+          new = "      const stepDistance = step.distance && Number.isFinite(step.distance.value)\n        ? Math.max(0, step.distance.value)\n        : null;\n      const projectedAdvance = stepChanged\n        ? (stepDistance !== null ? Math.max(0, stepDistance - projectedTurnDist) : 0)\n        : (navStepProgressRemaining !== null ? navStepProgressRemaining - projectedTurnDist : 0);\n      const maxPlausibleAdvance = stepChanged\n        ? maxPlausibleStepSeedProgress(here, step, proximityAccuracy)\n        : maxPlausibleProgressAdvance(here, proximityAccuracy);\n      if (advancesAnchor && projectedAdvance <= maxPlausibleAdvance) {\n"
+          if s.count(old) != 1:
+              raise SystemExit(f'anchor block count={s.count(old)}')
+          s = s.replace(old, new, 1)
+          p.write_text(s)
+          PY
+
+      - name: Static verification
+        shell: bash
+        run: |
+          node --check js/app.js
+          git diff --check
+          test "$(git diff --name-only)" = "js/app.js"
+          grep -Fq "function maxPlausibleStepSeedProgress(here, step, accuracy = 0)" js/app.js
+          grep -Fq "? maxPlausibleStepSeedProgress(here, step, proximityAccuracy)" js/app.js
+          grep -Fq "if (advancesAnchor && projectedAdvance <= maxPlausibleAdvance)" js/app.js
+          if git grep -nE 'AIza[0-9A-Za-z_-]{30,}' -- . ':!js/config.template.js'; then
+            echo 'Potential Google API key found in tracked source' >&2
+            exit 1
+          fi
+
+      - name: Remove helper, commit, and push
+        shell: bash
+        run: |
+          rm .github/workflows/chatgpt-oneshot-step-seed.yml
+          git add -A
+          git diff --cached --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Guard new-step progress anchor seeding"
+          git push origin HEAD:chatgpt/guard-new-step-progress-seed
