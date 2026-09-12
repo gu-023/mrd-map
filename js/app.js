@@ -1256,7 +1256,8 @@
     );
     const stepDistance = stepDistanceMeters(step);
     const hasProgressAnchor = navStepProgressIdx === navStepIdx &&
-      navStepProgressRemaining !== null;
+      Number.isFinite(navStepProgressRemaining) &&
+      navStepProgressRemaining >= 0;
     const maxDisplayAdvance = hasProgressAnchor
       ? maxPlausibleProgressAdvance(here, proximityAccuracy)
       : maxPlausibleStepSeedProgress(here, step, proximityAccuracy);
@@ -1289,14 +1290,14 @@
     const confidentlyOnRoute = rerouteIfOffRoute(here, confirmOffRouteImmediately);
     if (confidentlyOnRoute && Number.isInteger(stepProgress.segment) && Number.isFinite(stepProgress.t)) {
       const progressT = Math.max(0, Math.min(1, stepProgress.t));
-      const stepChanged = navStepProgressIdx !== navStepIdx;
-      const advancesAnchor = stepChanged ||
+      const needsProgressSeed = !hasProgressAnchor;
+      const advancesAnchor = needsProgressSeed ||
         stepProgress.segment > navStepProgressSegment ||
         (stepProgress.segment === navStepProgressSegment && progressT > navStepProgressT);
-      const projectedAdvance = stepChanged
+      const projectedAdvance = needsProgressSeed
         ? Math.max(0, stepDistance - projectedTurnDist)
-        : (navStepProgressRemaining !== null ? navStepProgressRemaining - projectedTurnDist : 0);
-      const maxPlausibleAdvance = stepChanged
+        : navStepProgressRemaining - projectedTurnDist;
+      const maxPlausibleAdvance = needsProgressSeed
         ? maxPlausibleStepSeedProgress(here, step, proximityAccuracy)
         : maxPlausibleProgressAdvance(here, proximityAccuracy);
       if (advancesAnchor && projectedAdvance <= maxPlausibleAdvance) {
