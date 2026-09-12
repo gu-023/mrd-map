@@ -1004,6 +1004,7 @@
     return step.duration.value;
   }
   function fmtDist(m) {
+    if (!Number.isFinite(m) || m < 0) return "距離不明";
     return m >= 1000 ? (m / 1000).toFixed(1) + "km" : Math.round(m) + "m";
   }
 
