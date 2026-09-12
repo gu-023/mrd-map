@@ -1117,6 +1117,15 @@
       : Infinity;
   }
 
+  // step 切替直後に self-near な後段へ初期 anchor が飛ばないよう、step 始点からの実移動で上限化。
+  function maxPlausibleStepSeedProgress(here, step, accuracy = 0) {
+    const start = step && (step.start_location || (step.path && step.path[0]));
+    const safeAccuracy = Number.isFinite(accuracy) ? Math.max(0, accuracy) : 0;
+    return start
+      ? meters(start, here) + safeAccuracy + NAV_PROGRESS_ADVANCE_SLACK_M
+      : Infinity;
+  }
+
   // GPS 更新が曲がり角の 25m 圏を飛び越えた場合、前回→今回の短い移動区間で通過を補完する。
   function segmentPassesNear(a, b, target, radius, aAccuracy = 0, bAccuracy = 0) {
     if (!a || meters(a, b) > 250) return false; // 大きな GPS ジャンプは通過根拠にしない
@@ -1226,11 +1235,16 @@
       const advancesAnchor = stepChanged ||
         stepProgress.segment > navStepProgressSegment ||
         (stepProgress.segment === navStepProgressSegment && progressT > navStepProgressT);
-      const maxPlausibleAdvance = maxPlausibleProgressAdvance(here, proximityAccuracy);
-      const projectedAdvance = navStepProgressRemaining !== null
-        ? navStepProgressRemaining - projectedTurnDist
-        : 0;
-      if (advancesAnchor && (stepChanged || projectedAdvance <= maxPlausibleAdvance)) {
+      const stepDistance = step.distance && Number.isFinite(step.distance.value)
+        ? Math.max(0, step.distance.value)
+        : null;
+      const projectedAdvance = stepChanged
+        ? (stepDistance !== null ? Math.max(0, stepDistance - projectedTurnDist) : 0)
+        : (navStepProgressRemaining !== null ? navStepProgressRemaining - projectedTurnDist : 0);
+      const maxPlausibleAdvance = stepChanged
+        ? maxPlausibleStepSeedProgress(here, step, proximityAccuracy)
+        : maxPlausibleProgressAdvance(here, proximityAccuracy);
+      if (advancesAnchor && projectedAdvance <= maxPlausibleAdvance) {
         navStepProgressIdx = navStepIdx;
         navStepProgressSegment = stepProgress.segment;
         navStepProgressT = progressT;
