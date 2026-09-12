@@ -1111,6 +1111,7 @@
     let pathDist = 0;
     for (let i = 0; i < path.length - 1; i++) {
       const segmentDist = meters(path[i], path[i + 1]);
+      if (!Number.isFinite(segmentDist) || segmentDist < 0) return 0;
       pathDist += segmentDist;
       if (i < nearestSegment) continue;
       dist += i === nearestSegment ? segmentDist * (1 - nearestT) : segmentDist;
