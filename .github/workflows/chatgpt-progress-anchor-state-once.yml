@@ -27,35 +27,39 @@ jobs:
           path = Path("js/app.js")
           source = path.read_text()
 
-          old_validity = """    const hasProgressAnchor = navStepProgressIdx === navStepIdx &&
-              navStepProgressRemaining !== null;
-          """
-          new_validity = """    const hasProgressAnchor = navStepProgressIdx === navStepIdx &&
-              Number.isFinite(navStepProgressRemaining) &&
-              navStepProgressRemaining >= 0;
-          """
-          old_update = """      const stepChanged = navStepProgressIdx !== navStepIdx;
-              const advancesAnchor = stepChanged ||
-                stepProgress.segment > navStepProgressSegment ||
-                (stepProgress.segment === navStepProgressSegment && progressT > navStepProgressT);
-              const projectedAdvance = stepChanged
-                ? Math.max(0, stepDistance - projectedTurnDist)
-                : (navStepProgressRemaining !== null ? navStepProgressRemaining - projectedTurnDist : 0);
-              const maxPlausibleAdvance = stepChanged
-                ? maxPlausibleStepSeedProgress(here, step, proximityAccuracy)
-                : maxPlausibleProgressAdvance(here, proximityAccuracy);
-          """
-          new_update = """      const needsProgressSeed = !hasProgressAnchor;
-              const advancesAnchor = needsProgressSeed ||
-                stepProgress.segment > navStepProgressSegment ||
-                (stepProgress.segment === navStepProgressSegment && progressT > navStepProgressT);
-              const projectedAdvance = needsProgressSeed
-                ? Math.max(0, stepDistance - projectedTurnDist)
-                : navStepProgressRemaining - projectedTurnDist;
-              const maxPlausibleAdvance = needsProgressSeed
-                ? maxPlausibleStepSeedProgress(here, step, proximityAccuracy)
-                : maxPlausibleProgressAdvance(here, proximityAccuracy);
-          """
+          old_validity = "\n".join([
+              "    const hasProgressAnchor = navStepProgressIdx === navStepIdx &&",
+              "      navStepProgressRemaining !== null;",
+          ])
+          new_validity = "\n".join([
+              "    const hasProgressAnchor = navStepProgressIdx === navStepIdx &&",
+              "      Number.isFinite(navStepProgressRemaining) &&",
+              "      navStepProgressRemaining >= 0;",
+          ])
+          old_update = "\n".join([
+              "      const stepChanged = navStepProgressIdx !== navStepIdx;",
+              "      const advancesAnchor = stepChanged ||",
+              "        stepProgress.segment > navStepProgressSegment ||",
+              "        (stepProgress.segment === navStepProgressSegment && progressT > navStepProgressT);",
+              "      const projectedAdvance = stepChanged",
+              "        ? Math.max(0, stepDistance - projectedTurnDist)",
+              "        : (navStepProgressRemaining !== null ? navStepProgressRemaining - projectedTurnDist : 0);",
+              "      const maxPlausibleAdvance = stepChanged",
+              "        ? maxPlausibleStepSeedProgress(here, step, proximityAccuracy)",
+              "        : maxPlausibleProgressAdvance(here, proximityAccuracy);",
+          ])
+          new_update = "\n".join([
+              "      const needsProgressSeed = !hasProgressAnchor;",
+              "      const advancesAnchor = needsProgressSeed ||",
+              "        stepProgress.segment > navStepProgressSegment ||",
+              "        (stepProgress.segment === navStepProgressSegment && progressT > navStepProgressT);",
+              "      const projectedAdvance = needsProgressSeed",
+              "        ? Math.max(0, stepDistance - projectedTurnDist)",
+              "        : navStepProgressRemaining - projectedTurnDist;",
+              "      const maxPlausibleAdvance = needsProgressSeed",
+              "        ? maxPlausibleStepSeedProgress(here, step, proximityAccuracy)",
+              "        : maxPlausibleProgressAdvance(here, proximityAccuracy);",
+          ])
 
           if source.count(old_validity) != 1:
               raise SystemExit("progress anchor validity source guard failed")
