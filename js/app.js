@@ -993,7 +993,9 @@
       : [step.start_location, step.end_location].filter(Boolean);
     let dist = 0;
     for (let i = 0; i < path.length - 1; i++) {
-      dist += meters(path[i], path[i + 1]);
+      const segmentDist = meters(path[i], path[i + 1]);
+      if (!Number.isFinite(segmentDist) || segmentDist < 0) return 0;
+      dist += segmentDist;
     }
     return dist;
   }
