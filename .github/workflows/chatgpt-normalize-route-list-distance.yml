@@ -23,36 +23,33 @@ jobs:
 
           path = Path("js/app.js")
           text = path.read_text()
-          old = '''  function openStepList() {
-            const items = navSteps.map((s, i) => ({
-              label: `${i + 1}. ${stripHtml(s.instructions)} (${s.distance ? s.distance.text : ""})`,
-              action: () => { followMode = false; map.panTo(s.start_location); closeMenu(); },
-            }));
-            items.push({ label: "← 戻る", action: openDestinationMenu });
-            openMenu("ルート一覧", items);
-          }
-          '''
-          new = '''  function openStepList() {
-            const items = navSteps.map((s, i) => {
-              const distanceText = s.distance &&
-                Number.isFinite(s.distance.value) &&
-                s.distance.value >= 0 &&
-                typeof s.distance.text === "string" &&
-                s.distance.text.trim()
-                ? s.distance.text
-                : fmtDist(stepDistanceMeters(s));
-              return {
-                label: `${i + 1}. ${stripHtml(s.instructions)} (${distanceText})`,
-                action: () => { followMode = false; map.panTo(s.start_location); closeMenu(); },
-              };
-            });
-            items.push({ label: "← 戻る", action: openDestinationMenu });
-            openMenu("ルート一覧", items);
-          }
-          '''
-          if text.count(old) != 1:
-              raise SystemExit(f"expected exactly one openStepList target, found {text.count(old)}")
-          path.write_text(text.replace(old, new))
+          start_marker = "  function openStepList() {"
+          end_marker = "\n  function openListMenu("
+          if text.count(start_marker) != 1:
+              raise SystemExit(f"expected one openStepList start, found {text.count(start_marker)}")
+          start = text.index(start_marker)
+          end = text.index(end_marker, start)
+          replacement = "\n".join([
+              "  function openStepList() {",
+              "    const items = navSteps.map((s, i) => {",
+              "      const distanceText = s.distance &&",
+              "        Number.isFinite(s.distance.value) &&",
+              "        s.distance.value >= 0 &&",
+              "        typeof s.distance.text === \"string\" &&",
+              "        s.distance.text.trim()",
+              "        ? s.distance.text",
+              "        : fmtDist(stepDistanceMeters(s));",
+              "      return {",
+              "        label: `${i + 1}. ${stripHtml(s.instructions)} (${distanceText})`,",
+              "        action: () => { followMode = false; map.panTo(s.start_location); closeMenu(); },",
+              "      };",
+              "    });",
+              "    items.push({ label: \"← 戻る\", action: openDestinationMenu });",
+              "    openMenu(\"ルート一覧\", items);",
+              "  }",
+              "",
+          ])
+          path.write_text(text[:start] + replacement + text[end:])
           PY
       - name: Static verification
         shell: bash
@@ -61,6 +58,7 @@ jobs:
           git diff --check
           grep -F 'const distanceText = s.distance &&' js/app.js
           grep -F ': fmtDist(stepDistanceMeters(s));' js/app.js
+          grep -F 'label: `${i + 1}. ${stripHtml(s.instructions)} (${distanceText})`' js/app.js
           if git grep -nE 'AIza[0-9A-Za-z_-]{30,}' -- . ':!js/config.js'; then
             echo 'Potential Google API key pattern found in tracked files' >&2
             exit 1
