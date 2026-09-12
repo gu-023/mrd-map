@@ -1410,7 +1410,8 @@
 
   function onPosition(pos) {
     if (!pos || !pos.coords) return;
-    const positionTimestamp = Number.isFinite(pos.timestamp) ? pos.timestamp : Date.now();
+    const now = Date.now();
+    const positionTimestamp = Number.isFinite(pos.timestamp) && pos.timestamp <= now ? pos.timestamp : now;
     if (lastPositionTimestamp !== null && positionTimestamp <= lastPositionTimestamp) return;
     const { latitude, longitude, accuracy } = pos.coords;
     if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90 ||
