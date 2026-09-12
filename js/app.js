@@ -1046,7 +1046,9 @@
     const path = step.path || [];
     if (path.length < 2) {
       if (progressOut) { progressOut.segment = 0; progressOut.t = 0; }
-      return meters(here, step.end_location);
+      if (!here || !step.end_location) return 0;
+      const fallbackDist = meters(here, step.end_location);
+      return Number.isFinite(fallbackDist) && fallbackDist >= 0 ? fallbackDist : 0;
     }
 
     const hereLat = here.lat();
