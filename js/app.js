@@ -1201,12 +1201,18 @@
     const projectedTurnDist = stepRemainingDistance(
       here, step, snapPrevious, proximityAccuracy, stepProgress
     );
-    const maxDisplayAdvance = navStepProgressIdx === navStepIdx
+    const stepDistance = step.distance && Number.isFinite(step.distance.value)
+      ? Math.max(0, step.distance.value)
+      : null;
+    const hasProgressAnchor = navStepProgressIdx === navStepIdx &&
+      navStepProgressRemaining !== null;
+    const maxDisplayAdvance = hasProgressAnchor
       ? maxPlausibleProgressAdvance(here, proximityAccuracy)
-      : Infinity;
-    const displayTurnDist =
-      navStepProgressIdx === navStepIdx && navStepProgressRemaining !== null
-        ? Math.max(projectedTurnDist, navStepProgressRemaining - maxDisplayAdvance)
+      : maxPlausibleStepSeedProgress(here, step, proximityAccuracy);
+    const displayTurnDist = hasProgressAnchor
+      ? Math.max(projectedTurnDist, navStepProgressRemaining - maxDisplayAdvance)
+      : stepDistance !== null
+        ? Math.max(projectedTurnDist, stepDistance - maxDisplayAdvance)
         : projectedTurnDist;
     const isLast = navStepIdx === navSteps.length - 1;
 
@@ -1235,9 +1241,6 @@
       const advancesAnchor = stepChanged ||
         stepProgress.segment > navStepProgressSegment ||
         (stepProgress.segment === navStepProgressSegment && progressT > navStepProgressT);
-      const stepDistance = step.distance && Number.isFinite(step.distance.value)
-        ? Math.max(0, step.distance.value)
-        : null;
       const projectedAdvance = stepChanged
         ? (stepDistance !== null ? Math.max(0, stepDistance - projectedTurnDist) : 0)
         : (navStepProgressRemaining !== null ? navStepProgressRemaining - projectedTurnDist : 0);
