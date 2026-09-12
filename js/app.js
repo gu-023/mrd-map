@@ -973,11 +973,11 @@
     return google.maps.geometry.spherical.computeDistanceBetween(a, b);
   }
 
-  // Directions の距離メタデータが欠落/非finiteでも、step geometry から安全に距離を得る。
+  // Directions の距離メタデータが欠落/非finite/負値なら、step geometry から安全に距離を得る。
   function stepDistanceMeters(step) {
     if (!step) return 0;
-    if (step.distance && Number.isFinite(step.distance.value)) {
-      return Math.max(0, step.distance.value);
+    if (step.distance && Number.isFinite(step.distance.value) && step.distance.value >= 0) {
+      return step.distance.value;
     }
     const path = step.path && step.path.length
       ? step.path
