@@ -1,0 +1,86 @@
+name: ChatGPT one-shot valid-fix error clearing
+
+on:
+  push:
+    branches:
+      - chatgpt/clear-geolocation-error-after-valid-fix
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+
+      - name: Apply atomic product change and verify
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("js/app.js")
+          text = path.read_text()
+          old = (
+              '    clearError("geolocation"); // 取得できたら位置情報エラーだけを消す\n'
+              + '    const { latitude, longitude, accuracy } = pos.coords;\n'
+              + '    if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90 ||\n'
+              + '        !Number.isFinite(longitude) || longitude < -180 || longitude > 180) {\n'
+              + '      return;\n'
+              + '    }\n'
+          )
+          new = (
+              '    const { latitude, longitude, accuracy } = pos.coords;\n'
+              + '    if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90 ||\n'
+              + '        !Number.isFinite(longitude) || longitude < -180 || longitude > 180) {\n'
+              + '      return;\n'
+              + '    }\n'
+              + '    clearError("geolocation"); // 有効な fix を受理できたら位置情報エラーだけを消す\n'
+          )
+          if text.count(old) != 1:
+              raise SystemExit(f"expected exactly one onPosition validation block, found {text.count(old)}")
+          path.write_text(text.replace(old, new, 1))
+          PY
+
+          node --check js/app.js
+          git diff --check
+
+          python3 - <<'PY'
+          from pathlib import Path
+          text = Path("js/app.js").read_text()
+          start = text.index('  function onPosition(pos) {')
+          end = text.index('\n  function onGeoError(err) {', start)
+          block = text[start:end]
+          coords = block.index('    const { latitude, longitude, accuracy } = pos.coords;')
+          guard = block.index('!Number.isFinite(latitude)', coords)
+          clear = block.index('    clearError("geolocation"); // 有効な fix を受理できたら位置情報エラーだけを消す', coords)
+          point = block.index('    const p = { lat: latitude, lng: longitude };', coords)
+          if not coords < guard < clear < point:
+              raise SystemExit("geolocation error must clear only after coordinate validation")
+          if block.count('clearError("geolocation")') != 1:
+              raise SystemExit("unexpected onPosition geolocation clearError call count")
+          PY
+
+          if grep -RInE --exclude-dir=.git 'AIza[0-9A-Za-z_-]{35}' .; then
+            echo "Google API-key-like value detected in tracked worktree" >&2
+            exit 1
+          fi
+
+          rm .github/workflows/chatgpt-once.yml
+          git add js/app.js .github/workflows/chatgpt-once.yml
+          git diff --cached --check
+          changed="$(git diff --cached --name-only origin/main)"
+          if [ "$changed" != "js/app.js" ]; then
+            echo "unexpected final changed files relative to main:" >&2
+            printf '%s\n' "$changed" >&2
+            exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Clear geolocation errors only after valid fixes"
+          git push origin "HEAD:${{ github.ref_name }}"
