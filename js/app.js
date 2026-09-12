@@ -1411,12 +1411,12 @@
   function onPosition(pos) {
     const positionTimestamp = Number.isFinite(pos.timestamp) ? pos.timestamp : Date.now();
     if (lastPositionTimestamp !== null && positionTimestamp <= lastPositionTimestamp) return;
-    clearError("geolocation"); // 取得できたら位置情報エラーだけを消す
     const { latitude, longitude, accuracy } = pos.coords;
     if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90 ||
         !Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
       return;
     }
+    clearError("geolocation"); // 有効な fix を受理できたら位置情報エラーだけを消す
     const p = { lat: latitude, lng: longitude };
     lastPositionTimestamp = positionTimestamp;
     lastPositionAccuracy = Number.isFinite(accuracy) ? Math.max(0, accuracy) : null;
