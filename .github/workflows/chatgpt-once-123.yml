@@ -24,40 +24,48 @@ jobs:
           from pathlib import Path
           path = Path('js/app.js')
           text = path.read_text()
-          old = '''      const currentStep = navSteps[navStepIdx];
-      const end = currentStep.end_location;
-      const routeRemaining = stepRemainingDistance(
-        here, currentStep, snapPrevious, proximityAccuracy
-      );
-      const crossedSinceLast = segmentPassesNear(
-        continuityPrevious, here, end, 25, continuityPreviousAccuracy, proximityAccuracy
-      ) &&
-        routeRemaining < 1;
-      const nearEnd = meters(here, end) + proximityAccuracy < 25 && routeRemaining < 25;'''
-          new = '''      const currentStep = navSteps[navStepIdx];
-      const end = currentStep.end_location ||
-        (currentStep.path && currentStep.path[currentStep.path.length - 1]);
-      const routeRemaining = stepRemainingDistance(
-        here, currentStep, snapPrevious, proximityAccuracy
-      );
-      const endDistance = end ? meters(here, end) : Infinity;
-      const safeEndDistance = Number.isFinite(endDistance) && endDistance >= 0 ? endDistance : Infinity;
-      const crossedSinceLast = Boolean(end) && segmentPassesNear(
-        continuityPrevious, here, end, 25, continuityPreviousAccuracy, proximityAccuracy
-      ) &&
-        routeRemaining < 1;
-      const nearEnd = safeEndDistance + proximityAccuracy < 25 && routeRemaining < 25;'''
+          old = (
+              '      const currentStep = navSteps[navStepIdx];\n'
+              '      const end = currentStep.end_location;\n'
+              '      const routeRemaining = stepRemainingDistance(\n'
+              '        here, currentStep, snapPrevious, proximityAccuracy\n'
+              '      );\n'
+              '      const crossedSinceLast = segmentPassesNear(\n'
+              '        continuityPrevious, here, end, 25, continuityPreviousAccuracy, proximityAccuracy\n'
+              '      ) &&\n'
+              '        routeRemaining < 1;\n'
+              '      const nearEnd = meters(here, end) + proximityAccuracy < 25 && routeRemaining < 25;'
+          )
+          new = (
+              '      const currentStep = navSteps[navStepIdx];\n'
+              '      const end = currentStep.end_location ||\n'
+              '        (currentStep.path && currentStep.path[currentStep.path.length - 1]);\n'
+              '      const routeRemaining = stepRemainingDistance(\n'
+              '        here, currentStep, snapPrevious, proximityAccuracy\n'
+              '      );\n'
+              '      const endDistance = end ? meters(here, end) : Infinity;\n'
+              '      const safeEndDistance = Number.isFinite(endDistance) && endDistance >= 0 ? endDistance : Infinity;\n'
+              '      const crossedSinceLast = Boolean(end) && segmentPassesNear(\n'
+              '        continuityPrevious, here, end, 25, continuityPreviousAccuracy, proximityAccuracy\n'
+              '      ) &&\n'
+              '        routeRemaining < 1;\n'
+              '      const nearEnd = safeEndDistance + proximityAccuracy < 25 && routeRemaining < 25;'
+          )
           if text.count(old) != 1:
               raise SystemExit(f'expected one step-advance endpoint block, found {text.count(old)}')
           text = text.replace(old, new, 1)
-          old2 = '''    const step = navSteps[navStepIdx];
-    const directEndDist = meters(here, step.end_location);'''
-          new2 = '''    const step = navSteps[navStepIdx];
-    const stepEnd = step.end_location || (step.path && step.path[step.path.length - 1]);
-    const measuredEndDist = stepEnd ? meters(here, stepEnd) : Infinity;
-    const directEndDist = Number.isFinite(measuredEndDist) && measuredEndDist >= 0
-      ? measuredEndDist
-      : Infinity;'''
+          old2 = (
+              '    const step = navSteps[navStepIdx];\n'
+              '    const directEndDist = meters(here, step.end_location);'
+          )
+          new2 = (
+              '    const step = navSteps[navStepIdx];\n'
+              '    const stepEnd = step.end_location || (step.path && step.path[step.path.length - 1]);\n'
+              '    const measuredEndDist = stepEnd ? meters(here, stepEnd) : Infinity;\n'
+              '    const directEndDist = Number.isFinite(measuredEndDist) && measuredEndDist >= 0\n'
+              '      ? measuredEndDist\n'
+              '      : Infinity;'
+          )
           if text.count(old2) != 1:
               raise SystemExit(f'expected one arrival endpoint block, found {text.count(old2)}')
           path.write_text(text.replace(old2, new2, 1))
