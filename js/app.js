@@ -1208,7 +1208,10 @@
       continuityTimestamp !== null &&
       continuityTimestamp > previousTimestamp &&
       continuityTimestamp - previousTimestamp <= NAV_POSITION_CONTINUITY_MAX_GAP_MS;
-    const previousDistance = previous ? meters(previous, here) : Infinity;
+    const measuredPreviousDistance = previous ? meters(previous, here) : Infinity;
+    const previousDistance = Number.isFinite(measuredPreviousDistance) && measuredPreviousDistance >= 0
+      ? measuredPreviousDistance
+      : Infinity;
     const previousProximityAccuracy = previousAccuracy !== null ? previousAccuracy : 0;
     const staleSnapMovementLimit =
       NAV_SNAP_STALE_MOVEMENT_BASE_M + previousProximityAccuracy + proximityAccuracy;
