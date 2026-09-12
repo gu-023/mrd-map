@@ -1,0 +1,61 @@
+name: One-shot compass heading guard
+
+on:
+  push:
+    branches:
+      - chatgpt/guard-nonfinite-compass-heading
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+
+      - name: Apply finite heading guard
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("js/app.js")
+          text = path.read_text()
+          old = '    if (h == null || isNaN(h)) return;'
+          new = '    if (!Number.isFinite(h)) return;'
+          count = text.count(old)
+          if count != 1:
+              raise SystemExit(f"expected exactly one compass heading guard, found {count}")
+          path.write_text(text.replace(old, new, 1))
+          PY
+
+      - name: Verify source and syntax
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          text = Path("js/app.js").read_text()
+          assert text.count('    if (!Number.isFinite(h)) return;') == 1
+          assert '    if (h == null || isNaN(h)) return;' not in text
+          PY
+          node --check js/app.js
+          git diff --check
+          changed="$(git diff --name-only)"
+          test "$changed" = "js/app.js"
+          if git diff -- js/app.js | grep -Eq 'AIza[0-9A-Za-z_-]{20,}'; then
+            echo "Google API key-like token found in diff"
+            exit 1
+          fi
+
+      - name: Commit product change and remove helper
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add js/app.js
+          git rm .github/workflows/chatgpt-guard-nonfinite-compass-heading.yml
+          git commit -m "Guard non-finite compass headings"
+          git push origin HEAD:${{ github.ref_name }}
