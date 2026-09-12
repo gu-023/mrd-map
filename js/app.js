@@ -319,7 +319,7 @@
 
   function onOrient(e) {
     const h = headingFromEvent(e);
-    if (h == null || isNaN(h)) return;
+    if (!Number.isFinite(h)) return;
     // 最短経路で平滑化（コンパスはノイズが多い）
     let diff = ((h - curHeading + 540) % 360) - 180;
     curHeading = (curHeading + diff * 0.2 + 360) % 360;
