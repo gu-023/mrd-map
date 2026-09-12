@@ -1,0 +1,41 @@
+name: ChatGPT one-shot future timestamp guard
+
+on:
+  push:
+    branches:
+      - chatgpt/guard-future-timestamp
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-verify:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chatgpt/guard-future-timestamp
+          fetch-depth: 0
+      - name: Apply atomic timestamp guard
+        run: |
+          python3 -c 'from pathlib import Path; p=Path("js/app.js"); s=p.read_text(); old="    const positionTimestamp = Number.isFinite(pos.timestamp) ? pos.timestamp : Date.now();\n"; new="    const now = Date.now();\n    const positionTimestamp = Number.isFinite(pos.timestamp) && pos.timestamp <= now ? pos.timestamp : now;\n"; assert s.count(old) == 1, f"expected one target, found {s.count(old)}"; p.write_text(s.replace(old, new))'
+      - name: Static verification
+        run: |
+          node --check js/app.js
+          git diff --check
+          test "$(git diff --name-only)" = "js/app.js"
+          python3 -c 'from pathlib import Path; s=Path("js/app.js").read_text(); assert "const now = Date.now();\n    const positionTimestamp = Number.isFinite(pos.timestamp) && pos.timestamp <= now ? pos.timestamp : now;" in s'
+          if git grep -nE 'AIza[0-9A-Za-z_-]{30,}' -- .; then
+            echo "Possible Google API key found in tracked content"
+            exit 1
+          fi
+      - name: Commit product change and remove helper
+        run: |
+          rm .github/workflows/chatgpt-one-shot-future-timestamp.yml
+          git diff --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Guard future geolocation timestamps"
+          git push origin HEAD:chatgpt/guard-future-timestamp
