@@ -1203,7 +1203,9 @@
     const previousTimestamp = navLastPositionTimestamp;
     const previousAccuracy = navLastPositionAccuracy;
     const continuityTimestamp = lastPositionTimestamp;
-    const proximityAccuracy = lastPositionAccuracy !== null ? lastPositionAccuracy : 0;
+    const proximityAccuracy = Number.isFinite(lastPositionAccuracy) && lastPositionAccuracy >= 0
+      ? lastPositionAccuracy
+      : 0;
     const continuousInTime = previousTimestamp !== null &&
       continuityTimestamp !== null &&
       continuityTimestamp > previousTimestamp &&
@@ -1212,7 +1214,9 @@
     const previousDistance = Number.isFinite(measuredPreviousDistance) && measuredPreviousDistance >= 0
       ? measuredPreviousDistance
       : Infinity;
-    const previousProximityAccuracy = previousAccuracy !== null ? previousAccuracy : 0;
+    const previousProximityAccuracy = Number.isFinite(previousAccuracy) && previousAccuracy >= 0
+      ? previousAccuracy
+      : 0;
     const staleSnapMovementLimit =
       NAV_SNAP_STALE_MOVEMENT_BASE_M + previousProximityAccuracy + proximityAccuracy;
     const snapPrevious = previous &&
@@ -1224,7 +1228,7 @@
     const continuityPreviousAccuracy = continuityPrevious ? previousProximityAccuracy : 0;
     navLastPosition = here;
     navLastPositionTimestamp = continuityTimestamp;
-    navLastPositionAccuracy = lastPositionAccuracy;
+    navLastPositionAccuracy = proximityAccuracy;
 
     // 通過した手順を進める。1つの GPS fix では「25m以内」だけを根拠に複数手順を飛ばさない。
     // 複数手順を一気に進めるのは、前回→今回の移動区間が各終端を実際に横切った場合だけ。
