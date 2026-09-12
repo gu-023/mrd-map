@@ -1227,21 +1227,28 @@
     let advancedThisFix = false;
     while (navStepIdx < navSteps.length - 1) {
       const currentStep = navSteps[navStepIdx];
-      const end = currentStep.end_location;
+      const end = currentStep.end_location ||
+        (currentStep.path && currentStep.path[currentStep.path.length - 1]);
       const routeRemaining = stepRemainingDistance(
         here, currentStep, snapPrevious, proximityAccuracy
       );
-      const crossedSinceLast = segmentPassesNear(
+      const endDistance = end ? meters(here, end) : Infinity;
+      const safeEndDistance = Number.isFinite(endDistance) && endDistance >= 0 ? endDistance : Infinity;
+      const crossedSinceLast = Boolean(end) && segmentPassesNear(
         continuityPrevious, here, end, 25, continuityPreviousAccuracy, proximityAccuracy
       ) &&
         routeRemaining < 1;
-      const nearEnd = meters(here, end) + proximityAccuracy < 25 && routeRemaining < 25;
+      const nearEnd = safeEndDistance + proximityAccuracy < 25 && routeRemaining < 25;
       if (!crossedSinceLast && (!nearEnd || advancedThisFix)) break;
       navStepIdx++;
       advancedThisFix = true;
     }
     const step = navSteps[navStepIdx];
-    const directEndDist = meters(here, step.end_location);
+    const stepEnd = step.end_location || (step.path && step.path[step.path.length - 1]);
+    const measuredEndDist = stepEnd ? meters(here, stepEnd) : Infinity;
+    const directEndDist = Number.isFinite(measuredEndDist) && measuredEndDist >= 0
+      ? measuredEndDist
+      : Infinity;
     const stepProgress = {};
     const projectedTurnDist = stepRemainingDistance(
       here, step, snapPrevious, proximityAccuracy, stepProgress
