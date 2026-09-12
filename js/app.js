@@ -973,6 +973,22 @@
     return google.maps.geometry.spherical.computeDistanceBetween(a, b);
   }
 
+  // Directions の距離メタデータが欠落/非finiteでも、step geometry から安全に距離を得る。
+  function stepDistanceMeters(step) {
+    if (!step) return 0;
+    if (step.distance && Number.isFinite(step.distance.value)) {
+      return Math.max(0, step.distance.value);
+    }
+    const path = step.path && step.path.length
+      ? step.path
+      : [step.start_location, step.end_location].filter(Boolean);
+    let dist = 0;
+    for (let i = 0; i < path.length - 1; i++) {
+      dist += meters(path[i], path[i + 1]);
+    }
+    return dist;
+  }
+
   function fmtDist(m) {
     return m >= 1000 ? (m / 1000).toFixed(1) + "km" : Math.round(m) + "m";
   }
@@ -1082,7 +1098,7 @@
       if (i < nearestSegment) continue;
       dist += i === nearestSegment ? segmentDist * (1 - nearestT) : segmentDist;
     }
-    const stepDist = step.distance ? step.distance.value : 0;
+    const stepDist = stepDistanceMeters(step);
     return stepDist > 0 && pathDist > 0
       ? stepDist * Math.min(1, dist / pathDist)
       : dist;
@@ -1095,11 +1111,11 @@
       ? Math.max(0, currentStepRemaining)
       : stepRemainingDistance(here, cur, previous, accuracy);
     let sec = 0;
-    const curDist = cur.distance ? cur.distance.value : dist;
+    const curDist = stepDistanceMeters(cur);
     const curSec = cur.duration ? cur.duration.value : 0;
     sec += curDist > 0 ? curSec * Math.min(1, dist / curDist) : 0;
     for (let i = navStepIdx + 1; i < navSteps.length; i++) {
-      dist += navSteps[i].distance ? navSteps[i].distance.value : 0;
+      dist += stepDistanceMeters(navSteps[i]);
       sec += navSteps[i].duration ? navSteps[i].duration.value : 0;
     }
     return { dist, sec };
@@ -1201,9 +1217,7 @@
     const projectedTurnDist = stepRemainingDistance(
       here, step, snapPrevious, proximityAccuracy, stepProgress
     );
-    const stepDistance = step.distance && Number.isFinite(step.distance.value)
-      ? Math.max(0, step.distance.value)
-      : null;
+    const stepDistance = stepDistanceMeters(step);
     const hasProgressAnchor = navStepProgressIdx === navStepIdx &&
       navStepProgressRemaining !== null;
     const maxDisplayAdvance = hasProgressAnchor
@@ -1211,9 +1225,7 @@
       : maxPlausibleStepSeedProgress(here, step, proximityAccuracy);
     const displayTurnDist = hasProgressAnchor
       ? Math.max(projectedTurnDist, navStepProgressRemaining - maxDisplayAdvance)
-      : stepDistance !== null
-        ? Math.max(projectedTurnDist, stepDistance - maxDisplayAdvance)
-        : projectedTurnDist;
+      : Math.max(projectedTurnDist, stepDistance - maxDisplayAdvance);
     const isLast = navStepIdx === navSteps.length - 1;
 
     if (isLast && directEndDist + proximityAccuracy < 20 && projectedTurnDist < 20) {
@@ -1242,7 +1254,7 @@
         stepProgress.segment > navStepProgressSegment ||
         (stepProgress.segment === navStepProgressSegment && progressT > navStepProgressT);
       const projectedAdvance = stepChanged
-        ? (stepDistance !== null ? Math.max(0, stepDistance - projectedTurnDist) : 0)
+        ? Math.max(0, stepDistance - projectedTurnDist)
         : (navStepProgressRemaining !== null ? navStepProgressRemaining - projectedTurnDist : 0);
       const maxPlausibleAdvance = stepChanged
         ? maxPlausibleStepSeedProgress(here, step, proximityAccuracy)
