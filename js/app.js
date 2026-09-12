@@ -1156,19 +1156,20 @@
       ? Math.max(0, navStepProgressAccuracy)
       : 0;
     const safeAccuracy = Number.isFinite(accuracy) ? Math.max(0, accuracy) : 0;
-    return navStepProgressPosition
-      ? meters(navStepProgressPosition, here) + anchorAccuracy + safeAccuracy +
-        NAV_PROGRESS_ADVANCE_SLACK_M
-      : Infinity;
+    if (!navStepProgressPosition) return Infinity;
+    const movement = meters(navStepProgressPosition, here);
+    const safeMovement = Number.isFinite(movement) && movement >= 0 ? movement : 0;
+    return safeMovement + anchorAccuracy + safeAccuracy + NAV_PROGRESS_ADVANCE_SLACK_M;
   }
 
   // step 切替直後に self-near な後段へ初期 anchor が飛ばないよう、step 始点からの実移動で上限化。
   function maxPlausibleStepSeedProgress(here, step, accuracy = 0) {
     const start = step && (step.start_location || (step.path && step.path[0]));
     const safeAccuracy = Number.isFinite(accuracy) ? Math.max(0, accuracy) : 0;
-    return start
-      ? meters(start, here) + safeAccuracy + NAV_PROGRESS_ADVANCE_SLACK_M
-      : Infinity;
+    if (!start) return Infinity;
+    const movement = meters(start, here);
+    const safeMovement = Number.isFinite(movement) && movement >= 0 ? movement : 0;
+    return safeMovement + safeAccuracy + NAV_PROGRESS_ADVANCE_SLACK_M;
   }
 
   // GPS 更新が曲がり角の 25m 圏を飛び越えた場合、前回→今回の短い移動区間で通過を補完する。
