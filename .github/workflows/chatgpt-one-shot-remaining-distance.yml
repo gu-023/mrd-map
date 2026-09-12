@@ -24,21 +24,8 @@ jobs:
           from pathlib import Path
           p = Path('js/app.js')
           text = p.read_text()
-          old = '''    for (let i = 0; i < path.length - 1; i++) {
-            const segmentDist = meters(path[i], path[i + 1]);
-            pathDist += segmentDist;
-            if (i < nearestSegment) continue;
-            dist += i === nearestSegment ? segmentDist * (1 - nearestT) : segmentDist;
-          }
-          '''
-          new = '''    for (let i = 0; i < path.length - 1; i++) {
-            const segmentDist = meters(path[i], path[i + 1]);
-            if (!Number.isFinite(segmentDist) || segmentDist < 0) return 0;
-            pathDist += segmentDist;
-            if (i < nearestSegment) continue;
-            dist += i === nearestSegment ? segmentDist * (1 - nearestT) : segmentDist;
-          }
-          '''
+          old = "      const segmentDist = meters(path[i], path[i + 1]);\n      pathDist += segmentDist;"
+          new = "      const segmentDist = meters(path[i], path[i + 1]);\n      if (!Number.isFinite(segmentDist) || segmentDist < 0) return 0;\n      pathDist += segmentDist;"
           if text.count(old) != 1:
               raise SystemExit(f'expected exactly one target block, found {text.count(old)}')
           p.write_text(text.replace(old, new, 1))
