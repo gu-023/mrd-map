@@ -500,10 +500,19 @@
   }
 
   function openStepList() {
-    const items = navSteps.map((s, i) => ({
-      label: `${i + 1}. ${stripHtml(s.instructions)} (${s.distance ? s.distance.text : ""})`,
-      action: () => { followMode = false; map.panTo(s.start_location); closeMenu(); },
-    }));
+    const items = navSteps.map((s, i) => {
+      const distanceText = s.distance &&
+        Number.isFinite(s.distance.value) &&
+        s.distance.value >= 0 &&
+        typeof s.distance.text === "string" &&
+        s.distance.text.trim()
+        ? s.distance.text
+        : fmtDist(stepDistanceMeters(s));
+      return {
+        label: `${i + 1}. ${stripHtml(s.instructions)} (${distanceText})`,
+        action: () => { followMode = false; map.panTo(s.start_location); closeMenu(); },
+      };
+    });
     items.push({ label: "← 戻る", action: openDestinationMenu });
     openMenu("ルート一覧", items);
   }
