@@ -1409,6 +1409,7 @@
   }
 
   function onPosition(pos) {
+    if (!pos || !pos.coords) return;
     const positionTimestamp = Number.isFinite(pos.timestamp) ? pos.timestamp : Date.now();
     if (lastPositionTimestamp !== null && positionTimestamp <= lastPositionTimestamp) return;
     const { latitude, longitude, accuracy } = pos.coords;
