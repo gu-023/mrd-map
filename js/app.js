@@ -989,6 +989,11 @@
     return dist;
   }
 
+  // Directions の所要時間メタデータが欠落/非finiteなら、誤った ETA を推測せず unknown とする。
+  function stepDurationSeconds(step) {
+    if (!step || !step.duration || !Number.isFinite(step.duration.value)) return null;
+    return Math.max(0, step.duration.value);
+  }
   function fmtDist(m) {
     return m >= 1000 ? (m / 1000).toFixed(1) + "km" : Math.round(m) + "m";
   }
@@ -1111,14 +1116,23 @@
       ? Math.max(0, currentStepRemaining)
       : stepRemainingDistance(here, cur, previous, accuracy);
     let sec = 0;
+    let durationKnown = true;
     const curDist = stepDistanceMeters(cur);
-    const curSec = cur.duration ? cur.duration.value : 0;
-    sec += curDist > 0 ? curSec * Math.min(1, dist / curDist) : 0;
-    for (let i = navStepIdx + 1; i < navSteps.length; i++) {
-      dist += stepDistanceMeters(navSteps[i]);
-      sec += navSteps[i].duration ? navSteps[i].duration.value : 0;
+    const curSec = stepDurationSeconds(cur);
+    if (dist > 0) {
+      if (curDist <= 0 || curSec === null) durationKnown = false;
+      else sec += curSec * Math.min(1, dist / curDist);
     }
-    return { dist, sec };
+    for (let i = navStepIdx + 1; i < navSteps.length; i++) {
+      const step = navSteps[i];
+      const stepDist = stepDistanceMeters(step);
+      const stepSec = stepDurationSeconds(step);
+      dist += stepDist;
+      if (stepDist <= 0) continue;
+      if (stepSec === null) durationKnown = false;
+      else sec += stepSec;
+    }
+    return { dist, sec: durationKnown ? sec : null };
   }
 
   // self-near な経路投影で表示上の進捗だけが実移動より大きく飛ばないようにする上限。
@@ -1238,11 +1252,14 @@
     }
 
     const rem = remaining(here, snapPrevious, proximityAccuracy, displayTurnDist);
+    const etaText = Number.isFinite(rem.sec)
+      ? `${fmtMin(rem.sec)} ・ ${arrivalClock(rem.sec)}着`
+      : "所要時間不明";
     setNavBanner(
       `<div class="nav-main"><span class="nav-arrow">${maneuverArrow(step.maneuver)}</span> ` +
       `<span class="nav-dist">${fmtDist(displayTurnDist)}</span></div>` +
       `<div class="nav-sub">${escapeHtml(stripHtml(step.instructions))}` +
-      ` ・ 残り ${fmtDist(rem.dist)} ${fmtMin(rem.sec)} ・ ${arrivalClock(rem.sec)}着</div>`
+      ` ・ 残り ${fmtDist(rem.dist)} ${etaText}</div>`
     );
 
     if (followMode) autoZoomForTurn(displayTurnDist, isLast); // 全体表示中は自動ズームしない
