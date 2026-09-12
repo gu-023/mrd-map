@@ -989,10 +989,10 @@
     return dist;
   }
 
-  // Directions の所要時間メタデータが欠落/非finiteなら、誤った ETA を推測せず unknown とする。
+  // Directions の所要時間メタデータが欠落/非finite/負値なら、誤った ETA を推測せず unknown とする。
   function stepDurationSeconds(step) {
-    if (!step || !step.duration || !Number.isFinite(step.duration.value)) return null;
-    return Math.max(0, step.duration.value);
+    if (!step || !step.duration || !Number.isFinite(step.duration.value) || step.duration.value < 0) return null;
+    return step.duration.value;
   }
   function fmtDist(m) {
     return m >= 1000 ? (m / 1000).toFixed(1) + "km" : Math.round(m) + "m";
