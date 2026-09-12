@@ -1346,9 +1346,12 @@
     for (let stepIdx = navStepIdx; stepIdx < navSteps.length; stepIdx++) {
       const step = navSteps[stepIdx];
       const path = step.path && step.path.length
-        ? step.path
-        : [step.start_location, step.end_location];
-      if (path.length === 1) min = Math.min(min, meters(here, path[0]));
+        ? step.path.filter(Boolean)
+        : [step.start_location, step.end_location].filter(Boolean);
+      if (path.length === 1) {
+        const pointDist = meters(here, path[0]);
+        if (Number.isFinite(pointDist) && pointDist >= 0) min = Math.min(min, pointDist);
+      }
       const hasProgressAnchor = stepIdx === navStepIdx &&
         navStepProgressIdx === navStepIdx && path.length > 1;
       const firstSegment = hasProgressAnchor
@@ -1360,6 +1363,7 @@
           ? google.maps.geometry.spherical.interpolate(path[i], path[i + 1], firstT)
           : path[i];
         const dd = distanceToSegment(here, segmentStart, path[i + 1]);
+        if (!Number.isFinite(dd) || dd < 0) continue;
         if (dd < min) min = dd;
         if (min <= offRouteThreshold) break;
       }
