@@ -1,0 +1,49 @@
+name: ChatGPT guard short-step fallback
+
+on:
+  push:
+    branches:
+      - chatgpt/guard-short-step-remaining-fallback
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply focused fix
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('js/app.js')
+          text = path.read_text()
+          old = '      return meters(here, step.end_location);'
+          new = "      if (!here || !step.end_location) return 0;\n      const fallbackDist = meters(here, step.end_location);\n      return Number.isFinite(fallbackDist) && fallbackDist >= 0 ? fallbackDist : 0;"
+          if text.count(old) != 1:
+              raise SystemExit(f'expected exactly one fallback return, found {text.count(old)}')
+          path.write_text(text.replace(old, new, 1))
+          PY
+      - name: Verify focused change
+        shell: bash
+        run: |
+          node --check js/app.js
+          git diff --check
+          test "$(git diff --name-only | sort)" = "js/app.js"
+          grep -F 'if (!here || !step.end_location) return 0;' js/app.js
+          grep -F 'return Number.isFinite(fallbackDist) && fallbackDist >= 0 ? fallbackDist : 0;' js/app.js
+      - name: Commit product change and remove helper
+        shell: bash
+        run: |
+          git config user.name 'gu-023'
+          git config user.email '59335552+gu-023@users.noreply.github.com'
+          git rm .github/workflows/chatgpt-guard-short-step-fallback.yml
+          git add js/app.js
+          git diff --cached --check
+          test "$(git diff --cached --name-only | sort)" = $'.github/workflows/chatgpt-guard-short-step-fallback.yml\njs/app.js'
+          git commit -m 'Guard short-step remaining-distance fallback'
+          git push origin HEAD:chatgpt/guard-short-step-remaining-fallback
