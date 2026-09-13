@@ -308,6 +308,7 @@
 
   function enableCompass() {
     if (compassPermissionPending) return;
+    clearError("compass");
     const requestId = ++compassPermissionRequestId;
     const isCurrentRequest = () => requestId === compassPermissionRequestId;
     const start = () => {
