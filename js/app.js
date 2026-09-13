@@ -45,6 +45,7 @@
   let curHeading = 0; // 平滑化した方位（0=北, 時計回り）
   let headingInitialized = false;
   const ABSOLUTE_ORIENTATION_FALLBACK_MS = 1000;
+  const COMPASS_PERMISSION_PENDING_TIMEOUT_MS = 15000;
   let lastAbsoluteOrientationAt = null;
   let compassPermissionRequestId = 0;
   let compassPermissionPending = false;
@@ -321,6 +322,11 @@
     const DOE = window.DeviceOrientationEvent;
     if (DOE && typeof DOE.requestPermission === "function") {
       compassPermissionPending = true;
+      setTimeout(() => {
+        if (!isCurrentRequest() || !compassPermissionPending) return;
+        compassPermissionPending = false;
+        compassPermissionRequestId += 1;
+      }, COMPASS_PERMISSION_PENDING_TIMEOUT_MS);
       DOE.requestPermission()
         .then((state) => {
           if (!isCurrentRequest()) return;
