@@ -54,6 +54,7 @@
   let compassPermissionTimer = null;
   let compassFirstReadingTimer = null;
   let compassStreamSilenceTimer = null;
+  let lastCompassStreamActivityAt = null;
   let compassRenderFrame = null;
   // ナビ
   let directionsService = null;
@@ -393,18 +394,26 @@
     }, COMPASS_FIRST_READING_TIMEOUT_MS);
   }
 
-  function armCompassStreamWatchdog() {
-    if (compassStreamSilenceTimer !== null) clearTimeout(compassStreamSilenceTimer);
-    compassStreamSilenceTimer = null;
-    if (document.visibilityState === "hidden") return;
+  function armCompassStreamWatchdog(activityAt = performance.now()) {
+    lastCompassStreamActivityAt = activityAt;
+    if (compassStreamSilenceTimer !== null || document.visibilityState === "hidden") return;
     const requestId = compassPermissionRequestId;
-    compassStreamSilenceTimer = setTimeout(() => {
+    const checkForSilence = () => {
       compassStreamSilenceTimer = null;
       if (document.visibilityState === "hidden") return;
       if (requestId !== compassPermissionRequestId || !compassOn || !headingInitialized) return;
+      const elapsed = performance.now() - lastCompassStreamActivityAt;
+      if (elapsed < COMPASS_STREAM_SILENCE_TIMEOUT_MS) {
+        compassStreamSilenceTimer = setTimeout(
+          checkForSilence,
+          COMPASS_STREAM_SILENCE_TIMEOUT_MS - elapsed
+        );
+        return;
+      }
       disableCompass();
       showError("方位センサーの更新が停止しました", "🧭 を決定で再試行してください。", "compass");
-    }, COMPASS_STREAM_SILENCE_TIMEOUT_MS);
+    };
+    compassStreamSilenceTimer = setTimeout(checkForSilence, COMPASS_STREAM_SILENCE_TIMEOUT_MS);
   }
 
   document.addEventListener("visibilitychange", () => {
@@ -440,6 +449,7 @@
       clearTimeout(compassStreamSilenceTimer);
       compassStreamSilenceTimer = null;
     }
+    lastCompassStreamActivityAt = null;
     if (compassRenderFrame !== null) {
       cancelAnimationFrame(compassRenderFrame);
       compassRenderFrame = null;
@@ -476,7 +486,7 @@
       clearTimeout(compassFirstReadingTimer);
       compassFirstReadingTimer = null;
     }
-    armCompassStreamWatchdog();
+    armCompassStreamWatchdog(now);
     if (!headingInitialized) {
       curHeading = ((h % 360) + 360) % 360;
       headingInitialized = true;
