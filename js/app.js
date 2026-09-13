@@ -336,6 +336,7 @@
   }
 
   function headingFromEvent(e) {
+    if (!e) return null;
     if (typeof e.webkitCompassHeading === "number") return e.webkitCompassHeading; // iOS: 0=北・時計回り
     if (e.absolute && typeof e.alpha === "number") return (360 - e.alpha) % 360; // 絶対方位
     return null;
