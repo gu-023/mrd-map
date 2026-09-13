@@ -1,0 +1,139 @@
+name: One-shot compass watchdog timer churn
+
+on:
+  push:
+    branches:
+      - chatgpt/compass-watchdog-timer-churn
+    paths:
+      - .github/workflows/one-shot-compass-watchdog-timer-churn.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: chatgpt/compass-watchdog-timer-churn
+
+      - name: Apply watchdog timer-churn reduction
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("js/app.js")
+          text = path.read_text()
+
+          old = """  let compassFirstReadingTimer = null;
+            let compassStreamSilenceTimer = null;
+            let compassRenderFrame = null;
+          """
+          new = """  let compassFirstReadingTimer = null;
+            let compassStreamSilenceTimer = null;
+            let lastCompassStreamActivityAt = null;
+            let compassRenderFrame = null;
+          """
+          if old not in text:
+              raise SystemExit("timer state anchor not found")
+          text = text.replace(old, new, 1)
+
+          old = """  function armCompassStreamWatchdog() {
+              if (compassStreamSilenceTimer !== null) clearTimeout(compassStreamSilenceTimer);
+              compassStreamSilenceTimer = null;
+              if (document.visibilityState === \"hidden\") return;
+              const requestId = compassPermissionRequestId;
+              compassStreamSilenceTimer = setTimeout(() => {
+                compassStreamSilenceTimer = null;
+                if (document.visibilityState === \"hidden\") return;
+                if (requestId !== compassPermissionRequestId || !compassOn || !headingInitialized) return;
+                disableCompass();
+                showError(\"方位センサーの更新が停止しました\", \"🧭 を決定で再試行してください。\", \"compass\");
+              }, COMPASS_STREAM_SILENCE_TIMEOUT_MS);
+            }
+          """
+          new = """  function armCompassStreamWatchdog(activityAt = performance.now()) {
+              lastCompassStreamActivityAt = activityAt;
+              if (compassStreamSilenceTimer !== null || document.visibilityState === \"hidden\") return;
+              const requestId = compassPermissionRequestId;
+              const checkForSilence = () => {
+                compassStreamSilenceTimer = null;
+                if (document.visibilityState === \"hidden\") return;
+                if (requestId !== compassPermissionRequestId || !compassOn || !headingInitialized) return;
+                const elapsed = performance.now() - lastCompassStreamActivityAt;
+                if (elapsed < COMPASS_STREAM_SILENCE_TIMEOUT_MS) {
+                  compassStreamSilenceTimer = setTimeout(
+                    checkForSilence,
+                    COMPASS_STREAM_SILENCE_TIMEOUT_MS - elapsed
+                  );
+                  return;
+                }
+                disableCompass();
+                showError(\"方位センサーの更新が停止しました\", \"🧭 を決定で再試行してください。\", \"compass\");
+              };
+              compassStreamSilenceTimer = setTimeout(checkForSilence, COMPASS_STREAM_SILENCE_TIMEOUT_MS);
+            }
+          """
+          if old not in text:
+              raise SystemExit("watchdog function anchor not found")
+          text = text.replace(old, new, 1)
+
+          old = """    if (compassStreamSilenceTimer !== null) {
+              clearTimeout(compassStreamSilenceTimer);
+              compassStreamSilenceTimer = null;
+            }
+            if (compassRenderFrame !== null) {
+          """
+          new = """    if (compassStreamSilenceTimer !== null) {
+              clearTimeout(compassStreamSilenceTimer);
+              compassStreamSilenceTimer = null;
+            }
+            lastCompassStreamActivityAt = null;
+            if (compassRenderFrame !== null) {
+          """
+          if old not in text:
+              raise SystemExit("disable cleanup anchor not found")
+          text = text.replace(old, new, 1)
+
+          old = """    armCompassStreamWatchdog();
+              if (!headingInitialized) {
+          """
+          new = """    armCompassStreamWatchdog(now);
+              if (!headingInitialized) {
+          """
+          if old not in text:
+              raise SystemExit("orientation watchdog call anchor not found")
+          text = text.replace(old, new, 1)
+
+          path.write_text(text)
+          PY
+
+      - name: Verify change
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check js/app.js
+          git diff --check
+          test "$(git diff --name-only)" = "js/app.js"
+          grep -q 'let lastCompassStreamActivityAt = null;' js/app.js
+          grep -q 'function armCompassStreamWatchdog(activityAt = performance.now())' js/app.js
+          grep -q 'if (compassStreamSilenceTimer !== null || document.visibilityState === "hidden") return;' js/app.js
+          grep -q 'const elapsed = performance.now() - lastCompassStreamActivityAt;' js/app.js
+          grep -q 'armCompassStreamWatchdog(now);' js/app.js
+          if git grep -nE 'AIza[0-9A-Za-z_-]{35}' -- .; then
+            echo "::error::A Google API key pattern is present in a tracked file"
+            exit 1
+          fi
+
+      - name: Commit product change
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add js/app.js
+          git commit -m 'Reduce compass watchdog timer churn'
+          git push origin HEAD:chatgpt/compass-watchdog-timer-churn
