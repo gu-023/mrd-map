@@ -47,6 +47,7 @@
   const ABSOLUTE_ORIENTATION_FALLBACK_MS = 1000;
   let lastAbsoluteOrientationAt = null;
   let compassPermissionRequestId = 0;
+  let compassPermissionPending = false;
   // ナビ
   let directionsService = null;
   let directionsRenderer = null;
@@ -305,6 +306,7 @@
   }
 
   function enableCompass() {
+    if (compassPermissionPending) return;
     const requestId = ++compassPermissionRequestId;
     const isCurrentRequest = () => requestId === compassPermissionRequestId;
     const start = () => {
@@ -318,14 +320,17 @@
     };
     const DOE = window.DeviceOrientationEvent;
     if (DOE && typeof DOE.requestPermission === "function") {
+      compassPermissionPending = true;
       DOE.requestPermission()
         .then((state) => {
           if (!isCurrentRequest()) return;
+          compassPermissionPending = false;
           if (state === "granted") start();
           else showError("方位センサーが拒否されました", "🧭 を決定でもう一度試してください。", "compass");
         })
         .catch(() => {
           if (!isCurrentRequest()) return;
+          compassPermissionPending = false;
           showError("方位センサーを開始できません", "🧭 を決定で再試行。", "compass");
         });
     } else if (DOE) {
