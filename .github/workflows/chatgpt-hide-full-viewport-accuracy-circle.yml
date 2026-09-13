@@ -23,10 +23,8 @@ jobs:
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
-
           path = Path('js/app.js')
           text = path.read_text()
-
           circle_marker = '    accuracyCircle = new google.maps.Circle({'
           comment_marker = '    // ユーザーが移動モードで地図を動かしたら追従を解除'
           listener = '    map.addListener("idle", updateAccuracyCircleVisibility);\n\n'
@@ -37,40 +35,40 @@ jobs:
           if 'updateAccuracyCircleVisibility' in text[circle_start:comment_start]:
               raise SystemExit('accuracy circle listener already present')
           text = text[:comment_start] + listener + text[comment_start:]
-
           gps_line = '  let gpsStatusText = ""; // コンパス中も最新の GPS 状態文言を保持\n'
           if text.count(gps_line) != 1:
               raise SystemExit(f'gps status anchor count: {text.count(gps_line)}')
-          helper = '''
-  function updateAccuracyCircleVisibility() {
-    if (!accuracyCircle || !map) return;
-    const bounds = map.getBounds();
-    const center = accuracyCircle.getCenter();
-    if (!bounds || !center || !lastPositionAccuracy) {
-      accuracyCircle.setVisible(true);
-      return;
-    }
-    const ne = bounds.getNorthEast();
-    const sw = bounds.getSouthWest();
-    const corners = [
-      ne,
-      sw,
-      new google.maps.LatLng(ne.lat(), sw.lng()),
-      new google.maps.LatLng(sw.lat(), ne.lng()),
-    ];
-    const coversViewport = corners.every((corner) =>
-      google.maps.geometry.spherical.computeDistanceBetween(center, corner) <= lastPositionAccuracy
-    );
-    accuracyCircle.setVisible(!coversViewport);
-  }
-'''
+          helper_lines = [
+              '',
+              '  function updateAccuracyCircleVisibility() {',
+              '    if (!accuracyCircle || !map) return;',
+              '    const bounds = map.getBounds();',
+              '    const center = accuracyCircle.getCenter();',
+              '    if (!bounds || !center || !lastPositionAccuracy) {',
+              '      accuracyCircle.setVisible(true);',
+              '      return;',
+              '    }',
+              '    const ne = bounds.getNorthEast();',
+              '    const sw = bounds.getSouthWest();',
+              '    const corners = [',
+              '      ne,',
+              '      sw,',
+              '      new google.maps.LatLng(ne.lat(), sw.lng()),',
+              '      new google.maps.LatLng(sw.lat(), ne.lng()),',
+              '    ];',
+              '    const coversViewport = corners.every((corner) =>',
+              '      google.maps.geometry.spherical.computeDistanceBetween(center, corner) <= lastPositionAccuracy',
+              '    );',
+              '    accuracyCircle.setVisible(!coversViewport);',
+              '  }',
+              '',
+          ]
+          helper = '\n'.join(helper_lines)
           text = text.replace(gps_line, gps_line + helper, 1)
-
           radius_line = '    accuracyCircle.setRadius(lastPositionAccuracy || 0);\n'
           if text.count(radius_line) != 1:
               raise SystemExit(f'accuracy radius anchor count: {text.count(radius_line)}')
           text = text.replace(radius_line, radius_line + '    updateAccuracyCircleVisibility();\n', 1)
-
           path.write_text(text)
           PY
 
