@@ -1,9 +1,8 @@
 name: ChatGPT one-shot compass permission guard
 
 on:
-  push:
-    branches:
-      - chatgpt/guard-compass-permission-race
+  pull_request:
+    branches: [main]
 
 permissions:
   contents: write
