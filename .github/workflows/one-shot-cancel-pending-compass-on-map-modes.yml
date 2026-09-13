@@ -1,0 +1,77 @@
+name: One-shot cancel pending compass on map modes
+
+on:
+  push:
+    branches:
+      - chatgpt/helper-cancel-pending-compass-on-map-modes
+    paths:
+      - .github/workflows/one-shot-cancel-pending-compass-on-map-modes.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Cancel pending compass before screen-aligned map modes
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('js/app.js')
+          text = path.read_text()
+
+          old_disable = "  function disableCompass() {\n    compassPermissionRequestId += 1;\n    compassOn = false;\n"
+          new_disable = "  function disableCompass() {\n    compassPermissionRequestId += 1;\n    compassPermissionPending = false;\n    compassOn = false;\n"
+          if text.count(old_disable) != 1:
+              raise SystemExit(f'disable anchor count={text.count(old_disable)}')
+          text = text.replace(old_disable, new_disable, 1)
+
+          old_pan = "    if (on && compassOn) disableCompass(); // Keep D-pad pan aligned with the screen.\n"
+          new_pan = "    if (on && (compassOn || compassPermissionPending)) disableCompass(); // Keep D-pad pan aligned with the screen.\n"
+          if text.count(old_pan) != 1:
+              raise SystemExit(f'pan anchor count={text.count(old_pan)}')
+          text = text.replace(old_pan, new_pan, 1)
+
+          old_picker = "    if (compassOn) disableCompass(); // 回転中はパン方向が分かりにくいので解除\n"
+          new_picker = "    if (compassOn || compassPermissionPending) disableCompass(); // 回転中/許可待ちは画面基準のパン前に解除\n"
+          if text.count(old_picker) != 1:
+              raise SystemExit(f'picker anchor count={text.count(old_picker)}')
+          text = text.replace(old_picker, new_picker, 1)
+
+          path.write_text(text)
+          PY
+      - name: Verify JavaScript and focused diff
+        shell: bash
+        run: |
+          node --check js/app.js
+          git diff --check
+          test "$(git diff --name-only)" = "js/app.js"
+          python3 - <<'PY'
+          from pathlib import Path
+          text = Path('js/app.js').read_text()
+          checks = [
+              'compassPermissionRequestId += 1;\n    compassPermissionPending = false;\n    compassOn = false;',
+              'if (on && (compassOn || compassPermissionPending)) disableCompass();',
+              'if (compassOn || compassPermissionPending) disableCompass();',
+          ]
+          for check in checks:
+              if check not in text:
+                  raise SystemExit(f'missing source guard: {check}')
+          PY
+          if git diff -- js/app.js | grep -E 'AIza[0-9A-Za-z_-]{20,}'; then
+            echo 'Potential Google API key material found in diff' >&2
+            exit 1
+          fi
+      - name: Commit product change
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add js/app.js
+          git commit -m 'Cancel pending compass before map interaction modes'
+          git push
