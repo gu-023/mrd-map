@@ -348,6 +348,7 @@
 
   function disableCompass() {
     compassPermissionRequestId += 1;
+    compassPermissionPending = false;
     compassOn = false;
     window.removeEventListener("deviceorientationabsolute", onOrient, true);
     window.removeEventListener("deviceorientation", onOrient, true);
@@ -803,7 +804,7 @@
       navRerouting = false;
       clearError("directions");
     }
-    if (compassOn) disableCompass(); // 回転中はパン方向が分かりにくいので解除
+    if (compassOn || compassPermissionPending) disableCompass(); // 回転中/許可待ちは画面基準のパン前に解除
     pickMode = true;
     followMode = false;
     els.picker.classList.remove("hidden");
@@ -1549,7 +1550,7 @@
   }
 
   function setPanMode(on) {
-    if (on && compassOn) disableCompass(); // Keep D-pad pan aligned with the screen.
+    if (on && (compassOn || compassPermissionPending)) disableCompass(); // Keep D-pad pan aligned with the screen.
     panMode = on;
     els.app.classList.toggle("pan-mode", on);
     if (on) followMode = false;
