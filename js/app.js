@@ -436,8 +436,12 @@
       }
       return;
     }
-    if (headingInitialized) armCompassStreamWatchdog();
-    else armCompassFirstReadingWatchdog();
+    if (headingInitialized) {
+      lastCompassHeadingAt = null; // hidden中は観測がないため、復帰後の最初の実測値を直接採用する
+      armCompassStreamWatchdog();
+    } else {
+      armCompassFirstReadingWatchdog();
+    }
   });
 
   function disableCompass() {
@@ -491,7 +495,7 @@
       compassFirstReadingTimer = null;
     }
     armCompassStreamWatchdog(now);
-    if (!headingInitialized) {
+    if (!headingInitialized || lastCompassHeadingAt === null) {
       curHeading = ((h % 360) + 360) % 360;
       headingInitialized = true;
     } else {
