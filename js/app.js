@@ -329,18 +329,24 @@
         compassPermissionRequestId += 1;
         showError("方位センサーが応答しません", "🧭 を決定で再試行してください。", "compass");
       }, COMPASS_PERMISSION_PENDING_TIMEOUT_MS);
-      DOE.requestPermission()
-        .then((state) => {
-          if (!isCurrentRequest()) return;
-          compassPermissionPending = false;
-          if (state === "granted") start();
-          else showError("方位センサーが拒否されました", "🧭 を決定でもう一度試してください。", "compass");
-        })
-        .catch(() => {
-          if (!isCurrentRequest()) return;
-          compassPermissionPending = false;
-          showError("方位センサーを開始できません", "🧭 を決定で再試行。", "compass");
-        });
+      try {
+        DOE.requestPermission()
+          .then((state) => {
+            if (!isCurrentRequest()) return;
+            compassPermissionPending = false;
+            if (state === "granted") start();
+            else showError("方位センサーが拒否されました", "🧭 を決定でもう一度試してください。", "compass");
+          })
+          .catch(() => {
+            if (!isCurrentRequest()) return;
+            compassPermissionPending = false;
+            showError("方位センサーを開始できません", "🧭 を決定で再試行。", "compass");
+          });
+      } catch (_) {
+        if (!isCurrentRequest()) return;
+        compassPermissionPending = false;
+        showError("方位センサーを開始できません", "🧭 を決定で再試行。", "compass");
+      }
     } else if (DOE) {
       start();
     } else {
