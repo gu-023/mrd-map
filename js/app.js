@@ -51,6 +51,7 @@
   let lastAbsoluteOrientationAt = null;
   let compassPermissionRequestId = 0;
   let compassPermissionPending = false;
+  let compassFirstReadingTimer = null;
   let compassStreamSilenceTimer = null;
   // ナビ
   let directionsService = null;
@@ -322,11 +323,7 @@
       // iOS/WebKit は webkitCompassHeading、その他は絶対方位イベント
       window.addEventListener("deviceorientationabsolute", onOrient, true);
       window.addEventListener("deviceorientation", onOrient, true);
-      setTimeout(() => {
-        if (!isCurrentRequest() || !compassOn || headingInitialized) return;
-        disableCompass();
-        showError("方位センサーが応答しません", "🧭 を決定で再試行してください。", "compass");
-      }, COMPASS_FIRST_READING_TIMEOUT_MS);
+      armCompassFirstReadingWatchdog();
     };
     const DOE = window.DeviceOrientationEvent;
     if (DOE && typeof DOE.requestPermission === "function") {
@@ -362,6 +359,20 @@
     }
   }
 
+  function armCompassFirstReadingWatchdog() {
+    if (compassFirstReadingTimer !== null) clearTimeout(compassFirstReadingTimer);
+    compassFirstReadingTimer = null;
+    if (document.visibilityState === "hidden") return;
+    const requestId = compassPermissionRequestId;
+    compassFirstReadingTimer = setTimeout(() => {
+      compassFirstReadingTimer = null;
+      if (document.visibilityState === "hidden") return;
+      if (requestId !== compassPermissionRequestId || !compassOn || headingInitialized) return;
+      disableCompass();
+      showError("方位センサーが応答しません", "🧭 を決定で再試行してください。", "compass");
+    }, COMPASS_FIRST_READING_TIMEOUT_MS);
+  }
+
   function armCompassStreamWatchdog() {
     if (compassStreamSilenceTimer !== null) clearTimeout(compassStreamSilenceTimer);
     compassStreamSilenceTimer = null;
@@ -377,20 +388,28 @@
   }
 
   document.addEventListener("visibilitychange", () => {
-    if (!compassOn || !headingInitialized) return;
+    if (!compassOn) return;
     if (document.visibilityState === "hidden") {
-      if (compassStreamSilenceTimer !== null) {
+      if (headingInitialized && compassStreamSilenceTimer !== null) {
         clearTimeout(compassStreamSilenceTimer);
         compassStreamSilenceTimer = null;
+      } else if (!headingInitialized && compassFirstReadingTimer !== null) {
+        clearTimeout(compassFirstReadingTimer);
+        compassFirstReadingTimer = null;
       }
       return;
     }
-    armCompassStreamWatchdog();
+    if (headingInitialized) armCompassStreamWatchdog();
+    else armCompassFirstReadingWatchdog();
   });
 
   function disableCompass() {
     compassPermissionRequestId += 1;
     compassPermissionPending = false;
+    if (compassFirstReadingTimer !== null) {
+      clearTimeout(compassFirstReadingTimer);
+      compassFirstReadingTimer = null;
+    }
     if (compassStreamSilenceTimer !== null) {
       clearTimeout(compassStreamSilenceTimer);
       compassStreamSilenceTimer = null;
@@ -422,6 +441,10 @@
     } else if (lastAbsoluteOrientationAt !== null &&
                now - lastAbsoluteOrientationAt < ABSOLUTE_ORIENTATION_FALLBACK_MS) {
       return;
+    }
+    if (!headingInitialized && compassFirstReadingTimer !== null) {
+      clearTimeout(compassFirstReadingTimer);
+      compassFirstReadingTimer = null;
     }
     armCompassStreamWatchdog();
     if (!headingInitialized) {
