@@ -1,0 +1,100 @@
+name: Apply compass page lifecycle fallback
+
+on:
+  push:
+    branches: [chatgpt/compass-page-lifecycle-fallback]
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: chatgpt/compass-page-lifecycle-fallback
+
+      - name: Apply lifecycle fallback and verify
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("js/app.js")
+          source = path.read_text()
+          start_marker = '  document.addEventListener("visibilitychange", () => {\n'
+          end_marker = '\n\n  function disableCompass()'
+          start = source.index(start_marker)
+          end = source.index(end_marker, start)
+          old = source[start:end]
+          required = [
+              'if (compassPermissionPending)',
+              'document.visibilityState === "hidden"',
+              'lastCompassHeadingAt = null',
+              'lastAbsoluteOrientationAt = null',
+              'armCompassStreamWatchdog()',
+              'armCompassFirstReadingWatchdog()',
+          ]
+          for token in required:
+              assert token in old, token
+
+          replacement = '''  function handleCompassLifecycle(hidden) {
+            if (compassPermissionPending) {
+              if (hidden) clearCompassPermissionWatchdog();
+              else armCompassPermissionWatchdog();
+              return;
+            }
+            if (!compassOn) return;
+            if (hidden) {
+              if (headingInitialized && compassStreamSilenceTimer !== null) {
+                clearTimeout(compassStreamSilenceTimer);
+                compassStreamSilenceTimer = null;
+              } else if (!headingInitialized && compassFirstReadingTimer !== null) {
+                clearTimeout(compassFirstReadingTimer);
+                compassFirstReadingTimer = null;
+              }
+              return;
+            }
+            if (headingInitialized) {
+              lastCompassHeadingAt = null; // hidden中は観測がないため、復帰後の最初の実測値を直接採用する
+              lastAbsoluteOrientationAt = null; // suspend前のabsolute判定を復帰後へ持ち越さない
+              armCompassStreamWatchdog();
+            } else {
+              armCompassFirstReadingWatchdog();
+            }
+          }
+
+          document.addEventListener("visibilitychange", () => {
+            handleCompassLifecycle(document.visibilityState === "hidden");
+          });
+          window.addEventListener("pagehide", () => handleCompassLifecycle(true));
+          window.addEventListener("pageshow", () => {
+            handleCompassLifecycle(document.visibilityState === "hidden");
+          });'''
+
+          path.write_text(source[:start] + replacement + source[end:])
+          PY
+
+          node --check js/app.js
+          git diff --check
+          grep -F 'window.addEventListener("pagehide", () => handleCompassLifecycle(true));' js/app.js
+          grep -F 'window.addEventListener("pageshow", () => {' js/app.js
+          grep -F 'handleCompassLifecycle(document.visibilityState === "hidden");' js/app.js
+          if git grep -nE 'AIza[0-9A-Za-z_-]{35}' -- .; then
+            echo "::error::A Google API key pattern is present in a tracked file"
+            exit 1
+          fi
+
+      - name: Commit product-only final tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/apply-compass-page-lifecycle.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "Pause compass watchdogs on page lifecycle events"
+          git push origin HEAD:chatgpt/compass-page-lifecycle-fallback
