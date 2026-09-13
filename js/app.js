@@ -1426,7 +1426,7 @@
     accuracyCircle.setCenter(p);
     accuracyCircle.setRadius(lastPositionAccuracy || 0);
     setGps(true, "GPS");
-    els.accText.textContent = lastPositionAccuracy ? `±${Math.round(lastPositionAccuracy)}m` : "";
+    els.accText.textContent = lastPositionAccuracy ? `±${fmtDist(lastPositionAccuracy)}` : "";
     if (followMode && !pickMode && !searchOpen && !menuOpen) map.panTo(p); // D-pad overlay 中は追従しない
     if (navMode && !navRerouting && !pickMode && !searchOpen && !menuOpen) updateNav(p); // 経路要求/目的地選択/検索/メニュー中は案内更新を停止
   }
