@@ -1,0 +1,76 @@
+name: One-shot compass permission timeout
+
+on:
+  push:
+    branches:
+      - chatgpt/helper-compass-permission-timeout
+    paths:
+      - .github/workflows/one-shot-compass-permission-timeout.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply bounded compass permission recovery
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('js/app.js')
+          text = path.read_text()
+
+          old_state = '''  const ABSOLUTE_ORIENTATION_FALLBACK_MS = 1000;
+  let lastAbsoluteOrientationAt = null;
+'''
+          new_state = '''  const ABSOLUTE_ORIENTATION_FALLBACK_MS = 1000;
+  const COMPASS_PERMISSION_PENDING_TIMEOUT_MS = 15000;
+  let lastAbsoluteOrientationAt = null;
+'''
+          if text.count(old_state) != 1:
+              raise SystemExit(f'state anchor count={text.count(old_state)}')
+          text = text.replace(old_state, new_state, 1)
+
+          old_request = '''      compassPermissionPending = true;
+      DOE.requestPermission()
+'''
+          new_request = '''      compassPermissionPending = true;
+      setTimeout(() => {
+        if (!isCurrentRequest() || !compassPermissionPending) return;
+        compassPermissionPending = false;
+        compassPermissionRequestId += 1;
+      }, COMPASS_PERMISSION_PENDING_TIMEOUT_MS);
+      DOE.requestPermission()
+'''
+          if text.count(old_request) != 1:
+              raise SystemExit(f'request anchor count={text.count(old_request)}')
+          text = text.replace(old_request, new_request, 1)
+          path.write_text(text)
+          PY
+      - name: Verify JavaScript and focused diff
+        shell: bash
+        run: |
+          node --check js/app.js
+          git diff --check
+          test "$(git diff --name-only)" = "js/app.js"
+          grep -q 'const COMPASS_PERMISSION_PENDING_TIMEOUT_MS = 15000;' js/app.js
+          grep -q 'if (!isCurrentRequest() || !compassPermissionPending) return;' js/app.js
+          grep -q 'compassPermissionRequestId += 1;' js/app.js
+          if git diff -- js/app.js | grep -E 'AIza[0-9A-Za-z_-]{20,}|GOOGLE_MAPS_API_KEY[[:space:]]*[:=][[:space:]]*["'"'][^_]' ; then
+            echo 'Potential API key material found in diff' >&2
+            exit 1
+          fi
+      - name: Commit product change
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add js/app.js
+          git commit -m 'Allow retry after stuck compass permission request'
+          git push
