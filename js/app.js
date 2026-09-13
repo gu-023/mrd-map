@@ -326,6 +326,7 @@
         if (!isCurrentRequest() || !compassPermissionPending) return;
         compassPermissionPending = false;
         compassPermissionRequestId += 1;
+        showError("方位センサーが応答しません", "🧭 を決定で再試行してください。", "compass");
       }, COMPASS_PERMISSION_PENDING_TIMEOUT_MS);
       DOE.requestPermission()
         .then((state) => {
