@@ -419,31 +419,39 @@
     compassStreamSilenceTimer = setTimeout(checkForSilence, COMPASS_STREAM_SILENCE_TIMEOUT_MS);
   }
 
-  document.addEventListener("visibilitychange", () => {
-    if (compassPermissionPending) {
-      if (document.visibilityState === "hidden") clearCompassPermissionWatchdog();
-      else armCompassPermissionWatchdog();
-      return;
+  function handleCompassLifecycle(hidden) {
+  if (compassPermissionPending) {
+    if (hidden) clearCompassPermissionWatchdog();
+    else armCompassPermissionWatchdog();
+    return;
+  }
+  if (!compassOn) return;
+  if (hidden) {
+    if (headingInitialized && compassStreamSilenceTimer !== null) {
+      clearTimeout(compassStreamSilenceTimer);
+      compassStreamSilenceTimer = null;
+    } else if (!headingInitialized && compassFirstReadingTimer !== null) {
+      clearTimeout(compassFirstReadingTimer);
+      compassFirstReadingTimer = null;
     }
-    if (!compassOn) return;
-    if (document.visibilityState === "hidden") {
-      if (headingInitialized && compassStreamSilenceTimer !== null) {
-        clearTimeout(compassStreamSilenceTimer);
-        compassStreamSilenceTimer = null;
-      } else if (!headingInitialized && compassFirstReadingTimer !== null) {
-        clearTimeout(compassFirstReadingTimer);
-        compassFirstReadingTimer = null;
-      }
-      return;
-    }
-    if (headingInitialized) {
-      lastCompassHeadingAt = null; // hidden中は観測がないため、復帰後の最初の実測値を直接採用する
-      lastAbsoluteOrientationAt = null; // suspend前のabsolute判定を復帰後へ持ち越さない
-      armCompassStreamWatchdog();
-    } else {
-      armCompassFirstReadingWatchdog();
-    }
-  });
+    return;
+  }
+  if (headingInitialized) {
+    lastCompassHeadingAt = null; // hidden中は観測がないため、復帰後の最初の実測値を直接採用する
+    lastAbsoluteOrientationAt = null; // suspend前のabsolute判定を復帰後へ持ち越さない
+    armCompassStreamWatchdog();
+  } else {
+    armCompassFirstReadingWatchdog();
+  }
+}
+
+document.addEventListener("visibilitychange", () => {
+  handleCompassLifecycle(document.visibilityState === "hidden");
+});
+window.addEventListener("pagehide", () => handleCompassLifecycle(true));
+window.addEventListener("pageshow", () => {
+  handleCompassLifecycle(document.visibilityState === "hidden");
+});
 
   function disableCompass() {
     compassPermissionRequestId += 1;
