@@ -27,49 +27,20 @@ jobs:
           path = Path("js/app.js")
           text = path.read_text()
 
-          old = '''  function armCompassStreamWatchdog() {
-            if (compassStreamSilenceTimer !== null) clearTimeout(compassStreamSilenceTimer);
-            const requestId = compassPermissionRequestId;
-          '''
-          new = '''  function armCompassStreamWatchdog() {
-            if (compassStreamSilenceTimer !== null) clearTimeout(compassStreamSilenceTimer);
-            compassStreamSilenceTimer = null;
-            if (document.visibilityState === "hidden") return;
-            const requestId = compassPermissionRequestId;
-          '''
+          old = "    if (compassStreamSilenceTimer !== null) clearTimeout(compassStreamSilenceTimer);\n    const requestId = compassPermissionRequestId;"
+          new = "    if (compassStreamSilenceTimer !== null) clearTimeout(compassStreamSilenceTimer);\n    compassStreamSilenceTimer = null;\n    if (document.visibilityState === \"hidden\") return;\n    const requestId = compassPermissionRequestId;"
           if text.count(old) != 1:
               raise SystemExit("armCompassStreamWatchdog anchor mismatch")
           text = text.replace(old, new, 1)
 
-          old = '''      compassStreamSilenceTimer = null;
-                if (requestId !== compassPermissionRequestId || !compassOn || !headingInitialized) return;
-          '''
-          new = '''      compassStreamSilenceTimer = null;
-                if (document.visibilityState === "hidden") return;
-                if (requestId !== compassPermissionRequestId || !compassOn || !headingInitialized) return;
-          '''
+          old = "      compassStreamSilenceTimer = null;\n      if (requestId !== compassPermissionRequestId || !compassOn || !headingInitialized) return;"
+          new = "      compassStreamSilenceTimer = null;\n      if (document.visibilityState === \"hidden\") return;\n      if (requestId !== compassPermissionRequestId || !compassOn || !headingInitialized) return;"
           if text.count(old) != 1:
               raise SystemExit("watchdog callback anchor mismatch")
           text = text.replace(old, new, 1)
 
-          anchor = '''
-            function disableCompass() {
-          '''
-          insertion = '''
-            document.addEventListener("visibilitychange", () => {
-              if (!compassOn || !headingInitialized) return;
-              if (document.visibilityState === "hidden") {
-                if (compassStreamSilenceTimer !== null) {
-                  clearTimeout(compassStreamSilenceTimer);
-                  compassStreamSilenceTimer = null;
-                }
-                return;
-              }
-              armCompassStreamWatchdog();
-            });
-
-            function disableCompass() {
-          '''
+          anchor = "\n  function disableCompass() {\n"
+          insertion = "\n  document.addEventListener(\"visibilitychange\", () => {\n    if (!compassOn || !headingInitialized) return;\n    if (document.visibilityState === \"hidden\") {\n      if (compassStreamSilenceTimer !== null) {\n        clearTimeout(compassStreamSilenceTimer);\n        compassStreamSilenceTimer = null;\n      }\n      return;\n    }\n    armCompassStreamWatchdog();\n  });\n\n  function disableCompass() {\n"
           if text.count(anchor) != 1:
               raise SystemExit("disableCompass anchor mismatch")
           text = text.replace(anchor, insertion, 1)
