@@ -44,7 +44,10 @@
   let compassOn = false;
   let curHeading = 0; // 平滑化した方位（0=北, 時計回り）
   let headingInitialized = false;
+  let lastCompassHeadingAt = null;
   const ABSOLUTE_ORIENTATION_FALLBACK_MS = 1000;
+  const COMPASS_SMOOTHING_REFERENCE_INTERVAL_MS = 1000 / 60;
+  const COMPASS_SMOOTHING_REFERENCE_ALPHA = 0.2;
   const COMPASS_PERMISSION_PENDING_TIMEOUT_MS = 15000;
   const COMPASS_FIRST_READING_TIMEOUT_MS = 10000;
   const COMPASS_STREAM_SILENCE_TIMEOUT_MS = 10000;
@@ -460,6 +463,7 @@
     els.headingArrow.classList.add("hidden");
     curHeading = 0;
     headingInitialized = false;
+    lastCompassHeadingAt = null;
     lastAbsoluteOrientationAt = null;
     els.canvas.style.transform = "translate(-50%, -50%) rotate(0deg)";
     els.gpsText.textContent = gpsStatusText; // コンパス中に更新された最新の GPS 状態を復元
@@ -491,10 +495,18 @@
       curHeading = ((h % 360) + 360) % 360;
       headingInitialized = true;
     } else {
-      // 最短経路で平滑化（コンパスはノイズが多い）
+      // 60fps 時の係数0.2を基準に、イベント間隔に依存しない指数平滑へ変換する
+      const elapsed = lastCompassHeadingAt === null
+        ? COMPASS_SMOOTHING_REFERENCE_INTERVAL_MS
+        : Math.max(0, now - lastCompassHeadingAt);
+      const alpha = 1 - Math.pow(
+        1 - COMPASS_SMOOTHING_REFERENCE_ALPHA,
+        elapsed / COMPASS_SMOOTHING_REFERENCE_INTERVAL_MS
+      );
       const diff = ((h - curHeading + 540) % 360) - 180;
-      curHeading = (curHeading + diff * 0.2 + 360) % 360;
+      curHeading = (curHeading + diff * alpha + 360) % 360;
     }
+    lastCompassHeadingAt = now;
     scheduleCompassRender();
   }
 
