@@ -27,79 +27,49 @@ jobs:
           path = Path('js/app.js')
           text = path.read_text()
 
-          listener_old = '''    accuracyCircle = new google.maps.Circle({
-              map,
-              strokeColor: "#4dd6a0",
-              strokeOpacity: 0.5,
-              strokeWeight: 1,
-              fillColor: "#4dd6a0",
-              fillOpacity: 0.08,
-            });
+          circle_marker = '    accuracyCircle = new google.maps.Circle({'
+          comment_marker = '    // ユーザーが移動モードで地図を動かしたら追従を解除'
+          listener = '    map.addListener("idle", updateAccuracyCircleVisibility);\n\n'
+          if text.count(circle_marker) != 1 or text.count(comment_marker) != 1:
+              raise SystemExit('accuracy circle insertion anchors must each be unique')
+          circle_start = text.index(circle_marker)
+          comment_start = text.index(comment_marker, circle_start)
+          if 'updateAccuracyCircleVisibility' in text[circle_start:comment_start]:
+              raise SystemExit('accuracy circle listener already present')
+          text = text[:comment_start] + listener + text[comment_start:]
 
-            // ユーザーが移動モードで地図を動かしたら追従を解除
-          '''
-          listener_new = '''    accuracyCircle = new google.maps.Circle({
-              map,
-              strokeColor: "#4dd6a0",
-              strokeOpacity: 0.5,
-              strokeWeight: 1,
-              fillColor: "#4dd6a0",
-              fillOpacity: 0.08,
-            });
-            map.addListener("idle", updateAccuracyCircleVisibility);
+          gps_line = '  let gpsStatusText = ""; // コンパス中も最新の GPS 状態文言を保持\n'
+          if text.count(gps_line) != 1:
+              raise SystemExit(f'gps status anchor count: {text.count(gps_line)}')
+          helper = '''
+  function updateAccuracyCircleVisibility() {
+    if (!accuracyCircle || !map) return;
+    const bounds = map.getBounds();
+    const center = accuracyCircle.getCenter();
+    if (!bounds || !center || !lastPositionAccuracy) {
+      accuracyCircle.setVisible(true);
+      return;
+    }
+    const ne = bounds.getNorthEast();
+    const sw = bounds.getSouthWest();
+    const corners = [
+      ne,
+      sw,
+      new google.maps.LatLng(ne.lat(), sw.lng()),
+      new google.maps.LatLng(sw.lat(), ne.lng()),
+    ];
+    const coversViewport = corners.every((corner) =>
+      google.maps.geometry.spherical.computeDistanceBetween(center, corner) <= lastPositionAccuracy
+    );
+    accuracyCircle.setVisible(!coversViewport);
+  }
+'''
+          text = text.replace(gps_line, gps_line + helper, 1)
 
-            // ユーザーが移動モードで地図を動かしたら追従を解除
-          '''
-
-          helper_old = '''  let gpsStatusText = ""; // コンパス中も最新の GPS 状態文言を保持
-
-            function startGeolocation() {
-          '''
-          helper_new = '''  let gpsStatusText = ""; // コンパス中も最新の GPS 状態文言を保持
-
-            function updateAccuracyCircleVisibility() {
-              if (!accuracyCircle || !map) return;
-              const bounds = map.getBounds();
-              const center = accuracyCircle.getCenter();
-              if (!bounds || !center || !lastPositionAccuracy) {
-                accuracyCircle.setVisible(true);
-                return;
-              }
-              const ne = bounds.getNorthEast();
-              const sw = bounds.getSouthWest();
-              const corners = [
-                ne,
-                sw,
-                new google.maps.LatLng(ne.lat(), sw.lng()),
-                new google.maps.LatLng(sw.lat(), ne.lng()),
-              ];
-              const coversViewport = corners.every((corner) =>
-                google.maps.geometry.spherical.computeDistanceBetween(center, corner) <= lastPositionAccuracy
-              );
-              accuracyCircle.setVisible(!coversViewport);
-            }
-
-            function startGeolocation() {
-          '''
-
-          radius_old = '''    accuracyCircle.setRadius(lastPositionAccuracy || 0);
-              setGps(true, "GPS");
-          '''
-          radius_new = '''    accuracyCircle.setRadius(lastPositionAccuracy || 0);
-              updateAccuracyCircleVisibility();
-              setGps(true, "GPS");
-          '''
-
-          replacements = [
-              (listener_old, listener_new, 'circle listener anchor'),
-              (helper_old, helper_new, 'visibility helper anchor'),
-              (radius_old, radius_new, 'position update anchor'),
-          ]
-          for old, new, label in replacements:
-              count = text.count(old)
-              if count != 1:
-                  raise SystemExit(f'{label}: expected exactly one match, found {count}')
-              text = text.replace(old, new, 1)
+          radius_line = '    accuracyCircle.setRadius(lastPositionAccuracy || 0);\n'
+          if text.count(radius_line) != 1:
+              raise SystemExit(f'accuracy radius anchor count: {text.count(radius_line)}')
+          text = text.replace(radius_line, radius_line + '    updateAccuracyCircleVisibility();\n', 1)
 
           path.write_text(text)
           PY
@@ -110,20 +80,20 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           text = Path('js/app.js').read_text()
-          expected = {
+          checks = {
               'idle listener': 'map.addListener("idle", updateAccuracyCircleVisibility);',
-              'helper': 'function updateAccuracyCircleVisibility() {',
+              'visibility helper': 'function updateAccuracyCircleVisibility() {',
               'viewport coverage': 'const coversViewport = corners.every((corner) =>',
-              'position refresh': 'updateAccuracyCircleVisibility();',
+              'visibility toggle': 'accuracyCircle.setVisible(!coversViewport);',
               'exact radius retained': 'accuracyCircle.setRadius(lastPositionAccuracy || 0);',
           }
-          for label, needle in expected.items():
-              if needle not in text:
-                  raise SystemExit(f'missing {label}')
-          if text.count('function updateAccuracyCircleVisibility() {') != 1:
-              raise SystemExit('visibility helper count mismatch')
+          for label, needle in checks.items():
+              if text.count(needle) != 1:
+                  raise SystemExit(f'{label} count mismatch: {text.count(needle)}')
+          if text.count('    updateAccuracyCircleVisibility();') != 1:
+              raise SystemExit('position visibility refresh count mismatch')
           if 'Math.min(lastPositionAccuracy' in text:
-              raise SystemExit('navigation/display accuracy must not be capped')
+              raise SystemExit('GPS accuracy must not be capped')
           PY
 
           mapfile -t changed < <(git diff --name-only origin/main)
