@@ -28,85 +28,68 @@ jobs:
           path = Path("js/app.js")
           text = path.read_text()
 
-          old = """  let compassFirstReadingTimer = null;
-            let compassStreamSilenceTimer = null;
-            let compassRenderFrame = null;
-          """
-          new = """  let compassFirstReadingTimer = null;
-            let compassStreamSilenceTimer = null;
-            let lastCompassStreamActivityAt = null;
-            let compassRenderFrame = null;
-          """
-          if old not in text:
-              raise SystemExit("timer state anchor not found")
-          text = text.replace(old, new, 1)
+          def replace_once(old, new, label):
+              global text
+              if text.count(old) != 1:
+                  raise SystemExit(f"{label} anchor count={text.count(old)}")
+              text = text.replace(old, new, 1)
 
-          old = """  function armCompassStreamWatchdog() {
-              if (compassStreamSilenceTimer !== null) clearTimeout(compassStreamSilenceTimer);
-              compassStreamSilenceTimer = null;
-              if (document.visibilityState === \"hidden\") return;
-              const requestId = compassPermissionRequestId;
-              compassStreamSilenceTimer = setTimeout(() => {
-                compassStreamSilenceTimer = null;
-                if (document.visibilityState === \"hidden\") return;
-                if (requestId !== compassPermissionRequestId || !compassOn || !headingInitialized) return;
-                disableCompass();
-                showError(\"方位センサーの更新が停止しました\", \"🧭 を決定で再試行してください。\", \"compass\");
-              }, COMPASS_STREAM_SILENCE_TIMEOUT_MS);
-            }
-          """
-          new = """  function armCompassStreamWatchdog(activityAt = performance.now()) {
-              lastCompassStreamActivityAt = activityAt;
-              if (compassStreamSilenceTimer !== null || document.visibilityState === \"hidden\") return;
-              const requestId = compassPermissionRequestId;
-              const checkForSilence = () => {
-                compassStreamSilenceTimer = null;
-                if (document.visibilityState === \"hidden\") return;
-                if (requestId !== compassPermissionRequestId || !compassOn || !headingInitialized) return;
-                const elapsed = performance.now() - lastCompassStreamActivityAt;
-                if (elapsed < COMPASS_STREAM_SILENCE_TIMEOUT_MS) {
-                  compassStreamSilenceTimer = setTimeout(
-                    checkForSilence,
-                    COMPASS_STREAM_SILENCE_TIMEOUT_MS - elapsed
-                  );
-                  return;
-                }
-                disableCompass();
-                showError(\"方位センサーの更新が停止しました\", \"🧭 を決定で再試行してください。\", \"compass\");
-              };
-              compassStreamSilenceTimer = setTimeout(checkForSilence, COMPASS_STREAM_SILENCE_TIMEOUT_MS);
-            }
-          """
-          if old not in text:
-              raise SystemExit("watchdog function anchor not found")
-          text = text.replace(old, new, 1)
+          replace_once(
+              "  let compassStreamSilenceTimer = null;\n  let compassRenderFrame = null;",
+              "  let compassStreamSilenceTimer = null;\n  let lastCompassStreamActivityAt = null;\n  let compassRenderFrame = null;",
+              "timer state",
+          )
 
-          old = """    if (compassStreamSilenceTimer !== null) {
-              clearTimeout(compassStreamSilenceTimer);
-              compassStreamSilenceTimer = null;
-            }
-            if (compassRenderFrame !== null) {
-          """
-          new = """    if (compassStreamSilenceTimer !== null) {
-              clearTimeout(compassStreamSilenceTimer);
-              compassStreamSilenceTimer = null;
-            }
-            lastCompassStreamActivityAt = null;
-            if (compassRenderFrame !== null) {
-          """
-          if old not in text:
-              raise SystemExit("disable cleanup anchor not found")
-          text = text.replace(old, new, 1)
+          old_watchdog = "\n".join([
+              "  function armCompassStreamWatchdog() {",
+              "    if (compassStreamSilenceTimer !== null) clearTimeout(compassStreamSilenceTimer);",
+              "    compassStreamSilenceTimer = null;",
+              "    if (document.visibilityState === \"hidden\") return;",
+              "    const requestId = compassPermissionRequestId;",
+              "    compassStreamSilenceTimer = setTimeout(() => {",
+              "      compassStreamSilenceTimer = null;",
+              "      if (document.visibilityState === \"hidden\") return;",
+              "      if (requestId !== compassPermissionRequestId || !compassOn || !headingInitialized) return;",
+              "      disableCompass();",
+              "      showError(\"方位センサーの更新が停止しました\", \"🧭 を決定で再試行してください。\", \"compass\");",
+              "    }, COMPASS_STREAM_SILENCE_TIMEOUT_MS);",
+              "  }",
+          ])
+          new_watchdog = "\n".join([
+              "  function armCompassStreamWatchdog(activityAt = performance.now()) {",
+              "    lastCompassStreamActivityAt = activityAt;",
+              "    if (compassStreamSilenceTimer !== null || document.visibilityState === \"hidden\") return;",
+              "    const requestId = compassPermissionRequestId;",
+              "    const checkForSilence = () => {",
+              "      compassStreamSilenceTimer = null;",
+              "      if (document.visibilityState === \"hidden\") return;",
+              "      if (requestId !== compassPermissionRequestId || !compassOn || !headingInitialized) return;",
+              "      const elapsed = performance.now() - lastCompassStreamActivityAt;",
+              "      if (elapsed < COMPASS_STREAM_SILENCE_TIMEOUT_MS) {",
+              "        compassStreamSilenceTimer = setTimeout(",
+              "          checkForSilence,",
+              "          COMPASS_STREAM_SILENCE_TIMEOUT_MS - elapsed",
+              "        );",
+              "        return;",
+              "      }",
+              "      disableCompass();",
+              "      showError(\"方位センサーの更新が停止しました\", \"🧭 を決定で再試行してください。\", \"compass\");",
+              "    };",
+              "    compassStreamSilenceTimer = setTimeout(checkForSilence, COMPASS_STREAM_SILENCE_TIMEOUT_MS);",
+              "  }",
+          ])
+          replace_once(old_watchdog, new_watchdog, "watchdog function")
 
-          old = """    armCompassStreamWatchdog();
-              if (!headingInitialized) {
-          """
-          new = """    armCompassStreamWatchdog(now);
-              if (!headingInitialized) {
-          """
-          if old not in text:
-              raise SystemExit("orientation watchdog call anchor not found")
-          text = text.replace(old, new, 1)
+          replace_once(
+              "      compassStreamSilenceTimer = null;\n    }\n    if (compassRenderFrame !== null) {",
+              "      compassStreamSilenceTimer = null;\n    }\n    lastCompassStreamActivityAt = null;\n    if (compassRenderFrame !== null) {",
+              "disable cleanup",
+          )
+          replace_once(
+              "    armCompassStreamWatchdog();\n    if (!headingInitialized) {",
+              "    armCompassStreamWatchdog(now);\n    if (!headingInitialized) {",
+              "orientation watchdog call",
+          )
 
           path.write_text(text)
           PY
@@ -123,6 +106,7 @@ jobs:
           grep -q 'if (compassStreamSilenceTimer !== null || document.visibilityState === "hidden") return;' js/app.js
           grep -q 'const elapsed = performance.now() - lastCompassStreamActivityAt;' js/app.js
           grep -q 'armCompassStreamWatchdog(now);' js/app.js
+          test "$(grep -c 'clearTimeout(compassStreamSilenceTimer);' js/app.js)" -eq 2
           if git grep -nE 'AIza[0-9A-Za-z_-]{35}' -- .; then
             echo "::error::A Google API key pattern is present in a tracked file"
             exit 1
