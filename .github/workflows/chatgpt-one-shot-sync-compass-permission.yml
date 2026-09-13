@@ -24,36 +24,40 @@ jobs:
           from pathlib import Path
           p = Path("js/app.js")
           s = p.read_text()
-          old = '''      DOE.requestPermission()
-            .then((state) => {
-              if (!isCurrentRequest()) return;
-              compassPermissionPending = false;
-              if (state === "granted") start();
-              else showError("方位センサーが拒否されました", "🧭 を決定でもう一度試してください。", "compass");
-            })
-            .catch(() => {
-              if (!isCurrentRequest()) return;
-              compassPermissionPending = false;
-              showError("方位センサーを開始できません", "🧭 を決定で再試行。", "compass");
-            });'''
-          new = '''      try {
-            DOE.requestPermission()
-              .then((state) => {
-                if (!isCurrentRequest()) return;
-                compassPermissionPending = false;
-                if (state === "granted") start();
-                else showError("方位センサーが拒否されました", "🧭 を決定でもう一度試してください。", "compass");
-              })
-              .catch(() => {
-                if (!isCurrentRequest()) return;
-                compassPermissionPending = false;
-                showError("方位センサーを開始できません", "🧭 を決定で再試行。", "compass");
-              });
-          } catch (_) {
-            if (!isCurrentRequest()) return;
-            compassPermissionPending = false;
-            showError("方位センサーを開始できません", "🧭 を決定で再試行。", "compass");
-          }'''
+          old = "\n".join([
+              "      DOE.requestPermission()",
+              "        .then((state) => {",
+              "          if (!isCurrentRequest()) return;",
+              "          compassPermissionPending = false;",
+              "          if (state === \"granted\") start();",
+              "          else showError(\"方位センサーが拒否されました\", \"🧭 を決定でもう一度試してください。\", \"compass\");",
+              "        })",
+              "        .catch(() => {",
+              "          if (!isCurrentRequest()) return;",
+              "          compassPermissionPending = false;",
+              "          showError(\"方位センサーを開始できません\", \"🧭 を決定で再試行。\", \"compass\");",
+              "        });",
+          ])
+          new = "\n".join([
+              "      try {",
+              "        DOE.requestPermission()",
+              "          .then((state) => {",
+              "            if (!isCurrentRequest()) return;",
+              "            compassPermissionPending = false;",
+              "            if (state === \"granted\") start();",
+              "            else showError(\"方位センサーが拒否されました\", \"🧭 を決定でもう一度試してください。\", \"compass\");",
+              "          })",
+              "          .catch(() => {",
+              "            if (!isCurrentRequest()) return;",
+              "            compassPermissionPending = false;",
+              "            showError(\"方位センサーを開始できません\", \"🧭 を決定で再試行。\", \"compass\");",
+              "          });",
+              "      } catch (_) {",
+              "        if (!isCurrentRequest()) return;",
+              "        compassPermissionPending = false;",
+              "        showError(\"方位センサーを開始できません\", \"🧭 を決定で再試行。\", \"compass\");",
+              "      }",
+          ])
           if s.count(old) != 1:
               raise SystemExit(f"expected exactly one compass permission chain, found {s.count(old)}")
           p.write_text(s.replace(old, new, 1))
@@ -68,27 +72,29 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           s = Path("js/app.js").read_text()
-          expected = '''      try {
-            DOE.requestPermission()
-              .then((state) => {
-                if (!isCurrentRequest()) return;
-                compassPermissionPending = false;
-                if (state === "granted") start();
-                else showError("方位センサーが拒否されました", "🧭 を決定でもう一度試してください。", "compass");
-              })
-              .catch(() => {
-                if (!isCurrentRequest()) return;
-                compassPermissionPending = false;
-                showError("方位センサーを開始できません", "🧭 を決定で再試行。", "compass");
-              });
-          } catch (_) {
-            if (!isCurrentRequest()) return;
-            compassPermissionPending = false;
-            showError("方位センサーを開始できません", "🧭 を決定で再試行。", "compass");
-          }'''
+          expected = "\n".join([
+              "      try {",
+              "        DOE.requestPermission()",
+              "          .then((state) => {",
+              "            if (!isCurrentRequest()) return;",
+              "            compassPermissionPending = false;",
+              "            if (state === \"granted\") start();",
+              "            else showError(\"方位センサーが拒否されました\", \"🧭 を決定でもう一度試してください。\", \"compass\");",
+              "          })",
+              "          .catch(() => {",
+              "            if (!isCurrentRequest()) return;",
+              "            compassPermissionPending = false;",
+              "            showError(\"方位センサーを開始できません\", \"🧭 を決定で再試行。\", \"compass\");",
+              "          });",
+              "      } catch (_) {",
+              "        if (!isCurrentRequest()) return;",
+              "        compassPermissionPending = false;",
+              "        showError(\"方位センサーを開始できません\", \"🧭 を決定で再試行。\", \"compass\");",
+              "      }",
+          ])
           if s.count(expected) != 1:
               raise SystemExit("final sync-throw source guard failed")
-          if '      DOE.requestPermission()\n        .then((state) => {' in s:
+          if "      DOE.requestPermission()\n        .then((state) => {" in s:
               raise SystemExit("unguarded permission chain still present")
           PY
           if git grep -nE 'AIza[0-9A-Za-z_-]{35}' -- .; then
