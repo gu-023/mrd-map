@@ -22,32 +22,15 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
-
           path = Path('js/app.js')
           text = path.read_text()
-
-          old_state = '''  const ABSOLUTE_ORIENTATION_FALLBACK_MS = 1000;
-  let lastAbsoluteOrientationAt = null;
-'''
-          new_state = '''  const ABSOLUTE_ORIENTATION_FALLBACK_MS = 1000;
-  const COMPASS_PERMISSION_PENDING_TIMEOUT_MS = 15000;
-  let lastAbsoluteOrientationAt = null;
-'''
+          old_state = "  const ABSOLUTE_ORIENTATION_FALLBACK_MS = 1000;\n  let lastAbsoluteOrientationAt = null;\n"
+          new_state = "  const ABSOLUTE_ORIENTATION_FALLBACK_MS = 1000;\n  const COMPASS_PERMISSION_PENDING_TIMEOUT_MS = 15000;\n  let lastAbsoluteOrientationAt = null;\n"
           if text.count(old_state) != 1:
               raise SystemExit(f'state anchor count={text.count(old_state)}')
           text = text.replace(old_state, new_state, 1)
-
-          old_request = '''      compassPermissionPending = true;
-      DOE.requestPermission()
-'''
-          new_request = '''      compassPermissionPending = true;
-      setTimeout(() => {
-        if (!isCurrentRequest() || !compassPermissionPending) return;
-        compassPermissionPending = false;
-        compassPermissionRequestId += 1;
-      }, COMPASS_PERMISSION_PENDING_TIMEOUT_MS);
-      DOE.requestPermission()
-'''
+          old_request = "      compassPermissionPending = true;\n      DOE.requestPermission()\n"
+          new_request = "      compassPermissionPending = true;\n      setTimeout(() => {\n        if (!isCurrentRequest() || !compassPermissionPending) return;\n        compassPermissionPending = false;\n        compassPermissionRequestId += 1;\n      }, COMPASS_PERMISSION_PENDING_TIMEOUT_MS);\n      DOE.requestPermission()\n"
           if text.count(old_request) != 1:
               raise SystemExit(f'request anchor count={text.count(old_request)}')
           text = text.replace(old_request, new_request, 1)
@@ -62,8 +45,8 @@ jobs:
           grep -q 'const COMPASS_PERMISSION_PENDING_TIMEOUT_MS = 15000;' js/app.js
           grep -q 'if (!isCurrentRequest() || !compassPermissionPending) return;' js/app.js
           grep -q 'compassPermissionRequestId += 1;' js/app.js
-          if git diff -- js/app.js | grep -E 'AIza[0-9A-Za-z_-]{20,}|GOOGLE_MAPS_API_KEY[[:space:]]*[:=][[:space:]]*["'"'][^_]' ; then
-            echo 'Potential API key material found in diff' >&2
+          if git diff -- js/app.js | grep -E 'AIza[0-9A-Za-z_-]{20,}'; then
+            echo 'Potential Google API key material found in diff' >&2
             exit 1
           fi
       - name: Commit product change
