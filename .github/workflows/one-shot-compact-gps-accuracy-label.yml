@@ -1,0 +1,51 @@
+name: One-shot compact GPS accuracy label
+
+on:
+  push:
+    branches: [chatgpt/compact-gps-accuracy-label]
+    paths:
+      - .github/workflows/one-shot-compact-gps-accuracy-label.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Apply atomic display formatting change
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path("js/app.js")
+          text = path.read_text()
+          old = '    els.accText.textContent = lastPositionAccuracy ? `±${Math.round(lastPositionAccuracy)}m` : "";'
+          new = '    els.accText.textContent = lastPositionAccuracy ? `±${fmtDist(lastPositionAccuracy)}` : "";'
+          count = text.count(old)
+          if count != 1:
+              raise SystemExit(f"expected exactly one accuracy-label target, found {count}")
+          path.write_text(text.replace(old, new, 1))
+          PY
+
+          node --check js/app.js
+          git diff --check
+          test "$(git diff --name-only)" = "js/app.js"
+          if git grep -nE 'AIza[0-9A-Za-z_-]{35}' -- .; then
+            echo "::error::A Google API key pattern is present in a tracked file"
+            exit 1
+          fi
+          git diff -- js/app.js
+
+      - name: Commit product change
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add js/app.js
+          git commit -m "Compact large GPS accuracy labels"
+          git push
