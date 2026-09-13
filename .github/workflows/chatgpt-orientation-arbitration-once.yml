@@ -1,0 +1,85 @@
+name: ChatGPT one-shot orientation arbitration
+
+on:
+  push:
+    branches:
+      - chatgpt/arbitrate-orientation-events
+    paths:
+      - .github/workflows/chatgpt-orientation-arbitration-once.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chatgpt/arbitrate-orientation-events
+          fetch-depth: 0
+
+      - name: Apply atomic orientation-source arbitration
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("js/app.js")
+          text = path.read_text()
+
+          replacements = [
+              (
+                  '  let curHeading = 0; // 平滑化した方位（0=北, 時計回り）\n  let headingInitialized = false;\n',
+                  '  let curHeading = 0; // 平滑化した方位（0=北, 時計回り）\n  let headingInitialized = false;\n  const ABSOLUTE_ORIENTATION_FALLBACK_MS = 1000;\n  let lastAbsoluteOrientationAt = null;\n',
+              ),
+              (
+                  '    curHeading = 0;\n    headingInitialized = false;\n    els.canvas.style.transform = "translate(-50%, -50%) rotate(0deg)";\n',
+                  '    curHeading = 0;\n    headingInitialized = false;\n    lastAbsoluteOrientationAt = null;\n    els.canvas.style.transform = "translate(-50%, -50%) rotate(0deg)";\n',
+              ),
+              (
+                  '  function onOrient(e) {\n    const h = headingFromEvent(e);\n    if (!Number.isFinite(h)) return;\n    if (!headingInitialized) {\n',
+                  '  function onOrient(e) {\n    const h = headingFromEvent(e);\n    if (!Number.isFinite(h)) return;\n    const now = Date.now();\n    if (e.type === "deviceorientationabsolute") {\n      lastAbsoluteOrientationAt = now;\n    } else if (lastAbsoluteOrientationAt !== null &&\n               now - lastAbsoluteOrientationAt < ABSOLUTE_ORIENTATION_FALLBACK_MS) {\n      return;\n    }\n    if (!headingInitialized) {\n',
+              ),
+          ]
+
+          for old, new in replacements:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"expected exactly one patch anchor, found {count}: {old[:80]!r}")
+              text = text.replace(old, new, 1)
+
+          path.write_text(text)
+          PY
+
+      - name: Static verification
+        run: |
+          node --check js/app.js
+          git diff --check
+          python3 - <<'PY'
+          from pathlib import Path
+          text = Path("js/app.js").read_text()
+          required = [
+              "const ABSOLUTE_ORIENTATION_FALLBACK_MS = 1000;",
+              "let lastAbsoluteOrientationAt = null;",
+              'if (e.type === "deviceorientationabsolute") {',
+              "now - lastAbsoluteOrientationAt < ABSOLUTE_ORIENTATION_FALLBACK_MS",
+          ]
+          for needle in required:
+              if text.count(needle) != 1:
+                  raise SystemExit(f"source guard failed for {needle!r}")
+          if text.count("lastAbsoluteOrientationAt = null;") != 2:
+              raise SystemExit("absolute-orientation state must be declared and reset exactly once")
+          PY
+          if git diff | grep -Eq 'AIza[0-9A-Za-z_-]{20,}'; then
+            echo "Potential Google API key found in diff" >&2
+            exit 1
+          fi
+          test "$(git diff --name-only)" = "js/app.js"
+
+      - name: Commit product change
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add js/app.js
+          git commit -m "Arbitrate orientation event sources"
+          git push origin HEAD:chatgpt/arbitrate-orientation-events
