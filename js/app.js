@@ -47,9 +47,11 @@
   const ABSOLUTE_ORIENTATION_FALLBACK_MS = 1000;
   const COMPASS_PERMISSION_PENDING_TIMEOUT_MS = 15000;
   const COMPASS_FIRST_READING_TIMEOUT_MS = 10000;
+  const COMPASS_STREAM_SILENCE_TIMEOUT_MS = 10000;
   let lastAbsoluteOrientationAt = null;
   let compassPermissionRequestId = 0;
   let compassPermissionPending = false;
+  let compassStreamSilenceTimer = null;
   // ナビ
   let directionsService = null;
   let directionsRenderer = null;
@@ -360,9 +362,24 @@
     }
   }
 
+  function armCompassStreamWatchdog() {
+    if (compassStreamSilenceTimer !== null) clearTimeout(compassStreamSilenceTimer);
+    const requestId = compassPermissionRequestId;
+    compassStreamSilenceTimer = setTimeout(() => {
+      compassStreamSilenceTimer = null;
+      if (requestId !== compassPermissionRequestId || !compassOn || !headingInitialized) return;
+      disableCompass();
+      showError("方位センサーの更新が停止しました", "🧭 を決定で再試行してください。", "compass");
+    }, COMPASS_STREAM_SILENCE_TIMEOUT_MS);
+  }
+
   function disableCompass() {
     compassPermissionRequestId += 1;
     compassPermissionPending = false;
+    if (compassStreamSilenceTimer !== null) {
+      clearTimeout(compassStreamSilenceTimer);
+      compassStreamSilenceTimer = null;
+    }
     compassOn = false;
     window.removeEventListener("deviceorientationabsolute", onOrient, true);
     window.removeEventListener("deviceorientation", onOrient, true);
@@ -391,6 +408,7 @@
                now - lastAbsoluteOrientationAt < ABSOLUTE_ORIENTATION_FALLBACK_MS) {
       return;
     }
+    armCompassStreamWatchdog();
     if (!headingInitialized) {
       curHeading = ((h % 360) + 360) % 360;
       headingInitialized = true;
