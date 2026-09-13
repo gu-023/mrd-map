@@ -364,14 +364,29 @@
 
   function armCompassStreamWatchdog() {
     if (compassStreamSilenceTimer !== null) clearTimeout(compassStreamSilenceTimer);
+    compassStreamSilenceTimer = null;
+    if (document.visibilityState === "hidden") return;
     const requestId = compassPermissionRequestId;
     compassStreamSilenceTimer = setTimeout(() => {
       compassStreamSilenceTimer = null;
+      if (document.visibilityState === "hidden") return;
       if (requestId !== compassPermissionRequestId || !compassOn || !headingInitialized) return;
       disableCompass();
       showError("方位センサーの更新が停止しました", "🧭 を決定で再試行してください。", "compass");
     }, COMPASS_STREAM_SILENCE_TIMEOUT_MS);
   }
+
+  document.addEventListener("visibilitychange", () => {
+    if (!compassOn || !headingInitialized) return;
+    if (document.visibilityState === "hidden") {
+      if (compassStreamSilenceTimer !== null) {
+        clearTimeout(compassStreamSilenceTimer);
+        compassStreamSilenceTimer = null;
+      }
+      return;
+    }
+    armCompassStreamWatchdog();
+  });
 
   function disableCompass() {
     compassPermissionRequestId += 1;
