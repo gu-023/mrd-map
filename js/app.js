@@ -419,14 +419,14 @@
     compassStreamSilenceTimer = setTimeout(checkForSilence, COMPASS_STREAM_SILENCE_TIMEOUT_MS);
   }
 
-  document.addEventListener("visibilitychange", () => {
+  function handleCompassLifecycle(hidden) {
     if (compassPermissionPending) {
-      if (document.visibilityState === "hidden") clearCompassPermissionWatchdog();
+      if (hidden) clearCompassPermissionWatchdog();
       else armCompassPermissionWatchdog();
       return;
     }
     if (!compassOn) return;
-    if (document.visibilityState === "hidden") {
+    if (hidden) {
       if (headingInitialized && compassStreamSilenceTimer !== null) {
         clearTimeout(compassStreamSilenceTimer);
         compassStreamSilenceTimer = null;
@@ -443,6 +443,14 @@
     } else {
       armCompassFirstReadingWatchdog();
     }
+  }
+
+  document.addEventListener("visibilitychange", () => {
+    handleCompassLifecycle(document.visibilityState === "hidden");
+  });
+  window.addEventListener("pagehide", () => handleCompassLifecycle(true));
+  window.addEventListener("pageshow", () => {
+    handleCompassLifecycle(document.visibilityState === "hidden");
   });
 
   function disableCompass() {
