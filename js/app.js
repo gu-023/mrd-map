@@ -43,7 +43,7 @@
   let panMode = false;
   let compassOn = false;
   let curHeading = 0; // 平滑化した方位（0=北, 時計回り）
-  let orientHandler = null;
+  let headingInitialized = false;
   // ナビ
   let directionsService = null;
   let directionsRenderer = null;
@@ -331,6 +331,7 @@
     window.removeEventListener("deviceorientation", onOrient, true);
     els.headingArrow.classList.add("hidden");
     curHeading = 0;
+    headingInitialized = false;
     els.canvas.style.transform = "translate(-50%, -50%) rotate(0deg)";
     els.gpsText.textContent = gpsStatusText; // コンパス中に更新された最新の GPS 状態を復元
   }
@@ -345,9 +346,14 @@
   function onOrient(e) {
     const h = headingFromEvent(e);
     if (!Number.isFinite(h)) return;
-    // 最短経路で平滑化（コンパスはノイズが多い）
-    let diff = ((h - curHeading + 540) % 360) - 180;
-    curHeading = (curHeading + diff * 0.2 + 360) % 360;
+    if (!headingInitialized) {
+      curHeading = ((h % 360) + 360) % 360;
+      headingInitialized = true;
+    } else {
+      // 最短経路で平滑化（コンパスはノイズが多い）
+      const diff = ((h - curHeading + 540) % 360) - 180;
+      curHeading = (curHeading + diff * 0.2 + 360) % 360;
+    }
     els.canvas.style.transform = `translate(-50%, -50%) rotate(${-curHeading}deg)`;
     els.gpsText.textContent = `🧭 ${Math.round(curHeading)}° ${cardinal(curHeading)}`;
   }
