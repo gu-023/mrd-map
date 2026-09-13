@@ -46,6 +46,7 @@
   let headingInitialized = false;
   const ABSOLUTE_ORIENTATION_FALLBACK_MS = 1000;
   const COMPASS_PERMISSION_PENDING_TIMEOUT_MS = 15000;
+  const COMPASS_FIRST_READING_TIMEOUT_MS = 10000;
   let lastAbsoluteOrientationAt = null;
   let compassPermissionRequestId = 0;
   let compassPermissionPending = false;
@@ -319,6 +320,11 @@
       // iOS/WebKit は webkitCompassHeading、その他は絶対方位イベント
       window.addEventListener("deviceorientationabsolute", onOrient, true);
       window.addEventListener("deviceorientation", onOrient, true);
+      setTimeout(() => {
+        if (!isCurrentRequest() || !compassOn || headingInitialized) return;
+        disableCompass();
+        showError("方位センサーが応答しません", "🧭 を決定で再試行してください。", "compass");
+      }, COMPASS_FIRST_READING_TIMEOUT_MS);
     };
     const DOE = window.DeviceOrientationEvent;
     if (DOE && typeof DOE.requestPermission === "function") {
