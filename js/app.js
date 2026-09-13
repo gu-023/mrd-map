@@ -299,7 +299,7 @@
    * 取得した方位ぶんだけ地図キャンバスを逆回転させ、進行方向を常に画面の上にする。
    */
   function toggleCompass() {
-    if (compassOn) {
+    if (compassOn || compassPermissionPending) {
       disableCompass();
     } else {
       enableCompass(); // ★ボタン押下（ユーザー操作）の中から呼ぶこと
