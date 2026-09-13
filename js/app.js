@@ -44,6 +44,8 @@
   let compassOn = false;
   let curHeading = 0; // 平滑化した方位（0=北, 時計回り）
   let headingInitialized = false;
+  const ABSOLUTE_ORIENTATION_FALLBACK_MS = 1000;
+  let lastAbsoluteOrientationAt = null;
   // ナビ
   let directionsService = null;
   let directionsRenderer = null;
@@ -332,6 +334,7 @@
     els.headingArrow.classList.add("hidden");
     curHeading = 0;
     headingInitialized = false;
+    lastAbsoluteOrientationAt = null;
     els.canvas.style.transform = "translate(-50%, -50%) rotate(0deg)";
     els.gpsText.textContent = gpsStatusText; // コンパス中に更新された最新の GPS 状態を復元
   }
@@ -346,6 +349,13 @@
   function onOrient(e) {
     const h = headingFromEvent(e);
     if (!Number.isFinite(h)) return;
+    const now = Date.now();
+    if (e.type === "deviceorientationabsolute") {
+      lastAbsoluteOrientationAt = now;
+    } else if (lastAbsoluteOrientationAt !== null &&
+               now - lastAbsoluteOrientationAt < ABSOLUTE_ORIENTATION_FALLBACK_MS) {
+      return;
+    }
     if (!headingInitialized) {
       curHeading = ((h % 360) + 360) % 360;
       headingInitialized = true;
