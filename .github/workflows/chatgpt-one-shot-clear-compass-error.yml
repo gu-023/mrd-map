@@ -23,17 +23,18 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           p = Path("js/app.js")
-          s = p.read_text()
-          old = '''  function enableCompass() {
-            if (compassPermissionPending) return;
-            const requestId = ++compassPermissionRequestId;'''
-          new = '''  function enableCompass() {
-            if (compassPermissionPending) return;
-            clearError("compass");
-            const requestId = ++compassPermissionRequestId;'''
-          if s.count(old) != 1:
-              raise SystemExit(f"expected exactly one enableCompass retry anchor, found {s.count(old)}")
-          p.write_text(s.replace(old, new, 1))
+          lines = p.read_text().splitlines()
+          target = '    if (compassPermissionPending) return;'
+          matches = [i for i, line in enumerate(lines) if line == target]
+          if len(matches) != 1:
+              raise SystemExit(f"expected exactly one pending guard, found {len(matches)}")
+          i = matches[0]
+          if i == 0 or lines[i - 1] != '  function enableCompass() {':
+              raise SystemExit("pending guard is not enableCompass entry")
+          if i + 1 >= len(lines) or lines[i + 1] != '    const requestId = ++compassPermissionRequestId;':
+              raise SystemExit("unexpected enableCompass entry layout")
+          lines.insert(i + 1, '    clearError("compass");')
+          p.write_text('\n'.join(lines) + '\n')
           PY
 
       - name: Verify product change
@@ -44,13 +45,16 @@ jobs:
           git diff --check
           python3 - <<'PY'
           from pathlib import Path
-          s = Path("js/app.js").read_text()
-          expected = '''  function enableCompass() {
-            if (compassPermissionPending) return;
-            clearError("compass");
-            const requestId = ++compassPermissionRequestId;'''
-          if s.count(expected) != 1:
-              raise SystemExit("final source guard failed")
+          lines = Path("js/app.js").read_text().splitlines()
+          sequence = [
+              '  function enableCompass() {',
+              '    if (compassPermissionPending) return;',
+              '    clearError("compass");',
+              '    const requestId = ++compassPermissionRequestId;',
+          ]
+          matches = sum(lines[i:i + len(sequence)] == sequence for i in range(len(lines) - len(sequence) + 1))
+          if matches != 1:
+              raise SystemExit(f"final source guard failed: {matches}")
           PY
           if git grep -nE 'AIza[0-9A-Za-z_-]{35}' -- .; then
             echo "::error::A Google API key pattern is present in a tracked file"
