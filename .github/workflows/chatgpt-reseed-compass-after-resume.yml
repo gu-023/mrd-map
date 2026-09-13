@@ -27,26 +27,14 @@ jobs:
           path = Path("js/app.js")
           text = path.read_text()
 
-          old_visibility = '''    if (headingInitialized) armCompassStreamWatchdog();
-              else armCompassFirstReadingWatchdog();'''
-          new_visibility = '''    if (headingInitialized) {
-              lastCompassHeadingAt = null; // hidden中は観測がないため、復帰後の最初の実測値を直接採用する
-              armCompassStreamWatchdog();
-            } else {
-              armCompassFirstReadingWatchdog();
-            }'''
+          old_visibility = "    if (headingInitialized) armCompassStreamWatchdog();\n    else armCompassFirstReadingWatchdog();"
+          new_visibility = "    if (headingInitialized) {\n      lastCompassHeadingAt = null; // hidden中は観測がないため、復帰後の最初の実測値を直接採用する\n      armCompassStreamWatchdog();\n    } else {\n      armCompassFirstReadingWatchdog();\n    }"
           if text.count(old_visibility) != 1:
               raise SystemExit(f"visibility anchor count={text.count(old_visibility)}")
           text = text.replace(old_visibility, new_visibility, 1)
 
-          old_seed = '''    if (!headingInitialized) {
-              curHeading = ((h % 360) + 360) % 360;
-              headingInitialized = true;
-            } else {'''
-          new_seed = '''    if (!headingInitialized || lastCompassHeadingAt === null) {
-              curHeading = ((h % 360) + 360) % 360;
-              headingInitialized = true;
-            } else {'''
+          old_seed = "    if (!headingInitialized) {\n      curHeading = ((h % 360) + 360) % 360;\n      headingInitialized = true;\n    } else {"
+          new_seed = "    if (!headingInitialized || lastCompassHeadingAt === null) {\n      curHeading = ((h % 360) + 360) % 360;\n      headingInitialized = true;\n    } else {"
           if text.count(old_seed) != 1:
               raise SystemExit(f"seed anchor count={text.count(old_seed)}")
           text = text.replace(old_seed, new_seed, 1)
