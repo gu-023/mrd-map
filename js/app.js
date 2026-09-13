@@ -46,6 +46,7 @@
   let headingInitialized = false;
   const ABSOLUTE_ORIENTATION_FALLBACK_MS = 1000;
   let lastAbsoluteOrientationAt = null;
+  let compassPermissionRequestId = 0;
   // ナビ
   let directionsService = null;
   let directionsRenderer = null;
@@ -304,7 +305,10 @@
   }
 
   function enableCompass() {
+    const requestId = ++compassPermissionRequestId;
+    const isCurrentRequest = () => requestId === compassPermissionRequestId;
     const start = () => {
+      if (!isCurrentRequest()) return;
       clearError("compass");
       compassOn = true;
       els.headingArrow.classList.remove("hidden");
@@ -316,10 +320,14 @@
     if (DOE && typeof DOE.requestPermission === "function") {
       DOE.requestPermission()
         .then((state) => {
+          if (!isCurrentRequest()) return;
           if (state === "granted") start();
           else showError("方位センサーが拒否されました", "🧭 を決定でもう一度試してください。", "compass");
         })
-        .catch(() => showError("方位センサーを開始できません", "🧭 を決定で再試行。", "compass"));
+        .catch(() => {
+          if (!isCurrentRequest()) return;
+          showError("方位センサーを開始できません", "🧭 を決定で再試行。", "compass");
+        });
     } else if (DOE) {
       start();
     } else {
@@ -328,6 +336,7 @@
   }
 
   function disableCompass() {
+    compassPermissionRequestId += 1;
     compassOn = false;
     window.removeEventListener("deviceorientationabsolute", onOrient, true);
     window.removeEventListener("deviceorientation", onOrient, true);
