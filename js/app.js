@@ -203,6 +203,8 @@
       fillOpacity: 0.08,
     });
 
+    map.addListener("idle", updateAccuracyCircleVisibility);
+
     // ユーザーが移動モードで地図を動かしたら追従を解除
     map.addListener("dragstart", () => (followMode = false));
 
@@ -226,6 +228,28 @@
   let lastPositionAccuracy = null; // 最新 GPS fix の精度半径 (m)
   let lastPositionTimestamp = null; // 最新 GPS fix の取得時刻 (epoch ms)
   let gpsStatusText = ""; // コンパス中も最新の GPS 状態文言を保持
+
+  function updateAccuracyCircleVisibility() {
+    if (!accuracyCircle || !map) return;
+    const bounds = map.getBounds();
+    const center = accuracyCircle.getCenter();
+    if (!bounds || !center || !lastPositionAccuracy) {
+      accuracyCircle.setVisible(true);
+      return;
+    }
+    const ne = bounds.getNorthEast();
+    const sw = bounds.getSouthWest();
+    const corners = [
+      ne,
+      sw,
+      new google.maps.LatLng(ne.lat(), sw.lng()),
+      new google.maps.LatLng(sw.lat(), ne.lng()),
+    ];
+    const coversViewport = corners.every((corner) =>
+      google.maps.geometry.spherical.computeDistanceBetween(center, corner) <= lastPositionAccuracy
+    );
+    accuracyCircle.setVisible(!coversViewport);
+  }
 
   function startGeolocation() {
     if (!("geolocation" in navigator)) {
@@ -1425,6 +1449,7 @@
     userMarker.setPosition(p);
     accuracyCircle.setCenter(p);
     accuracyCircle.setRadius(lastPositionAccuracy || 0);
+    updateAccuracyCircleVisibility();
     setGps(true, "GPS");
     els.accText.textContent = lastPositionAccuracy ? `±${fmtDist(lastPositionAccuracy)}` : "";
     if (followMode && !pickMode && !searchOpen && !menuOpen) map.panTo(p); // D-pad overlay 中は追従しない
