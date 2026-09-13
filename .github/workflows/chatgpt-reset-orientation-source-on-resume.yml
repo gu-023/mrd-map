@@ -43,9 +43,7 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           text = Path("js/app.js").read_text()
-          resume = '''      lastCompassHeadingAt = null; // hidden中は観測がないため、復帰後の最初の実測値を直接採用する
-      lastAbsoluteOrientationAt = null; // suspend前のabsolute判定を復帰後へ持ち越さない
-      armCompassStreamWatchdog();'''
+          resume = '      lastCompassHeadingAt = null; // hidden中は観測がないため、復帰後の最初の実測値を直接採用する\n      lastAbsoluteOrientationAt = null; // suspend前のabsolute判定を復帰後へ持ち越さない\n      armCompassStreamWatchdog();'
           assert resume in text
           assert text.count('lastAbsoluteOrientationAt = null;') == 3
           PY
