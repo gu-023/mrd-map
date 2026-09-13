@@ -54,6 +54,7 @@
   let compassPermissionTimer = null;
   let compassFirstReadingTimer = null;
   let compassStreamSilenceTimer = null;
+  let compassRenderFrame = null;
   // ナビ
   let directionsService = null;
   let directionsRenderer = null;
@@ -439,6 +440,10 @@
       clearTimeout(compassStreamSilenceTimer);
       compassStreamSilenceTimer = null;
     }
+    if (compassRenderFrame !== null) {
+      cancelAnimationFrame(compassRenderFrame);
+      compassRenderFrame = null;
+    }
     compassOn = false;
     window.removeEventListener("deviceorientationabsolute", onOrient, true);
     window.removeEventListener("deviceorientation", onOrient, true);
@@ -480,8 +485,17 @@
       const diff = ((h - curHeading + 540) % 360) - 180;
       curHeading = (curHeading + diff * 0.2 + 360) % 360;
     }
-    els.canvas.style.transform = `translate(-50%, -50%) rotate(${-curHeading}deg)`;
-    els.gpsText.textContent = `🧭 ${Math.round(curHeading)}° ${cardinal(curHeading)}`;
+    scheduleCompassRender();
+  }
+
+  function scheduleCompassRender() {
+    if (compassRenderFrame !== null) return;
+    compassRenderFrame = requestAnimationFrame(() => {
+      compassRenderFrame = null;
+      if (!compassOn || !headingInitialized) return;
+      els.canvas.style.transform = `translate(-50%, -50%) rotate(${-curHeading}deg)`;
+      els.gpsText.textContent = `🧭 ${Math.round(curHeading)}° ${cardinal(curHeading)}`;
+    });
   }
 
   function cardinal(deg) {
