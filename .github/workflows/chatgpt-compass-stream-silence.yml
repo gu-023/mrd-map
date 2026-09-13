@@ -1,0 +1,109 @@
+name: ChatGPT compass stream-silence watchdog
+
+on:
+  push:
+    branches:
+      - chatgpt/compass-stream-silence-timeout
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: chatgpt/compass-stream-silence-timeout
+
+      - name: Apply atomic compass stream-silence change
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("js/app.js")
+          lines = path.read_text().splitlines()
+
+          constant_anchor = '  const COMPASS_FIRST_READING_TIMEOUT_MS = 10000;'
+          if lines.count(constant_anchor) != 1:
+              raise SystemExit("constant anchor mismatch")
+          constant_idx = lines.index(constant_anchor)
+          lines.insert(constant_idx + 1, '  const COMPASS_STREAM_SILENCE_TIMEOUT_MS = 10000;')
+
+          state_anchor = '  let compassPermissionPending = false;'
+          if lines.count(state_anchor) != 1:
+              raise SystemExit("state anchor mismatch")
+          state_idx = lines.index(state_anchor)
+          lines.insert(state_idx + 1, '  let compassStreamSilenceTimer = null;')
+
+          disable_anchor = '  function disableCompass() {'
+          if lines.count(disable_anchor) != 1:
+              raise SystemExit("disable anchor mismatch")
+          disable_idx = lines.index(disable_anchor)
+          watchdog = [
+              '  function armCompassStreamWatchdog() {',
+              '    if (compassStreamSilenceTimer !== null) clearTimeout(compassStreamSilenceTimer);',
+              '    const requestId = compassPermissionRequestId;',
+              '    compassStreamSilenceTimer = setTimeout(() => {',
+              '      compassStreamSilenceTimer = null;',
+              '      if (requestId !== compassPermissionRequestId || !compassOn || !headingInitialized) return;',
+              '      disableCompass();',
+              '      showError("方位センサーの更新が停止しました", "🧭 を決定で再試行してください。", "compass");',
+              '    }, COMPASS_STREAM_SILENCE_TIMEOUT_MS);',
+              '  }',
+              '',
+          ]
+          lines[disable_idx:disable_idx] = watchdog
+
+          disable_idx = lines.index(disable_anchor)
+          pending_anchor = '    compassPermissionPending = false;'
+          pending_idx = next((i for i in range(disable_idx + 1, len(lines)) if lines[i] == pending_anchor), None)
+          if pending_idx is None:
+              raise SystemExit("disable pending anchor mismatch")
+          clear_timer = [
+              '    if (compassStreamSilenceTimer !== null) {',
+              '      clearTimeout(compassStreamSilenceTimer);',
+              '      compassStreamSilenceTimer = null;',
+              '    }',
+          ]
+          lines[pending_idx + 1:pending_idx + 1] = clear_timer
+
+          heading_anchor = '    if (!headingInitialized) {'
+          if lines.count(heading_anchor) != 1:
+              raise SystemExit("heading anchor mismatch")
+          heading_idx = lines.index(heading_anchor)
+          lines.insert(heading_idx, '    armCompassStreamWatchdog();')
+
+          path.write_text("\n".join(lines) + "\n")
+          PY
+
+      - name: Verify product change
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check js/app.js
+          git diff --check
+          test "$(git diff --name-only | paste -sd ' ' -)" = "js/app.js"
+          grep -q 'const COMPASS_STREAM_SILENCE_TIMEOUT_MS = 10000;' js/app.js
+          grep -q 'function armCompassStreamWatchdog()' js/app.js
+          grep -q 'requestId !== compassPermissionRequestId || !compassOn || !headingInitialized' js/app.js
+          grep -q 'armCompassStreamWatchdog();' js/app.js
+          grep -q '方位センサーの更新が停止しました' js/app.js
+          if git grep -nE 'AIza[0-9A-Za-z_-]{35}' -- .; then
+            echo "::error::A Google API key pattern is present in a tracked file"
+            exit 1
+          fi
+
+      - name: Commit verified product change and remove helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/chatgpt-compass-stream-silence.yml
+          git add js/app.js
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Recover when compass stream stops"
+          git push origin HEAD:chatgpt/compass-stream-silence-timeout
