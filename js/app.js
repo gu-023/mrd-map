@@ -51,6 +51,7 @@
   let lastAbsoluteOrientationAt = null;
   let compassPermissionRequestId = 0;
   let compassPermissionPending = false;
+  let compassPermissionTimer = null;
   let compassFirstReadingTimer = null;
   let compassStreamSilenceTimer = null;
   // ナビ
@@ -328,28 +329,26 @@
     const DOE = window.DeviceOrientationEvent;
     if (DOE && typeof DOE.requestPermission === "function") {
       compassPermissionPending = true;
-      setTimeout(() => {
-        if (!isCurrentRequest() || !compassPermissionPending) return;
-        compassPermissionPending = false;
-        compassPermissionRequestId += 1;
-        showError("方位センサーが応答しません", "🧭 を決定で再試行してください。", "compass");
-      }, COMPASS_PERMISSION_PENDING_TIMEOUT_MS);
+      armCompassPermissionWatchdog();
       try {
         DOE.requestPermission()
           .then((state) => {
             if (!isCurrentRequest()) return;
             compassPermissionPending = false;
+            clearCompassPermissionWatchdog();
             if (state === "granted") start();
             else showError("方位センサーが拒否されました", "🧭 を決定でもう一度試してください。", "compass");
           })
           .catch(() => {
             if (!isCurrentRequest()) return;
             compassPermissionPending = false;
+            clearCompassPermissionWatchdog();
             showError("方位センサーを開始できません", "🧭 を決定で再試行。", "compass");
           });
       } catch (_) {
         if (!isCurrentRequest()) return;
         compassPermissionPending = false;
+        clearCompassPermissionWatchdog();
         showError("方位センサーを開始できません", "🧭 を決定で再試行。", "compass");
       }
     } else if (DOE) {
@@ -357,6 +356,26 @@
     } else {
       showError("方位センサー非対応", "この端末では向き連動を利用できません。", "compass");
     }
+  }
+
+  function clearCompassPermissionWatchdog() {
+    if (compassPermissionTimer === null) return;
+    clearTimeout(compassPermissionTimer);
+    compassPermissionTimer = null;
+  }
+
+  function armCompassPermissionWatchdog() {
+    clearCompassPermissionWatchdog();
+    if (!compassPermissionPending || document.visibilityState === "hidden") return;
+    const requestId = compassPermissionRequestId;
+    compassPermissionTimer = setTimeout(() => {
+      compassPermissionTimer = null;
+      if (document.visibilityState === "hidden") return;
+      if (requestId !== compassPermissionRequestId || !compassPermissionPending) return;
+      compassPermissionPending = false;
+      compassPermissionRequestId += 1;
+      showError("方位センサーが応答しません", "🧭 を決定で再試行してください。", "compass");
+    }, COMPASS_PERMISSION_PENDING_TIMEOUT_MS);
   }
 
   function armCompassFirstReadingWatchdog() {
@@ -388,6 +407,11 @@
   }
 
   document.addEventListener("visibilitychange", () => {
+    if (compassPermissionPending) {
+      if (document.visibilityState === "hidden") clearCompassPermissionWatchdog();
+      else armCompassPermissionWatchdog();
+      return;
+    }
     if (!compassOn) return;
     if (document.visibilityState === "hidden") {
       if (headingInitialized && compassStreamSilenceTimer !== null) {
@@ -406,6 +430,7 @@
   function disableCompass() {
     compassPermissionRequestId += 1;
     compassPermissionPending = false;
+    clearCompassPermissionWatchdog();
     if (compassFirstReadingTimer !== null) {
       clearTimeout(compassFirstReadingTimer);
       compassFirstReadingTimer = null;
