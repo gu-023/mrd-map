@@ -1,0 +1,135 @@
+name: ChatGPT one-shot compass permission guard
+
+on:
+  push:
+    branches:
+      - chatgpt/guard-compass-permission-race
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: chatgpt/guard-compass-permission-race
+
+      - name: Apply compass permission generation guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("js/app.js")
+          text = path.read_text()
+
+          old_state = """  const ABSOLUTE_ORIENTATION_FALLBACK_MS = 1000;
+          let lastAbsoluteOrientationAt = null;
+"""
+          new_state = """  const ABSOLUTE_ORIENTATION_FALLBACK_MS = 1000;
+          let lastAbsoluteOrientationAt = null;
+          let compassPermissionRequestId = 0;
+"""
+          if text.count(old_state) != 1:
+              raise SystemExit(f"expected one compass state anchor, found {text.count(old_state)}")
+          text = text.replace(old_state, new_state, 1)
+
+          old_enable = """  function enableCompass() {
+            const start = () => {
+              clearError(\"compass\");
+              compassOn = true;
+              els.headingArrow.classList.remove(\"hidden\");
+              // iOS/WebKit は webkitCompassHeading、その他は絶対方位イベント
+              window.addEventListener(\"deviceorientationabsolute\", onOrient, true);
+              window.addEventListener(\"deviceorientation\", onOrient, true);
+            };
+            const DOE = window.DeviceOrientationEvent;
+            if (DOE && typeof DOE.requestPermission === \"function\") {
+              DOE.requestPermission()
+                .then((state) => {
+                  if (state === \"granted\") start();
+                  else showError(\"方位センサーが拒否されました\", \"🧭 を決定でもう一度試してください。\", \"compass\");
+                })
+                .catch(() => showError(\"方位センサーを開始できません\", \"🧭 を決定で再試行。\", \"compass\"));
+            } else if (DOE) {
+              start();
+            } else {
+              showError(\"方位センサー非対応\", \"この端末では向き連動を利用できません。\", \"compass\");
+            }
+          }
+"""
+          new_enable = """  function enableCompass() {
+            const requestId = ++compassPermissionRequestId;
+            const isCurrentRequest = () => requestId === compassPermissionRequestId;
+            const start = () => {
+              if (!isCurrentRequest()) return;
+              clearError(\"compass\");
+              compassOn = true;
+              els.headingArrow.classList.remove(\"hidden\");
+              // iOS/WebKit は webkitCompassHeading、その他は絶対方位イベント
+              window.addEventListener(\"deviceorientationabsolute\", onOrient, true);
+              window.addEventListener(\"deviceorientation\", onOrient, true);
+            };
+            const DOE = window.DeviceOrientationEvent;
+            if (DOE && typeof DOE.requestPermission === \"function\") {
+              DOE.requestPermission()
+                .then((state) => {
+                  if (!isCurrentRequest()) return;
+                  if (state === \"granted\") start();
+                  else showError(\"方位センサーが拒否されました\", \"🧭 を決定でもう一度試してください。\", \"compass\");
+                })
+                .catch(() => {
+                  if (!isCurrentRequest()) return;
+                  showError(\"方位センサーを開始できません\", \"🧭 を決定で再試行。\", \"compass\");
+                });
+            } else if (DOE) {
+              start();
+            } else {
+              showError(\"方位センサー非対応\", \"この端末では向き連動を利用できません。\", \"compass\");
+            }
+          }
+"""
+          if text.count(old_enable) != 1:
+              raise SystemExit(f"expected one enableCompass anchor, found {text.count(old_enable)}")
+          text = text.replace(old_enable, new_enable, 1)
+
+          old_disable = """  function disableCompass() {
+            compassOn = false;
+"""
+          new_disable = """  function disableCompass() {
+            compassPermissionRequestId += 1;
+            compassOn = false;
+"""
+          if text.count(old_disable) != 1:
+              raise SystemExit(f"expected one disableCompass anchor, found {text.count(old_disable)}")
+          text = text.replace(old_disable, new_disable, 1)
+
+          path.write_text(text)
+          PY
+
+          node --check js/app.js
+          git diff --check
+          test "$(git diff --name-only | sort)" = "js/app.js"
+          grep -q 'let compassPermissionRequestId = 0;' js/app.js
+          grep -q 'const requestId = ++compassPermissionRequestId;' js/app.js
+          grep -q 'if (!isCurrentRequest()) return;' js/app.js
+          grep -q 'compassPermissionRequestId += 1;' js/app.js
+          if git grep -nE 'AIza[0-9A-Za-z_-]{35}' -- . ':!.github/workflows/chatgpt-one-shot.yml'; then
+            echo "::error::A Google API key pattern is present in tracked content"
+            exit 1
+          fi
+
+      - name: Commit product change and remove helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/chatgpt-one-shot.yml
+          git add js/app.js
+          git diff --cached --check
+          git commit -m "Guard stale compass permission callbacks"
+          git push origin HEAD:chatgpt/guard-compass-permission-race
