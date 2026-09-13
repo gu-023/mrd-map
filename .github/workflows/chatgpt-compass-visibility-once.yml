@@ -1,0 +1,104 @@
+name: ChatGPT one-shot compass visibility guard
+
+on:
+  push:
+    branches:
+      - chatgpt/pause-compass-watchdog-when-hidden
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: chatgpt/pause-compass-watchdog-when-hidden
+          fetch-depth: 0
+
+      - name: Apply visibility-aware compass watchdog change
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("js/app.js")
+          text = path.read_text()
+
+          old = '''  function armCompassStreamWatchdog() {
+            if (compassStreamSilenceTimer !== null) clearTimeout(compassStreamSilenceTimer);
+            const requestId = compassPermissionRequestId;
+          '''
+          new = '''  function armCompassStreamWatchdog() {
+            if (compassStreamSilenceTimer !== null) clearTimeout(compassStreamSilenceTimer);
+            compassStreamSilenceTimer = null;
+            if (document.visibilityState === "hidden") return;
+            const requestId = compassPermissionRequestId;
+          '''
+          if text.count(old) != 1:
+              raise SystemExit("armCompassStreamWatchdog anchor mismatch")
+          text = text.replace(old, new, 1)
+
+          old = '''      compassStreamSilenceTimer = null;
+                if (requestId !== compassPermissionRequestId || !compassOn || !headingInitialized) return;
+          '''
+          new = '''      compassStreamSilenceTimer = null;
+                if (document.visibilityState === "hidden") return;
+                if (requestId !== compassPermissionRequestId || !compassOn || !headingInitialized) return;
+          '''
+          if text.count(old) != 1:
+              raise SystemExit("watchdog callback anchor mismatch")
+          text = text.replace(old, new, 1)
+
+          anchor = '''
+            function disableCompass() {
+          '''
+          insertion = '''
+            document.addEventListener("visibilitychange", () => {
+              if (!compassOn || !headingInitialized) return;
+              if (document.visibilityState === "hidden") {
+                if (compassStreamSilenceTimer !== null) {
+                  clearTimeout(compassStreamSilenceTimer);
+                  compassStreamSilenceTimer = null;
+                }
+                return;
+              }
+              armCompassStreamWatchdog();
+            });
+
+            function disableCompass() {
+          '''
+          if text.count(anchor) != 1:
+              raise SystemExit("disableCompass anchor mismatch")
+          text = text.replace(anchor, insertion, 1)
+          path.write_text(text)
+          PY
+
+      - name: Verify product change
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check js/app.js
+          git diff --check
+          grep -F 'if (document.visibilityState === "hidden") return;' js/app.js >/dev/null
+          grep -F 'document.addEventListener("visibilitychange"' js/app.js >/dev/null
+          if git grep -nE 'AIza[0-9A-Za-z_-]{35}' -- .; then
+            echo "::error::A Google API key pattern is present in a tracked file"
+            exit 1
+          fi
+
+      - name: Commit product-only final tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/chatgpt-compass-visibility-once.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add js/app.js
+          git commit -m "Pause compass watchdog while page is hidden"
+          git fetch origin main
+          test "$(git diff --name-only origin/main...HEAD)" = "js/app.js"
+          git diff --check origin/main...HEAD
+          git push origin HEAD:chatgpt/pause-compass-watchdog-when-hidden
