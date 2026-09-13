@@ -25,30 +25,27 @@ jobs:
           from pathlib import Path
 
           path = Path("js/app.js")
-          src = path.read_text()
+          lines = path.read_text().splitlines()
 
-          old_constants = '''  const ABSOLUTE_ORIENTATION_FALLBACK_MS = 1000;
-          const COMPASS_PERMISSION_PENDING_TIMEOUT_MS = 15000;'''
-          new_constants = '''  const ABSOLUTE_ORIENTATION_FALLBACK_MS = 1000;
-          const COMPASS_PERMISSION_PENDING_TIMEOUT_MS = 15000;
-          const COMPASS_FIRST_READING_TIMEOUT_MS = 10000;'''
-          if src.count(old_constants) != 1:
+          constant_anchor = '  const COMPASS_PERMISSION_PENDING_TIMEOUT_MS = 15000;'
+          if lines.count(constant_anchor) != 1:
               raise SystemExit("constant anchor mismatch")
-          src = src.replace(old_constants, new_constants, 1)
+          constant_idx = lines.index(constant_anchor)
+          lines.insert(constant_idx + 1, '  const COMPASS_FIRST_READING_TIMEOUT_MS = 10000;')
 
-          old_start = '''      window.addEventListener("deviceorientationabsolute", onOrient, true);
-          window.addEventListener("deviceorientation", onOrient, true);'''
-          new_start = '''      window.addEventListener("deviceorientationabsolute", onOrient, true);
-          window.addEventListener("deviceorientation", onOrient, true);
-          setTimeout(() => {
-            if (!isCurrentRequest() || !compassOn || headingInitialized) return;
-            disableCompass();
-            showError("方位センサーが応答しません", "🧭 を決定で再試行してください。", "compass");
-          }, COMPASS_FIRST_READING_TIMEOUT_MS);'''
-          if src.count(old_start) != 1:
-              raise SystemExit("start anchor mismatch")
-          src = src.replace(old_start, new_start, 1)
-          path.write_text(src)
+          listener_anchor = '      window.addEventListener("deviceorientation", onOrient, true);'
+          if lines.count(listener_anchor) != 1:
+              raise SystemExit("listener anchor mismatch")
+          listener_idx = lines.index(listener_anchor)
+          watchdog = [
+              '      setTimeout(() => {',
+              '        if (!isCurrentRequest() || !compassOn || headingInitialized) return;',
+              '        disableCompass();',
+              '        showError("方位センサーが応答しません", "🧭 を決定で再試行してください。", "compass");',
+              '      }, COMPASS_FIRST_READING_TIMEOUT_MS);',
+          ]
+          lines[listener_idx + 1:listener_idx + 1] = watchdog
+          path.write_text("\n".join(lines) + "\n")
           PY
 
       - name: Verify product change
