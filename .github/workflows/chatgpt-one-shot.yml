@@ -3,6 +3,8 @@ name: ChatGPT one-shot compass permission guard
 on:
   pull_request:
     branches: [main]
+  push:
+    branches: [chatgpt/guard-compass-permission-race]
 
 permissions:
   contents: write
@@ -21,101 +23,45 @@ jobs:
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
-
           path = Path("js/app.js")
           text = path.read_text()
-
-          old_state = """  const ABSOLUTE_ORIENTATION_FALLBACK_MS = 1000;
-          let lastAbsoluteOrientationAt = null;
-"""
-          new_state = """  const ABSOLUTE_ORIENTATION_FALLBACK_MS = 1000;
-          let lastAbsoluteOrientationAt = null;
-          let compassPermissionRequestId = 0;
-"""
-          if text.count(old_state) != 1:
-              raise SystemExit(f"expected one compass state anchor, found {text.count(old_state)}")
-          text = text.replace(old_state, new_state, 1)
-
-          old_enable = """  function enableCompass() {
-            const start = () => {
-              clearError(\"compass\");
-              compassOn = true;
-              els.headingArrow.classList.remove(\"hidden\");
-              // iOS/WebKit は webkitCompassHeading、その他は絶対方位イベント
-              window.addEventListener(\"deviceorientationabsolute\", onOrient, true);
-              window.addEventListener(\"deviceorientation\", onOrient, true);
-            };
-            const DOE = window.DeviceOrientationEvent;
-            if (DOE && typeof DOE.requestPermission === \"function\") {
-              DOE.requestPermission()
-                .then((state) => {
-                  if (state === \"granted\") start();
-                  else showError(\"方位センサーが拒否されました\", \"🧭 を決定でもう一度試してください。\", \"compass\");
-                })
-                .catch(() => showError(\"方位センサーを開始できません\", \"🧭 を決定で再試行。\", \"compass\"));
-            } else if (DOE) {
-              start();
-            } else {
-              showError(\"方位センサー非対応\", \"この端末では向き連動を利用できません。\", \"compass\");
-            }
-          }
-"""
-          new_enable = """  function enableCompass() {
-            const requestId = ++compassPermissionRequestId;
-            const isCurrentRequest = () => requestId === compassPermissionRequestId;
-            const start = () => {
-              if (!isCurrentRequest()) return;
-              clearError(\"compass\");
-              compassOn = true;
-              els.headingArrow.classList.remove(\"hidden\");
-              // iOS/WebKit は webkitCompassHeading、その他は絶対方位イベント
-              window.addEventListener(\"deviceorientationabsolute\", onOrient, true);
-              window.addEventListener(\"deviceorientation\", onOrient, true);
-            };
-            const DOE = window.DeviceOrientationEvent;
-            if (DOE && typeof DOE.requestPermission === \"function\") {
-              DOE.requestPermission()
-                .then((state) => {
-                  if (!isCurrentRequest()) return;
-                  if (state === \"granted\") start();
-                  else showError(\"方位センサーが拒否されました\", \"🧭 を決定でもう一度試してください。\", \"compass\");
-                })
-                .catch(() => {
-                  if (!isCurrentRequest()) return;
-                  showError(\"方位センサーを開始できません\", \"🧭 を決定で再試行。\", \"compass\");
-                });
-            } else if (DOE) {
-              start();
-            } else {
-              showError(\"方位センサー非対応\", \"この端末では向き連動を利用できません。\", \"compass\");
-            }
-          }
-"""
-          if text.count(old_enable) != 1:
-              raise SystemExit(f"expected one enableCompass anchor, found {text.count(old_enable)}")
-          text = text.replace(old_enable, new_enable, 1)
-
-          old_disable = """  function disableCompass() {
-            compassOn = false;
-"""
-          new_disable = """  function disableCompass() {
-            compassPermissionRequestId += 1;
-            compassOn = false;
-"""
-          if text.count(old_disable) != 1:
-              raise SystemExit(f"expected one disableCompass anchor, found {text.count(old_disable)}")
-          text = text.replace(old_disable, new_disable, 1)
-
+          replacements = [
+              (
+                  '  let lastAbsoluteOrientationAt = null;\n',
+                  '  let lastAbsoluteOrientationAt = null;\n  let compassPermissionRequestId = 0;\n',
+              ),
+              (
+                  '  function enableCompass() {\n    const start = () => {\n      clearError("compass");\n',
+                  '  function enableCompass() {\n    const requestId = ++compassPermissionRequestId;\n    const isCurrentRequest = () => requestId === compassPermissionRequestId;\n    const start = () => {\n      if (!isCurrentRequest()) return;\n      clearError("compass");\n',
+              ),
+              (
+                  '        .then((state) => {\n          if (state === "granted") start();\n',
+                  '        .then((state) => {\n          if (!isCurrentRequest()) return;\n          if (state === "granted") start();\n',
+              ),
+              (
+                  '        .catch(() => showError("方位センサーを開始できません", "🧭 を決定で再試行。", "compass"));\n',
+                  '        .catch(() => {\n          if (!isCurrentRequest()) return;\n          showError("方位センサーを開始できません", "🧭 を決定で再試行。", "compass");\n        });\n',
+              ),
+              (
+                  '  function disableCompass() {\n    compassOn = false;\n',
+                  '  function disableCompass() {\n    compassPermissionRequestId += 1;\n    compassOn = false;\n',
+              ),
+          ]
+          for old, new in replacements:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"expected exactly one source anchor, found {count}: {old[:60]!r}")
+              text = text.replace(old, new, 1)
           path.write_text(text)
           PY
 
           node --check js/app.js
           git diff --check
           test "$(git diff --name-only | sort)" = "js/app.js"
-          grep -q 'let compassPermissionRequestId = 0;' js/app.js
-          grep -q 'const requestId = ++compassPermissionRequestId;' js/app.js
-          grep -q 'if (!isCurrentRequest()) return;' js/app.js
-          grep -q 'compassPermissionRequestId += 1;' js/app.js
+          test "$(grep -c 'let compassPermissionRequestId = 0;' js/app.js)" -eq 1
+          test "$(grep -c 'const requestId = ++compassPermissionRequestId;' js/app.js)" -eq 1
+          test "$(grep -c 'if (!isCurrentRequest()) return;' js/app.js)" -eq 3
+          test "$(grep -c 'compassPermissionRequestId += 1;' js/app.js)" -eq 1
           if git grep -nE 'AIza[0-9A-Za-z_-]{35}' -- . ':!.github/workflows/chatgpt-one-shot.yml'; then
             echo "::error::A Google API key pattern is present in tracked content"
             exit 1
