@@ -1,0 +1,54 @@
+name: ChatGPT one-shot compass timeout feedback
+
+on:
+  push:
+    branches:
+      - chatgpt/compass-timeout-feedback
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Apply atomic change and verify
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path("js/app.js")
+          source = path.read_text()
+          old = '''        compassPermissionPending = false;
+                  compassPermissionRequestId += 1;
+                }, COMPASS_PERMISSION_PENDING_TIMEOUT_MS);'''
+          new = '''        compassPermissionPending = false;
+                  compassPermissionRequestId += 1;
+                  showError("方位センサーが応答しません", "🧭 を決定で再試行してください。", "compass");
+                }, COMPASS_PERMISSION_PENDING_TIMEOUT_MS);'''
+          if source.count(old) != 1:
+              raise SystemExit(f"timeout anchor count={source.count(old)}")
+          path.write_text(source.replace(old, new, 1))
+          PY
+          rm .github/workflows/chatgpt-one-shot-compass-timeout.yml
+          node --check js/app.js
+          git diff --check origin/main
+          grep -Fq 'showError("方位センサーが応答しません", "🧭 を決定で再試行してください。", "compass");' js/app.js
+          changed="$(git diff --name-only origin/main)"
+          test "$changed" = "js/app.js"
+          if git grep -nE 'AIza[0-9A-Za-z_-]{35}' -- .; then
+            echo "::error::A Google API key pattern is present in a tracked file"
+            exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "Show feedback when compass permission stalls"
+          git push origin HEAD:${GITHUB_REF_NAME}
