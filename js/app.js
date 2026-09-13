@@ -460,7 +460,7 @@
   function onOrient(e) {
     const h = headingFromEvent(e);
     if (!Number.isFinite(h)) return;
-    const now = Date.now();
+    const now = performance.now();
     if (e.type === "deviceorientationabsolute") {
       lastAbsoluteOrientationAt = now;
     } else if (lastAbsoluteOrientationAt !== null &&
