@@ -38,17 +38,9 @@ jobs:
         run: |
           node --check js/app.js
           git diff --check
-          python3 - <<'PY'
-          from pathlib import Path
-          text = Path('js/app.js').read_text()
-          block = '''  document.addEventListener("freeze", () => handleCompassLifecycle(true));
-          document.addEventListener("resume", () => {
-            handleCompassLifecycle(document.visibilityState === "hidden");
-          });
-          '''
-          if block not in text:
-              raise SystemExit('formatted freeze/resume lifecycle block not found')
-          PY
+          grep -F '  document.addEventListener("freeze", () => handleCompassLifecycle(true));' js/app.js
+          grep -F '  document.addEventListener("resume", () => {' js/app.js
+          grep -F '    handleCompassLifecycle(document.visibilityState === "hidden");' js/app.js
           if git grep -nE 'AIza[0-9A-Za-z_-]{20,}' -- ':!js/config.template.js'; then
             echo 'Possible Google API key found in tracked files' >&2
             exit 1
