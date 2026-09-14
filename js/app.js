@@ -574,13 +574,24 @@
     scheduleCompassRender();
   }
 
+  function renderGpsCompassStatus() {
+    if (!compassOn || !headingInitialized) {
+      els.gpsText.textContent = gpsStatusText;
+      return;
+    }
+    const headingText = `🧭 ${Math.round(curHeading)}° ${cardinal(curHeading)}`;
+    els.gpsText.textContent = hasUnknownGeoWatchOwnership()
+      ? `${headingText} ・ GPS↻再読込`
+      : headingText;
+  }
+
   function scheduleCompassRender() {
     if (compassRenderFrame !== null) return;
     compassRenderFrame = requestAnimationFrame(() => {
       compassRenderFrame = null;
       if (!compassOn || !headingInitialized) return;
       els.canvas.style.transform = `translate(-50%, -50%) rotate(${-curHeading}deg)`;
-      els.gpsText.textContent = `🧭 ${Math.round(curHeading)}° ${cardinal(curHeading)}`;
+      renderGpsCompassStatus();
     });
   }
 
@@ -1712,7 +1723,7 @@
   function setGps(on, text) {
     gpsStatusText = text;
     els.gpsDot.classList.toggle("off", !on);
-    if (!compassOn) els.gpsText.textContent = text; // コンパス中は方位表示を優先
+    renderGpsCompassStatus();
   }
 
   /* ---------- アクション ---------- */
