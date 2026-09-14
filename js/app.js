@@ -245,6 +245,7 @@
   let lastPositionTimestamp = null; // 最新 GPS fix の取得時刻 (epoch ms)
   let gpsStatusText = ""; // コンパス中も最新の GPS 状態文言を保持
   let acceptedGeoFixGeneration = 0; // 遅延した one-shot error が後着の有効fixを上書きしないための世代番号
+  let geoOneShotRequestId = 0; // 明示的な再取得後に古い one-shot error を反映しないための要求世代
 
   function hasUnknownGeoWatchOwnership() {
     return geoWatchId !== null && (!Number.isInteger(geoWatchId) || geoWatchId <= 0);
@@ -288,12 +289,13 @@
     }
     setGps(false, "GPS取得中…");
     // 高精度は指定しない（公式サンプル準拠）。古い位置も許容して即表示。
+    const requestId = ++geoOneShotRequestId;
     const fixGeneration = acceptedGeoFixGeneration;
     try {
       navigator.geolocation.getCurrentPosition(
         onPosition,
         (err) => {
-          if (acceptedGeoFixGeneration !== fixGeneration) return;
+          if (requestId !== geoOneShotRequestId || acceptedGeoFixGeneration !== fixGeneration) return;
           onGeoError(err);
         },
         {
