@@ -448,6 +448,10 @@
   document.addEventListener("visibilitychange", () => {
     handleCompassLifecycle(document.visibilityState === "hidden");
   });
+  document.addEventListener("freeze", () => handleCompassLifecycle(true));
+document.addEventListener("resume", () => {
+  handleCompassLifecycle(document.visibilityState === "hidden");
+});
   window.addEventListener("pagehide", () => handleCompassLifecycle(true));
   window.addEventListener("pageshow", () => {
     handleCompassLifecycle(document.visibilityState === "hidden");
