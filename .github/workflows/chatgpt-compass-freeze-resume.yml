@@ -1,6 +1,11 @@
 name: ChatGPT compass freeze-resume one-shot
 
 on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
   push:
     branches:
       - chatgpt/compass-freeze-resume-lifecycle
