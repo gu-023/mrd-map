@@ -295,10 +295,25 @@
     // 一度許可が通れば継続更新を開始（多重登録は防ぐ）
     if (geoWatchId === null) {
       try {
-        geoWatchId = navigator.geolocation.watchPosition(onPosition, onWatchError, {
+        const watchId = navigator.geolocation.watchPosition(onPosition, onWatchError, {
           maximumAge: 30000,
           timeout: 60000,
         });
+        if (watchId === 0) {
+          geoWatchId = null;
+          setGps(false, "GPS開始失敗");
+          showError("位置情報を開始できません", "◎ を決定で再試行してください。", "geolocation");
+          return;
+        }
+        if (!Number.isInteger(watchId) || watchId < 0) {
+          // A non-standard host may have registered a watcher without returning a clearable ID.
+          // Keep a non-null fail-closed sentinel so retries cannot create a duplicate watcher.
+          geoWatchId = Number.NaN;
+          setGps(false, "GPS監視異常");
+          showError("位置情報の監視を確認できません", "アプリを再読み込みしてください。", "geolocation");
+          return;
+        }
+        geoWatchId = watchId;
       } catch (err) {
         geoWatchId = null;
         setGps(false, "GPS開始失敗");
@@ -1709,6 +1724,11 @@
           lastPositionTimestamp !== null &&
           Date.now() - lastPositionTimestamp > LIVE_POSITION_MAX_AGE_MS;
         if (watchIsStale) {
+          if (!Number.isInteger(geoWatchId) || geoWatchId <= 0) {
+            setGps(false, "GPS再取得失敗");
+            showError("位置情報の監視を確認できません", "アプリを再読み込みしてください。", "geolocation");
+            return;
+          }
           try {
             navigator.geolocation.clearWatch(geoWatchId);
             geoWatchId = null;
