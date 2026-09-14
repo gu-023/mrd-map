@@ -28,29 +28,17 @@ jobs:
           from pathlib import Path
           path = Path('js/app.js')
           text = path.read_text()
-          old = '''  document.addEventListener("visibilitychange", () => {
-            handleCompassLifecycle(document.visibilityState === "hidden");
-          });
-          window.addEventListener("pagehide", () => handleCompassLifecycle(true));
-          window.addEventListener("pageshow", () => {
-            handleCompassLifecycle(document.visibilityState === "hidden");
-          });
-          '''
-          new = '''  document.addEventListener("visibilitychange", () => {
-            handleCompassLifecycle(document.visibilityState === "hidden");
-          });
-          document.addEventListener("freeze", () => handleCompassLifecycle(true));
+          anchor = '  window.addEventListener("pagehide", () => handleCompassLifecycle(true));'
+          addition = '''  document.addEventListener("freeze", () => handleCompassLifecycle(true));
           document.addEventListener("resume", () => {
             handleCompassLifecycle(document.visibilityState === "hidden");
           });
-          window.addEventListener("pagehide", () => handleCompassLifecycle(true));
-          window.addEventListener("pageshow", () => {
-            handleCompassLifecycle(document.visibilityState === "hidden");
-          });
           '''
-          if text.count(old) != 1:
-              raise SystemExit(f'expected one lifecycle block, found {text.count(old)}')
-          path.write_text(text.replace(old, new))
+          if text.count(anchor) != 1:
+              raise SystemExit(f'expected one pagehide anchor, found {text.count(anchor)}')
+          if 'document.addEventListener("freeze"' in text or 'document.addEventListener("resume"' in text:
+              raise SystemExit('freeze/resume lifecycle listeners already present')
+          path.write_text(text.replace(anchor, addition + anchor))
           PY
       - name: Verify product change
         run: |
