@@ -246,6 +246,7 @@
   let gpsStatusText = ""; // コンパス中も最新の GPS 状態文言を保持
   let acceptedGeoFixGeneration = 0; // 遅延した one-shot error が後着の有効fixを上書きしないための世代番号
   let geoOneShotRequestId = 0; // 明示的な再取得後に古い one-shot error を反映しないための要求世代
+  let geoWatchGeneration = 0; // 置換済み watch の遅延 callback を無視するための世代番号
 
   function hasUnknownGeoWatchOwnership() {
     return geoWatchId !== null && (!Number.isInteger(geoWatchId) || geoWatchId <= 0);
@@ -310,10 +311,21 @@
     // 一度許可が通れば継続更新を開始（多重登録は防ぐ）
     if (geoWatchId === null) {
       try {
-        const watchId = navigator.geolocation.watchPosition(onPosition, onWatchError, {
-          maximumAge: 30000,
-          timeout: 60000,
-        });
+        const watchGeneration = ++geoWatchGeneration;
+        const watchId = navigator.geolocation.watchPosition(
+          (pos) => {
+            if (watchGeneration !== geoWatchGeneration) return;
+            onPosition(pos);
+          },
+          (err) => {
+            if (watchGeneration !== geoWatchGeneration) return;
+            onWatchError(err);
+          },
+          {
+            maximumAge: 30000,
+            timeout: 60000,
+          }
+        );
         if (watchId === 0) {
           geoWatchId = null;
           setGps(false, "GPS開始失敗");
@@ -339,6 +351,7 @@
 
   function onWatchError(err) {
     if (err && err.code === err.PERMISSION_DENIED) {
+      geoWatchGeneration += 1;
       geoWatchId = null;
       onGeoError(err);
       return;
