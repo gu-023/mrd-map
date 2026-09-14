@@ -240,10 +240,14 @@
   const NAV_POSITION_CONTINUITY_MAX_GAP_MS = 30000; // 長い更新停止を直線移動区間として補完しない
   const NAV_SNAP_STALE_MOVEMENT_BASE_M = 35; // 時間連続性が切れた snap 文脈は局所移動＋両 fix 誤差だけ許容
   const NAV_PROGRESS_ADVANCE_SLACK_M = 35; // 経路上の進捗がGPS実移動を大幅に超える self-near jump を防ぐ余裕
-  let geoWatchId = null; // active watchPosition ID; null = no active watch
+  let geoWatchId = null; // positive watch ID; null = none; NaN = watcher ownership unknown
   let lastPositionAccuracy = null; // 最新 GPS fix の精度半径 (m)
   let lastPositionTimestamp = null; // 最新 GPS fix の取得時刻 (epoch ms)
   let gpsStatusText = ""; // コンパス中も最新の GPS 状態文言を保持
+
+  function hasUnknownGeoWatchOwnership() {
+    return geoWatchId !== null && (!Number.isInteger(geoWatchId) || geoWatchId <= 0);
+  }
 
   function updateAccuracyCircleVisibility() {
     if (!accuracyCircle || !map) return;
@@ -329,7 +333,10 @@
       return;
     }
     if (err && (err.code === err.TIMEOUT || err.code === err.POSITION_UNAVAILABLE)) {
-      setGps(false, "GPS更新待ち…");
+      setGps(
+        false,
+        hasUnknownGeoWatchOwnership() ? "GPS監視異常・↻再読込" : "GPS更新待ち…"
+      );
     }
     // 一時的な失敗では watch を維持し、次の成功 callback で GPS 表示を復帰する。
   }
@@ -479,7 +486,10 @@
     handleCompassLifecycle(hidden);
     if (hidden || geoWatchId === null || lastPositionTimestamp === null) return;
     if (Date.now() - lastPositionTimestamp > LIVE_POSITION_MAX_AGE_MS) {
-      setGps(false, "GPS更新停止・◎で再取得");
+      setGps(
+        false,
+        hasUnknownGeoWatchOwnership() ? "GPS監視異常・↻再読込" : "GPS更新停止・◎で再取得"
+      );
     }
   }
   document.addEventListener("visibilitychange", () => {
@@ -1677,7 +1687,7 @@
     accuracyCircle.setCenter(p);
     accuracyCircle.setRadius(lastPositionAccuracy || 0);
     updateAccuracyCircleVisibility();
-    setGps(true, "GPS");
+    setGps(true, hasUnknownGeoWatchOwnership() ? "GPS受信・↻再読込" : "GPS");
     els.accText.textContent = lastPositionAccuracy ? `±${fmtDist(lastPositionAccuracy)}` : "";
     if (followMode && !pickMode && !searchOpen && !menuOpen) map.panTo(p); // D-pad overlay 中は追従しない
     if (navMode && !navRerouting && !pickMode && !searchOpen && !menuOpen) updateNav(p); // 経路要求/目的地選択/検索/メニュー中は案内更新を停止
@@ -1724,7 +1734,7 @@
           lastPositionTimestamp !== null &&
           Date.now() - lastPositionTimestamp > LIVE_POSITION_MAX_AGE_MS;
         if (watchIsStale) {
-          if (!Number.isInteger(geoWatchId) || geoWatchId <= 0) {
+          if (hasUnknownGeoWatchOwnership()) {
             setGps(false, "GPS再取得失敗");
             showError("位置情報の監視を確認できません", "アプリを再読み込みしてください。", "geolocation");
             return;
