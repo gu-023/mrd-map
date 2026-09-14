@@ -292,10 +292,11 @@
     // 高精度は指定しない（公式サンプル準拠）。受理可能な30秒以内のキャッシュだけ許容して即表示。
     const requestId = ++geoOneShotRequestId;
     const fixGeneration = acceptedGeoFixGeneration;
+    let requestValid = true;
     try {
       navigator.geolocation.getCurrentPosition(
         (pos) => {
-          if (requestId !== geoOneShotRequestId) return;
+          if (!requestValid) return;
           onPosition(pos);
         },
         (err) => {
@@ -308,6 +309,7 @@
         }
       );
     } catch (_) {
+      requestValid = false;
       if (requestId === geoOneShotRequestId) geoOneShotRequestId += 1;
       setGps(false, "GPS開始失敗");
       showError("位置情報を開始できません", "◎ を決定で再試行してください。", "geolocation");
