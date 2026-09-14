@@ -297,7 +297,11 @@
       navigator.geolocation.getCurrentPosition(
         (pos) => {
           if (!requestValid) return;
-          onPosition(pos);
+          if (!onPosition(pos) &&
+              requestId === geoOneShotRequestId &&
+              acceptedGeoFixGeneration === fixGeneration) {
+            onGeoError({ code: 2 });
+          }
         },
         (err) => {
           if (requestId !== geoOneShotRequestId || acceptedGeoFixGeneration !== fixGeneration) return;
@@ -1714,18 +1718,18 @@
   }
 
   function onPosition(pos) {
-    if (!pos || !pos.coords) return;
+    if (!pos || !pos.coords) return false;
     const now = Date.now();
     const positionTimestamp = Number.isFinite(pos.timestamp) && pos.timestamp <= now ? pos.timestamp : now;
     if (lastPositionTimestamp !== null &&
         (positionTimestamp <= lastPositionTimestamp ||
          now - positionTimestamp > LIVE_POSITION_MAX_AGE_MS)) {
-      return;
+      return false;
     }
     const { latitude, longitude, accuracy } = pos.coords;
     if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90 ||
         !Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
-      return;
+      return false;
     }
     acceptedGeoFixGeneration += 1;
     clearError("geolocation"); // 有効な fix を受理できたら位置情報エラーだけを消す
@@ -1747,6 +1751,7 @@
     els.accText.textContent = lastPositionAccuracy ? `±${fmtDist(lastPositionAccuracy)}` : "";
     if (followMode && !pickMode && !searchOpen && !menuOpen) map.panTo(p); // D-pad overlay 中は追従しない
     if (navMode && !navRerouting && !pickMode && !searchOpen && !menuOpen) updateNav(p); // 経路要求/目的地選択/検索/メニュー中は案内更新を停止
+    return true;
   }
 
   function onGeoError(err) {
