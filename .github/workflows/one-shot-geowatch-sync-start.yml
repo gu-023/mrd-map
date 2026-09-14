@@ -1,0 +1,83 @@
+name: One-shot geolocation watch start guard
+
+on:
+  push:
+    branches:
+      - chatgpt/guard-geowatch-sync-start
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: chatgpt/guard-geowatch-sync-start
+          fetch-depth: 0
+      - name: Apply atomic patch
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("js/app.js")
+          source = path.read_text()
+          old = '''    if (!geoWatchStarted) {
+              geoWatchStarted = true;
+              navigator.geolocation.watchPosition(onPosition, onWatchError, {
+                maximumAge: 30000,
+                timeout: 60000,
+              });
+            }
+          '''
+          new = '''    if (!geoWatchStarted) {
+              try {
+                navigator.geolocation.watchPosition(onPosition, onWatchError, {
+                  maximumAge: 30000,
+                  timeout: 60000,
+                });
+                geoWatchStarted = true;
+              } catch (err) {
+                geoWatchStarted = false;
+                setGps(false, "GPS開始失敗");
+                showError("位置情報を開始できません", "◎ を決定で再試行してください。", "geolocation");
+              }
+            }
+          '''
+          if source.count(old) != 1:
+              raise SystemExit(f"expected one geolocation watch block, found {source.count(old)}")
+          path.write_text(source.replace(old, new, 1))
+          PY
+      - name: Verify patch
+        shell: bash
+        run: |
+          node --check js/app.js
+          git diff --check
+          python3 - <<'PY'
+          from pathlib import Path
+          source = Path("js/app.js").read_text()
+          block_start = source.index("    if (!geoWatchStarted) {")
+          block_end = source.index("\n    }", block_start) + len("\n    }")
+          block = source[block_start:block_end]
+          assert "try {" in block
+          assert "navigator.geolocation.watchPosition" in block
+          assert block.index("navigator.geolocation.watchPosition") < block.index("geoWatchStarted = true")
+          assert "catch (err)" in block
+          assert 'showError("位置情報を開始できません"' in block
+          PY
+          if git grep -nE 'AIza[0-9A-Za-z_-]{35}' -- ':!js/config.template.js'; then
+            echo '::error::Tracked Google API-key-shaped value found'
+            exit 1
+          fi
+      - name: Remove helper and commit
+        shell: bash
+        run: |
+          rm .github/workflows/one-shot-geowatch-sync-start.yml
+          test "$(git diff origin/main --name-only)" = "js/app.js"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Guard synchronous geolocation watch startup failure"
+          git push origin HEAD:chatgpt/guard-geowatch-sync-start
