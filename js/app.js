@@ -605,8 +605,13 @@
       return;
     }
     const headingText = `🧭 ${Math.round(curHeading)}° ${cardinal(curHeading)}`;
-    els.gpsText.textContent = hasUnknownGeoWatchOwnership()
-      ? `${headingText} ・ GPS↻再読込`
+    const gpsRecoveryHint = hasUnknownGeoWatchOwnership()
+      ? "GPS↻再読込"
+      : geoWatchId === null && lastPositionTimestamp !== null
+        ? "GPS◎再試行"
+        : null;
+    els.gpsText.textContent = gpsRecoveryHint
+      ? `${headingText} ・ ${gpsRecoveryHint}`
       : headingText;
   }
 
@@ -1724,7 +1729,14 @@
     accuracyCircle.setCenter(p);
     accuracyCircle.setRadius(lastPositionAccuracy || 0);
     updateAccuracyCircleVisibility();
-    setGps(true, hasUnknownGeoWatchOwnership() ? "GPS受信・↻再読込" : "GPS");
+    setGps(
+      true,
+      hasUnknownGeoWatchOwnership()
+        ? "GPS受信・↻再読込"
+        : geoWatchId === null
+          ? "GPS受信・◎で監視再試行"
+          : "GPS"
+    );
     els.accText.textContent = lastPositionAccuracy ? `±${fmtDist(lastPositionAccuracy)}` : "";
     if (followMode && !pickMode && !searchOpen && !menuOpen) map.panTo(p); // D-pad overlay 中は追従しない
     if (navMode && !navRerouting && !pickMode && !searchOpen && !menuOpen) updateNav(p); // 経路要求/目的地選択/検索/メニュー中は案内更新を停止
