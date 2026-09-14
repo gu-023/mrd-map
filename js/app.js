@@ -294,7 +294,10 @@
     const fixGeneration = acceptedGeoFixGeneration;
     try {
       navigator.geolocation.getCurrentPosition(
-        onPosition,
+        (pos) => {
+          if (requestId !== geoOneShotRequestId) return;
+          onPosition(pos);
+        },
         (err) => {
           if (requestId !== geoOneShotRequestId || acceptedGeoFixGeneration !== fixGeneration) return;
           onGeoError(err);
@@ -305,6 +308,7 @@
         }
       );
     } catch (_) {
+      if (requestId === geoOneShotRequestId) geoOneShotRequestId += 1;
       setGps(false, "GPS開始失敗");
       showError("位置情報を開始できません", "◎ を決定で再試行してください。", "geolocation");
     }
