@@ -283,10 +283,15 @@
     }
     setGps(false, "GPS取得中…");
     // 高精度は指定しない（公式サンプル準拠）。古い位置も許容して即表示。
-    navigator.geolocation.getCurrentPosition(onPosition, onGeoError, {
-      maximumAge: 60000,
-      timeout: 15000,
-    });
+    try {
+      navigator.geolocation.getCurrentPosition(onPosition, onGeoError, {
+        maximumAge: 60000,
+        timeout: 15000,
+      });
+    } catch (_) {
+      setGps(false, "GPS開始失敗");
+      showError("位置情報を開始できません", "◎ を決定で再試行してください。", "geolocation");
+    }
     // 一度許可が通れば継続更新を開始（多重登録は防ぐ）
     if (geoWatchId === null) {
       try {
