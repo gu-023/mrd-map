@@ -306,8 +306,12 @@
     if (err && err.code === err.PERMISSION_DENIED) {
       geoWatchId = null;
       onGeoError(err);
+      return;
     }
-    // それ以外（timeout 等）は無視。watch は監視を継続する。
+    if (err && (err.code === err.TIMEOUT || err.code === err.POSITION_UNAVAILABLE)) {
+      setGps(false, "GPS更新待ち…");
+    }
+    // 一時的な失敗では watch を維持し、次の成功 callback で GPS 表示を復帰する。
   }
 
   /* ---------- コンパス（ヘディングアップ） ----------
