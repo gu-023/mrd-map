@@ -24,28 +24,30 @@ jobs:
 
           path = Path("js/app.js")
           source = path.read_text()
-          old = '''    if (!geoWatchStarted) {
-              geoWatchStarted = true;
-              navigator.geolocation.watchPosition(onPosition, onWatchError, {
-                maximumAge: 30000,
-                timeout: 60000,
-              });
-            }
-          '''
-          new = '''    if (!geoWatchStarted) {
-              try {
-                navigator.geolocation.watchPosition(onPosition, onWatchError, {
-                  maximumAge: 30000,
-                  timeout: 60000,
-                });
-                geoWatchStarted = true;
-              } catch (err) {
-                geoWatchStarted = false;
-                setGps(false, "GPS開始失敗");
-                showError("位置情報を開始できません", "◎ を決定で再試行してください。", "geolocation");
-              }
-            }
-          '''
+          old = "\n".join([
+              "    if (!geoWatchStarted) {",
+              "      geoWatchStarted = true;",
+              "      navigator.geolocation.watchPosition(onPosition, onWatchError, {",
+              "        maximumAge: 30000,",
+              "        timeout: 60000,",
+              "      });",
+              "    }",
+          ])
+          new = "\n".join([
+              "    if (!geoWatchStarted) {",
+              "      try {",
+              "        navigator.geolocation.watchPosition(onPosition, onWatchError, {",
+              "          maximumAge: 30000,",
+              "          timeout: 60000,",
+              "        });",
+              "        geoWatchStarted = true;",
+              "      } catch (err) {",
+              "        geoWatchStarted = false;",
+              "        setGps(false, \"GPS開始失敗\");",
+              "        showError(\"位置情報を開始できません\", \"◎ を決定で再試行してください。\", \"geolocation\");",
+              "      }",
+              "    }",
+          ])
           if source.count(old) != 1:
               raise SystemExit(f"expected one geolocation watch block, found {source.count(old)}")
           path.write_text(source.replace(old, new, 1))
