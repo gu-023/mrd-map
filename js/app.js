@@ -288,7 +288,7 @@
       return;
     }
     setGps(false, "GPS取得中…");
-    // 高精度は指定しない（公式サンプル準拠）。古い位置も許容して即表示。
+    // 高精度は指定しない（公式サンプル準拠）。受理可能な30秒以内のキャッシュだけ許容して即表示。
     const requestId = ++geoOneShotRequestId;
     const fixGeneration = acceptedGeoFixGeneration;
     try {
@@ -299,7 +299,7 @@
           onGeoError(err);
         },
         {
-          maximumAge: 60000,
+          maximumAge: LIVE_POSITION_MAX_AGE_MS,
           timeout: 15000,
         }
       );
