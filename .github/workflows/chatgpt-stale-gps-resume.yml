@@ -1,0 +1,90 @@
+name: ChatGPT stale GPS resume patch
+
+on:
+  push:
+    branches:
+      - chatgpt/show-stale-gps-on-resume
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-verify:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: chatgpt/show-stale-gps-on-resume
+
+      - name: Apply stale GPS resume status
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("js/app.js")
+          text = path.read_text()
+          old = '''  document.addEventListener("visibilitychange", () => {
+            handleCompassLifecycle(document.visibilityState === "hidden");
+          });
+          document.addEventListener("freeze", () => handleCompassLifecycle(true));
+          document.addEventListener("resume", () => {
+            handleCompassLifecycle(document.visibilityState === "hidden");
+          });
+          window.addEventListener("pagehide", () => handleCompassLifecycle(true));
+          window.addEventListener("pageshow", () => {
+            handleCompassLifecycle(document.visibilityState === "hidden");
+          });
+          '''
+          new = '''  function handleDisplayLifecycle(hidden) {
+            handleCompassLifecycle(hidden);
+            if (hidden || geoWatchId === null || lastPositionTimestamp === null) return;
+            if (Date.now() - lastPositionTimestamp > LIVE_POSITION_MAX_AGE_MS) {
+              setGps(false, "GPS更新停止・◎で再取得");
+            }
+          }
+
+          document.addEventListener("visibilitychange", () => {
+            handleDisplayLifecycle(document.visibilityState === "hidden");
+          });
+          document.addEventListener("freeze", () => handleDisplayLifecycle(true));
+          document.addEventListener("resume", () => {
+            handleDisplayLifecycle(document.visibilityState === "hidden");
+          });
+          window.addEventListener("pagehide", () => handleDisplayLifecycle(true));
+          window.addEventListener("pageshow", () => {
+            handleDisplayLifecycle(document.visibilityState === "hidden");
+          });
+          '''
+          if text.count(old) != 1:
+              raise SystemExit(f"expected one lifecycle block, found {text.count(old)}")
+          path.write_text(text.replace(old, new, 1))
+          PY
+
+      - name: Verify patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check js/app.js
+          git diff --check
+          grep -Fq 'function handleDisplayLifecycle(hidden)' js/app.js
+          grep -Fq 'setGps(false, "GPS更新停止・◎で再取得");' js/app.js
+          grep -Fq 'document.addEventListener("freeze", () => handleDisplayLifecycle(true));' js/app.js
+          if git grep -nE 'AIza[0-9A-Za-z_-]{35}' -- .; then
+            echo "::error::A Google API key pattern is present in a tracked file"
+            exit 1
+          fi
+          git add js/app.js
+          test "$(git diff --cached --name-only)" = "js/app.js"
+          git diff --cached --check
+
+      - name: Commit product change
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Show stale GPS status after resume"
+          git push origin HEAD:chatgpt/show-stale-gps-on-resume
