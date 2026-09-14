@@ -240,7 +240,7 @@
   const NAV_POSITION_CONTINUITY_MAX_GAP_MS = 30000; // 長い更新停止を直線移動区間として補完しない
   const NAV_SNAP_STALE_MOVEMENT_BASE_M = 35; // 時間連続性が切れた snap 文脈は局所移動＋両 fix 誤差だけ許容
   const NAV_PROGRESS_ADVANCE_SLACK_M = 35; // 経路上の進捗がGPS実移動を大幅に超える self-near jump を防ぐ余裕
-  let geoWatchStarted = false;
+  let geoWatchId = null; // active watchPosition ID; null = no active watch
   let lastPositionAccuracy = null; // 最新 GPS fix の精度半径 (m)
   let lastPositionTimestamp = null; // 最新 GPS fix の取得時刻 (epoch ms)
   let gpsStatusText = ""; // コンパス中も最新の GPS 状態文言を保持
@@ -288,15 +288,14 @@
       timeout: 15000,
     });
     // 一度許可が通れば継続更新を開始（多重登録は防ぐ）
-    if (!geoWatchStarted) {
+    if (geoWatchId === null) {
       try {
-        navigator.geolocation.watchPosition(onPosition, onWatchError, {
+        geoWatchId = navigator.geolocation.watchPosition(onPosition, onWatchError, {
           maximumAge: 30000,
           timeout: 60000,
         });
-        geoWatchStarted = true;
       } catch (err) {
-        geoWatchStarted = false;
+        geoWatchId = null;
         setGps(false, "GPS開始失敗");
         showError("位置情報を開始できません", "◎ を決定で再試行してください。", "geolocation");
       }
@@ -305,7 +304,7 @@
 
   function onWatchError(err) {
     if (err && err.code === err.PERMISSION_DENIED) {
-      geoWatchStarted = false;
+      geoWatchId = null;
       onGeoError(err);
     }
     // それ以外（timeout 等）は無視。watch は監視を継続する。
@@ -1690,7 +1689,7 @@
         followMode = true;
         const currentPosition = userMarker.getPosition();
         if (currentPosition) map.panTo(currentPosition);
-        if (!currentPosition || errorSource === "geolocation" || !geoWatchStarted) {
+        if (!currentPosition || errorSource === "geolocation" || geoWatchId === null) {
           clearError("geolocation"); // stale な現在地が残っていても位置情報エラー時は再取得する
           acquireLocation(); // ★ユーザー操作の中で位置情報を要求（プロンプト通過のため）
         }
