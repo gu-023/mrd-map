@@ -289,11 +289,17 @@
     });
     // 一度許可が通れば継続更新を開始（多重登録は防ぐ）
     if (!geoWatchStarted) {
-      geoWatchStarted = true;
-      navigator.geolocation.watchPosition(onPosition, onWatchError, {
-        maximumAge: 30000,
-        timeout: 60000,
-      });
+      try {
+        navigator.geolocation.watchPosition(onPosition, onWatchError, {
+          maximumAge: 30000,
+          timeout: 60000,
+        });
+        geoWatchStarted = true;
+      } catch (err) {
+        geoWatchStarted = false;
+        setGps(false, "GPS開始失敗");
+        showError("位置情報を開始できません", "◎ を決定で再試行してください。", "geolocation");
+      }
     }
   }
 
