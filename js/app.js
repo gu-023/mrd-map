@@ -235,6 +235,7 @@
    * そのため自動取得はせず、◎ボタン押下の中で getCurrentPosition を直接呼ぶ。
    */
   const ROUTE_ORIGIN_MAX_AGE_MS = 30000; // watchPosition の cache 上限より古い fix では経路を開始しない
+  const LIVE_POSITION_MAX_AGE_MS = 30000; // 初回表示後は suspend 等で遅延した古い fix を状態更新に使わない
   const OFF_ROUTE_EVIDENCE_MAX_GAP_MS = 30000; // 長い曖昧区間をまたぐ off-route 証拠は連続扱いしない
   const NAV_POSITION_CONTINUITY_MAX_GAP_MS = 30000; // 長い更新停止を直線移動区間として補完しない
   const NAV_SNAP_STALE_MOVEMENT_BASE_M = 35; // 時間連続性が切れた snap 文脈は局所移動＋両 fix 誤差だけ許容
@@ -1622,7 +1623,11 @@
     if (!pos || !pos.coords) return;
     const now = Date.now();
     const positionTimestamp = Number.isFinite(pos.timestamp) && pos.timestamp <= now ? pos.timestamp : now;
-    if (lastPositionTimestamp !== null && positionTimestamp <= lastPositionTimestamp) return;
+    if (lastPositionTimestamp !== null &&
+        (positionTimestamp <= lastPositionTimestamp ||
+         now - positionTimestamp > LIVE_POSITION_MAX_AGE_MS)) {
+      return;
+    }
     const { latitude, longitude, accuracy } = pos.coords;
     if (!Number.isFinite(latitude) || latitude < -90 || latitude > 90 ||
         !Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
