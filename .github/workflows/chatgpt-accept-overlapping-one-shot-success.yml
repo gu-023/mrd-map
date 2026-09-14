@@ -22,44 +22,20 @@ jobs:
         run: |
           set -euo pipefail
           python3 - <<'PY'
+          import base64
           from pathlib import Path
-
           path = Path("js/app.js")
           text = path.read_text()
-
-          old = '''    const requestId = ++geoOneShotRequestId;
-    const fixGeneration = acceptedGeoFixGeneration;
-    try {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          if (requestId !== geoOneShotRequestId) return;
-          onPosition(pos);
-        },
-'''
-          new = '''    const requestId = ++geoOneShotRequestId;
-    const fixGeneration = acceptedGeoFixGeneration;
-    let requestValid = true;
-    try {
-      navigator.geolocation.getCurrentPosition(
-        (pos) => {
-          if (!requestValid) return;
-          onPosition(pos);
-        },
-'''
-          if text.count(old) != 1:
-              raise SystemExit(f"unexpected success callback anchor count: {text.count(old)}")
-          text = text.replace(old, new, 1)
-
-          old = '''    } catch (_) {
-      if (requestId === geoOneShotRequestId) geoOneShotRequestId += 1;
-'''
-          new = '''    } catch (_) {
-      requestValid = false;
-      if (requestId === geoOneShotRequestId) geoOneShotRequestId += 1;
-'''
-          if text.count(old) != 1:
-              raise SystemExit(f"unexpected catch anchor count: {text.count(old)}")
-          text = text.replace(old, new, 1)
+          old1 = base64.b64decode("ICAgIGNvbnN0IHJlcXVlc3RJZCA9ICsrZ2VvT25lU2hvdFJlcXVlc3RJZDsKICAgIGNvbnN0IGZpeEdlbmVyYXRpb24gPSBhY2NlcHRlZEdlb0ZpeEdlbmVyYXRpb247CiAgICB0cnkgewogICAgICBuYXZpZ2F0b3IuZ2VvbG9jYXRpb24uZ2V0Q3VycmVudFBvc2l0aW9uKAogICAgICAgIChwb3MpID0+IHsKICAgICAgICAgIGlmIChyZXF1ZXN0SWQgIT09IGdlb09uZVNob3RSZXF1ZXN0SWQpIHJldHVybjsKICAgICAgICAgIG9uUG9zaXRpb24ocG9zKTsKICAgICAgICB9LAo=").decode()
+          new1 = base64.b64decode("ICAgIGNvbnN0IHJlcXVlc3RJZCA9ICsrZ2VvT25lU2hvdFJlcXVlc3RJZDsKICAgIGNvbnN0IGZpeEdlbmVyYXRpb24gPSBhY2NlcHRlZEdlb0ZpeEdlbmVyYXRpb247CiAgICBsZXQgcmVxdWVzdFZhbGlkID0gdHJ1ZTsKICAgIHRyeSB7CiAgICAgIG5hdmlnYXRvci5nZW9sb2NhdGlvbi5nZXRDdXJyZW50UG9zaXRpb24oCiAgICAgICAgKHBvcykgPT4gewogICAgICAgICAgaWYgKCFyZXF1ZXN0VmFsaWQpIHJldHVybjsKICAgICAgICAgIG9uUG9zaXRpb24ocG9zKTsKICAgICAgICB9LAo=").decode()
+          old2 = base64.b64decode("ICAgIH0gY2F0Y2ggKF8pIHsKICAgICAgaWYgKHJlcXVlc3RJZCA9PT0gZ2VvT25lU2hvdFJlcXVlc3RJZCkgZ2VvT25lU2hvdFJlcXVlc3RJZCArPSAxOwo=").decode()
+          new2 = base64.b64decode("ICAgIH0gY2F0Y2ggKF8pIHsKICAgICAgcmVxdWVzdFZhbGlkID0gZmFsc2U7CiAgICAgIGlmIChyZXF1ZXN0SWQgPT09IGdlb09uZVNob3RSZXF1ZXN0SWQpIGdlb09uZVNob3RSZXF1ZXN0SWQgKz0gMTsK").decode()
+          if text.count(old1) != 1:
+              raise SystemExit(f"unexpected success callback anchor count: {text.count(old1)}")
+          text = text.replace(old1, new1, 1)
+          if text.count(old2) != 1:
+              raise SystemExit(f"unexpected catch anchor count: {text.count(old2)}")
+          text = text.replace(old2, new2, 1)
           path.write_text(text)
           PY
 
