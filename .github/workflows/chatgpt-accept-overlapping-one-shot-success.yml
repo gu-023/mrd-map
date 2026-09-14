@@ -1,0 +1,102 @@
+name: ChatGPT one-shot overlapping geolocation success
+
+on:
+  push:
+    branches:
+      - chatgpt/accept-overlapping-one-shot-success
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: chatgpt/accept-overlapping-one-shot-success
+          fetch-depth: 0
+
+      - name: Apply focused geolocation callback patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("js/app.js")
+          text = path.read_text()
+
+          old = '''    const requestId = ++geoOneShotRequestId;
+    const fixGeneration = acceptedGeoFixGeneration;
+    try {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          if (requestId !== geoOneShotRequestId) return;
+          onPosition(pos);
+        },
+'''
+          new = '''    const requestId = ++geoOneShotRequestId;
+    const fixGeneration = acceptedGeoFixGeneration;
+    let requestValid = true;
+    try {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          if (!requestValid) return;
+          onPosition(pos);
+        },
+'''
+          if text.count(old) != 1:
+              raise SystemExit(f"unexpected success callback anchor count: {text.count(old)}")
+          text = text.replace(old, new, 1)
+
+          old = '''    } catch (_) {
+      if (requestId === geoOneShotRequestId) geoOneShotRequestId += 1;
+'''
+          new = '''    } catch (_) {
+      requestValid = false;
+      if (requestId === geoOneShotRequestId) geoOneShotRequestId += 1;
+'''
+          if text.count(old) != 1:
+              raise SystemExit(f"unexpected catch anchor count: {text.count(old)}")
+          text = text.replace(old, new, 1)
+          path.write_text(text)
+          PY
+
+      - name: Validate focused change
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check js/app.js
+          git diff --check
+          python3 - <<'PY'
+          from pathlib import Path
+          text = Path("js/app.js").read_text()
+          assert text.count("let requestValid = true;") == 1
+          assert text.count("if (!requestValid) return;") == 1
+          assert text.count("requestValid = false;") == 1
+          assert text.count("if (requestId !== geoOneShotRequestId || acceptedGeoFixGeneration !== fixGeneration) return;") == 1
+          assert "if (requestId !== geoOneShotRequestId) return;\n          onPosition(pos);" not in text
+          PY
+          if git grep -nE 'AIza[0-9A-Za-z_-]{35}' -- .; then
+            echo "::error::A Google API key pattern is present in a tracked file"
+            exit 1
+          fi
+
+      - name: Commit product-only result
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/chatgpt-accept-overlapping-one-shot-success.yml
+          git add js/app.js .github/workflows/chatgpt-accept-overlapping-one-shot-success.yml
+          git diff --cached --check
+          changed="$(git diff --cached --name-only)"
+          test "$changed" = $'.github/workflows/chatgpt-accept-overlapping-one-shot-success.yml\njs/app.js' || {
+            echo "Unexpected staged files:"
+            printf '%s\n' "$changed"
+            exit 1
+          }
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Accept usable overlapping geolocation success"
+          git push origin HEAD:chatgpt/accept-overlapping-one-shot-success
