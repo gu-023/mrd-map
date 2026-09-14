@@ -451,16 +451,23 @@
     }
   }
 
+  function handleDisplayLifecycle(hidden) {
+    handleCompassLifecycle(hidden);
+    if (hidden || geoWatchId === null || lastPositionTimestamp === null) return;
+    if (Date.now() - lastPositionTimestamp > LIVE_POSITION_MAX_AGE_MS) {
+      setGps(false, "GPS更新停止・◎で再取得");
+    }
+  }
   document.addEventListener("visibilitychange", () => {
-    handleCompassLifecycle(document.visibilityState === "hidden");
+    handleDisplayLifecycle(document.visibilityState === "hidden");
   });
-  document.addEventListener("freeze", () => handleCompassLifecycle(true));
+  document.addEventListener("freeze", () => handleDisplayLifecycle(true));
   document.addEventListener("resume", () => {
-    handleCompassLifecycle(document.visibilityState === "hidden");
+    handleDisplayLifecycle(document.visibilityState === "hidden");
   });
-  window.addEventListener("pagehide", () => handleCompassLifecycle(true));
+  window.addEventListener("pagehide", () => handleDisplayLifecycle(true));
   window.addEventListener("pageshow", () => {
-    handleCompassLifecycle(document.visibilityState === "hidden");
+    handleDisplayLifecycle(document.visibilityState === "hidden");
   });
 
   function disableCompass() {
