@@ -343,6 +343,7 @@
         }
         geoWatchId = watchId;
       } catch (err) {
+        geoWatchGeneration += 1;
         geoWatchId = null;
         setGps(false, "GPS開始失敗");
         showError("位置情報を開始できません", "◎ を決定で再試行してください。", "geolocation");
