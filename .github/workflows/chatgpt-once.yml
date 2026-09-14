@@ -67,7 +67,7 @@ jobs:
           rm .github/workflows/chatgpt-once.yml
           git add -A
           git diff --cached --check
-          test "$(git diff --cached --name-only | tr '\n' ' ')" = 'js/app.js '
+          test "$(git diff --cached --name-only | sort | tr '\n' ' ')" = '.github/workflows/chatgpt-once.yml js/app.js '
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git commit -m 'Ignore superseded one-shot geolocation errors'
