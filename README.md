@@ -81,8 +81,13 @@ python3 -m http.server 8080                # http://localhost:8080 を Chrome �
 
 ---
 
-## 次の拡張
-- ナビ（目的地入力＋経路＋次の曲がり角）→ Directions / Places API を追加で有効化
+## 実機RC確認
+
+主要なナビ機能は実装済みです。Ray-Ban Display 実機でリリース候補を確認するときは、D-pad、GPS、検索、ルート案内、リルート、コンパス、suspend/resume をまとめた [実機 smoke-test checklist](docs/RAY_BAN_DISPLAY_SMOKE_TEST.md) を使ってください。
+
+## 今後の拡張
+
+- 音声入力など、Web App が直接提供しないデバイス機能は別の実装方式・公式SDKの適用可否を確認してから追加する
 - 公式 Claude Code プラグイン（このデバイス専用の雛形・スキル）:
   ```
   /plugin marketplace add https://github.com/facebookincubator/meta-wearables-webapp
