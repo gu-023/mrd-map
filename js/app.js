@@ -1709,8 +1709,14 @@
           lastPositionTimestamp !== null &&
           Date.now() - lastPositionTimestamp > LIVE_POSITION_MAX_AGE_MS;
         if (watchIsStale) {
-          navigator.geolocation.clearWatch(geoWatchId);
-          geoWatchId = null;
+          try {
+            navigator.geolocation.clearWatch(geoWatchId);
+            geoWatchId = null;
+          } catch (_) {
+            setGps(false, "GPS再取得失敗");
+            showError("位置情報を再取得できません", "◎ を決定で再試行してください。", "geolocation");
+            return;
+          }
         }
         if (!currentPosition || errorSource === "geolocation" || geoWatchId === null) {
           clearError("geolocation"); // stale な現在地が残っていても位置情報エラー時は再取得する
