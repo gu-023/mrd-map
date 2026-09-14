@@ -1689,6 +1689,13 @@
         followMode = true;
         const currentPosition = userMarker.getPosition();
         if (currentPosition) map.panTo(currentPosition);
+        const watchIsStale = geoWatchId !== null &&
+          lastPositionTimestamp !== null &&
+          Date.now() - lastPositionTimestamp > LIVE_POSITION_MAX_AGE_MS;
+        if (watchIsStale) {
+          navigator.geolocation.clearWatch(geoWatchId);
+          geoWatchId = null;
+        }
         if (!currentPosition || errorSource === "geolocation" || geoWatchId === null) {
           clearError("geolocation"); // stale な現在地が残っていても位置情報エラー時は再取得する
           acquireLocation(); // ★ユーザー操作の中で位置情報を要求（プロンプト通過のため）
