@@ -26,41 +26,29 @@ jobs:
 
           path = Path("js/app.js")
           text = path.read_text()
-          old = '''  document.addEventListener("visibilitychange", () => {
-            handleCompassLifecycle(document.visibilityState === "hidden");
-          });
-          document.addEventListener("freeze", () => handleCompassLifecycle(true));
-          document.addEventListener("resume", () => {
-            handleCompassLifecycle(document.visibilityState === "hidden");
-          });
-          window.addEventListener("pagehide", () => handleCompassLifecycle(true));
-          window.addEventListener("pageshow", () => {
-            handleCompassLifecycle(document.visibilityState === "hidden");
-          });
-          '''
-          new = '''  function handleDisplayLifecycle(hidden) {
-            handleCompassLifecycle(hidden);
-            if (hidden || geoWatchId === null || lastPositionTimestamp === null) return;
-            if (Date.now() - lastPositionTimestamp > LIVE_POSITION_MAX_AGE_MS) {
-              setGps(false, "GPS更新停止・◎で再取得");
-            }
-          }
-
-          document.addEventListener("visibilitychange", () => {
-            handleDisplayLifecycle(document.visibilityState === "hidden");
-          });
-          document.addEventListener("freeze", () => handleDisplayLifecycle(true));
-          document.addEventListener("resume", () => {
-            handleDisplayLifecycle(document.visibilityState === "hidden");
-          });
-          window.addEventListener("pagehide", () => handleDisplayLifecycle(true));
-          window.addEventListener("pageshow", () => {
-            handleDisplayLifecycle(document.visibilityState === "hidden");
-          });
-          '''
-          if text.count(old) != 1:
-              raise SystemExit(f"expected one lifecycle block, found {text.count(old)}")
-          path.write_text(text.replace(old, new, 1))
+          marker = '  document.addEventListener("visibilitychange", () => {'
+          if text.count(marker) != 1:
+              raise SystemExit(f"visibility listener count={text.count(marker)}")
+          helper = "\n".join([
+              '  function handleDisplayLifecycle(hidden) {',
+              '    handleCompassLifecycle(hidden);',
+              '    if (hidden || geoWatchId === null || lastPositionTimestamp === null) return;',
+              '    if (Date.now() - lastPositionTimestamp > LIVE_POSITION_MAX_AGE_MS) {',
+              '      setGps(false, "GPS更新停止・◎で再取得");',
+              '    }',
+              '  }',
+              '',
+          ])
+          text = text.replace(marker, helper + marker, 1)
+          visible_call = 'handleCompassLifecycle(document.visibilityState === "hidden");'
+          if text.count(visible_call) != 3:
+              raise SystemExit(f"visible lifecycle call count={text.count(visible_call)}")
+          text = text.replace(visible_call, 'handleDisplayLifecycle(document.visibilityState === "hidden");')
+          hidden_call = 'handleCompassLifecycle(true)'
+          if text.count(hidden_call) != 2:
+              raise SystemExit(f"hidden lifecycle call count={text.count(hidden_call)}")
+          text = text.replace(hidden_call, 'handleDisplayLifecycle(true)')
+          path.write_text(text)
           PY
 
       - name: Verify patch
@@ -70,6 +58,7 @@ jobs:
           node --check js/app.js
           git diff --check
           grep -Fq 'function handleDisplayLifecycle(hidden)' js/app.js
+          grep -Fq 'if (hidden || geoWatchId === null || lastPositionTimestamp === null) return;' js/app.js
           grep -Fq 'setGps(false, "GPS更新停止・◎で再取得");' js/app.js
           grep -Fq 'document.addEventListener("freeze", () => handleDisplayLifecycle(true));' js/app.js
           if git grep -nE 'AIza[0-9A-Za-z_-]{35}' -- .; then
