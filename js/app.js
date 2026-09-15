@@ -109,6 +109,7 @@
   let searchZone = "input"; // input / keys / preds
   let keyIdx = 0;
   let predIdx = 0;
+  let searchReturnPrediction = null; // 移動手段から戻る際に直前の候補へD-padフォーカスを復元
   let predictionRequestId = 0; // 古い Autocomplete callback を無視するための世代番号
   let placeDetailsRequestId = 0; // 古い Place Details callback を無視するための世代番号
   const SEARCH_COLS = 9;
@@ -901,6 +902,7 @@
     searchZone = "input";
     keyIdx = 0;
     predIdx = 0;
+    searchReturnPrediction = null;
     els.search.classList.remove("hidden");
     renderSearch();
     els.searchQuery.focus();
@@ -926,9 +928,8 @@
     placeDetailsLoading = false;
     searchZone = "input";
     els.search.classList.remove("hidden");
-    refreshPredictions();
+    refreshPredictions(searchReturnPrediction);
     renderSearch();
-    els.searchQuery.focus();
   }
 
   function renderSearch() {
@@ -1001,7 +1002,7 @@
     return `ステータス: <code>${status}</code>${hint}`;
   }
 
-  function refreshPredictions() {
+  function refreshPredictions(returnPrediction = null) {
     const requestId = ++predictionRequestId;
     searchPredictions = [];
     searchEmpty = false;
@@ -1027,6 +1028,15 @@
       }
       searchPredictions = status === "OK" && preds ? preds.slice(0, 6) : [];
       searchEmpty = status === "ZERO_RESULTS" || (status === "OK" && searchPredictions.length === 0);
+      if (returnPrediction && searchZone === "input" && searchPredictions.length) {
+        const restoredIdx = returnPrediction.placeId
+          ? searchPredictions.findIndex((prediction) => prediction.place_id === returnPrediction.placeId)
+          : -1;
+        searchZone = "preds";
+        predIdx = restoredIdx >= 0
+          ? restoredIdx
+          : Math.min(returnPrediction.index, searchPredictions.length - 1);
+      }
       if (!searchPredictions.length && searchZone === "preds") searchZone = "keys";
       if (predIdx >= searchPredictions.length) predIdx = 0;
       renderSearch();
@@ -1035,6 +1045,7 @@
 
   function selectPrediction(p) {
     if (!p || placeDetailsLoading) return;
+    searchReturnPrediction = { placeId: p.place_id || null, index: predIdx };
     clearError("places"); // 再試行中は古い Places error だけ解除
     const requestId = ++placeDetailsRequestId;
     placeDetailsLoading = true;
