@@ -369,13 +369,11 @@
       onGeoError(err);
       return;
     }
-    if (code === 2 || code === 3) {
-      setGps(
-        false,
-        hasUnknownGeoWatchOwnership() ? "GPS監視異常・↻再読込" : "GPS更新待ち…"
-      );
-    }
-    // 一時的な失敗では watch を維持し、次の成功 callback で GPS 表示を復帰する。
+    setGps(
+      false,
+      hasUnknownGeoWatchOwnership() ? "GPS監視異常・↻再読込" : "GPS更新待ち…"
+    );
+    // permission denial 以外は未知の code も含め watch を維持し、次の成功 callback で GPS 表示を復帰する。
   }
 
   /* ---------- コンパス（ヘディングアップ） ----------
