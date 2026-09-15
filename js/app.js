@@ -886,16 +886,27 @@
     const placesService = new google.maps.places.PlacesService(map);
     return {
       createSessionToken: () => new google.maps.places.AutocompleteSessionToken(),
-      getPredictions: (request, callback) => autocompleteService.getPlacePredictions(
-        request,
-        (predictions, status) => callback(
-          predictions ? predictions.map((prediction) => ({
-            placeId: prediction.place_id,
-            label: prediction.description,
-          })) : predictions,
-          status
-        )
-      ),
+      getPredictions: (input, sessionToken, location, callback) => {
+        const request = {
+          input,
+          sessionToken,
+          componentRestrictions: { country: "jp" },
+        };
+        if (location) {
+          request.location = location;
+          request.radius = 50000;
+        }
+        autocompleteService.getPlacePredictions(
+          request,
+          (predictions, status) => callback(
+            predictions ? predictions.map((prediction) => ({
+              placeId: prediction.place_id,
+              label: prediction.description,
+            })) : predictions,
+            status
+          )
+        );
+      },
       getLocation: (placeId, sessionToken, callback) => placesService.getDetails(
         { placeId, fields: ["geometry"], sessionToken },
         (place, status) => callback(
@@ -1038,14 +1049,8 @@
     const q = searchQuery.trim();
     searchLoading = q.length > 0;
     if (!searchLoading) return;
-    const req = {
-      input: q,
-      sessionToken: searchToken,
-      componentRestrictions: { country: "jp" },
-    };
     const pos = userMarker && userMarker.getPosition();
-    if (pos) { req.location = pos; req.radius = 50000; }
-    placesSearchApi.getPredictions(req, (preds, status) => {
+    placesSearchApi.getPredictions(q, searchToken, pos, (preds, status) => {
       if (requestId !== predictionRequestId || !searchOpen) return;
       searchLoading = false;
       if (status !== "OK" && status !== "ZERO_RESULTS") {
