@@ -921,15 +921,15 @@
   }
 
   function reopenSearchResults() {
-  closeMenu();
-  searchOpen = true;
-  placeDetailsLoading = false;
-  searchZone = "input";
-  els.search.classList.remove("hidden");
-  refreshPredictions();
-  renderSearch();
-  els.searchQuery.focus();
-}
+    closeMenu();
+    searchOpen = true;
+    placeDetailsLoading = false;
+    searchZone = "input";
+    els.search.classList.remove("hidden");
+    refreshPredictions();
+    renderSearch();
+    els.searchQuery.focus();
+  }
 
   function renderSearch() {
     if (els.searchQuery.value !== searchQuery) els.searchQuery.value = searchQuery;
