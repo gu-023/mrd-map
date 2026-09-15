@@ -930,6 +930,7 @@
     els.search.classList.remove("hidden");
     refreshPredictions(searchReturnPrediction);
     renderSearch();
+    els.searchQuery.focus();
   }
 
   function renderSearch() {
