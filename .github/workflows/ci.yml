@@ -26,13 +26,18 @@ jobs:
           text = Path("js/app.js").read_text()
           start_marker = "  function createPlacesSearchApi() {"
           end_marker = "  /* ---------- 場所検索（オンスクリーンキーボード＋Autocomplete） ---------- */"
+          search_end_marker = "  function enterPickMode() {"
           if text.count(start_marker) != 1 or text.count(end_marker) != 1:
               raise SystemExit("Places adapter boundary markers must each appear exactly once")
+          if text.count(search_end_marker) != 1:
+              raise SystemExit("Places search boundary marker must appear exactly once")
 
           start = text.index(start_marker)
           end = text.index(end_marker, start)
+          search_end = text.index(search_end_marker, end)
           adapter = text[start:end]
           outside = text[:start] + text[end:]
+          search_ui = text[end:search_end]
           legacy_tokens = [
               "google.maps.places.AutocompleteService()",
               "google.maps.places.PlacesService(map)",
@@ -43,6 +48,8 @@ jobs:
               'componentRestrictions: { country: "jp" }',
               "request.location = location;",
               "request.radius = 50000;",
+          ]
+          status_tokens = [
               'status === "OK"',
               'status === "ZERO_RESULTS"',
               'status === "REQUEST_DENIED"',
@@ -55,11 +62,17 @@ jobs:
 
           missing = [token for token in legacy_tokens if token not in adapter]
           leaked = [token for token in legacy_tokens if token in outside]
-          missing_ui = [token for token in ui_status_tokens if token not in outside]
+          missing_status = [token for token in status_tokens if token not in adapter]
+          leaked_status = [token for token in status_tokens if token in search_ui]
+          missing_ui = [token for token in ui_status_tokens if token not in search_ui]
           if missing:
               raise SystemExit("Places adapter no longer owns expected legacy tokens: " + ", ".join(missing))
           if leaked:
               raise SystemExit("Legacy Places details leaked outside adapter: " + ", ".join(leaked))
+          if missing_status:
+              raise SystemExit("Places adapter no longer normalizes expected legacy statuses: " + ", ".join(missing_status))
+          if leaked_status:
+              raise SystemExit("Legacy Places statuses leaked into search UI: " + ", ".join(leaked_status))
           if missing_ui:
               raise SystemExit("Search UI no longer consumes the normalized Places status contract: " + ", ".join(missing_ui))
           PY
