@@ -1,0 +1,36 @@
+name: ChatGPT one-shot search D-pad
+
+on:
+  push:
+    branches: [chatgpt/composer-down-to-predictions]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Apply and validate atomic D-pad improvement
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -c 'from pathlib import Path; import base64; p=Path("js/app.js"); s=p.read_text(); old=base64.b64decode("ICAgIGlmIChzZWFyY2hab25lID09PSAiaW5wdXQiKSB7CiAgICAgIGlmIChrZXkgPT09ICJBcnJvd0Rvd24iKSB7CiAgICAgICAgZWxzLnNlYXJjaFF1ZXJ5LmJsdXIoKTsKICAgICAgICBzZWFyY2hab25lID0gImtleXMiOwogICAgICAgIHJlbmRlclNlYXJjaCgpOwogICAgICB9CiAgICAgIHJldHVybjsKICAgIH0=").decode(); new=base64.b64decode("ICAgIGlmIChzZWFyY2hab25lID09PSAiaW5wdXQiKSB7CiAgICAgIGlmIChrZXkgPT09ICJBcnJvd0Rvd24iKSB7CiAgICAgICAgZWxzLnNlYXJjaFF1ZXJ5LmJsdXIoKTsKICAgICAgICBpZiAoc2VhcmNoUHJlZGljdGlvbnMubGVuZ3RoKSB7CiAgICAgICAgICBzZWFyY2hab25lID0gInByZWRzIjsKICAgICAgICAgIHByZWRJZHggPSAwOwogICAgICAgIH0gZWxzZSB7CiAgICAgICAgICBzZWFyY2hab25lID0gImtleXMiOwogICAgICAgIH0KICAgICAgICByZW5kZXJTZWFyY2goKTsKICAgICAgfQogICAgICByZXR1cm47CiAgICB9").decode(); assert s.count(old)==1, f"expected one target block, found {s.count(old)}"; p.write_text(s.replace(old,new), newline="")'
+          node --check js/app.js
+          git diff --check
+          if git grep -nE 'AIza[0-9A-Za-z_-]{35}' -- .; then
+            echo "::error::A Google API key pattern is present in a tracked file"
+            exit 1
+          fi
+          git rm .github/workflows/chatgpt-one-shot-search-nav.yml
+          git add js/app.js
+          git diff --cached --check
+          git diff --cached -- js/app.js
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Skip fallback keyboard when search results exist"
+          git push
