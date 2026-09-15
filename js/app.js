@@ -862,6 +862,23 @@
     openMenu("移動手段", items);
   }
 
+  // 検索結果を確定した後に、その目的地へ使う移動手段を選ぶ。
+  function openSearchTravelMenu(dest, name) {
+    const modes = [
+      ["WALKING", "🚶 徒歩"], ["DRIVING", "🚗 自動車"],
+      ["BICYCLING", "🚲 自転車"], ["TRANSIT", "🚆 公共交通"],
+    ];
+    const items = modes.map(([m, label]) => ({
+      label: (travelMode === m ? "● " : "○ ") + label,
+      action: () => {
+        closeMenuToMap();
+        computeRoute(dest, false, name, m);
+      },
+    }));
+    items.push({ label: "← 戻る", action: openDestinationMenu });
+    openMenu("移動手段", items);
+  }
+
   /* ---------- 場所検索（オンスクリーンキーボード＋Autocomplete） ---------- */
   function openSearch() {
     if (navRerouting) {
@@ -1021,7 +1038,7 @@
         if (status === "OK" && res && res.geometry && res.geometry.location) {
           clearError("places");
           closeSearch();
-          computeRoute(res.geometry.location, false, p.description);
+          openSearchTravelMenu(res.geometry.location, p.description);
         } else {
           showError("場所を取得できません", placesErrorDetail(status), "places");
           renderSearch();
@@ -1188,8 +1205,8 @@
           if (currentPosition) map.panTo(currentPosition);
           if (!isReroute) {
             map.setZoom(routeTravelMode === "DRIVING" ? 17 : 18);
-            if (requestedTravelMode === undefined) {
-              saveRecent(dest, name); // 移動手段だけの再計算では履歴を更新しない
+            if (requestedTravelMode === undefined || name !== undefined) {
+              saveRecent(dest, name); // 既存ルートの移動手段だけを変える場合は履歴を更新しない
             }
           }
           signalRequestId++; // 前ルートの未完了 Overpass callback を無効化
