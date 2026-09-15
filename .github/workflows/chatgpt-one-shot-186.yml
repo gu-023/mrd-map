@@ -24,17 +24,19 @@ jobs:
 
           path = Path("js/app.js")
           source = path.read_text()
-          old = '''  function onGeoError(err) {
-            setGps(false, "GPS不可");
-            els.accText.textContent = "";
-          '''
-          new = '''  function onGeoError(err) {
-            const hasLastFix = Boolean(userMarker && userMarker.getPosition());
-            setGps(false, hasLastFix ? "GPS不可・最終位置" : "GPS不可");
-            els.accText.textContent = hasLastFix && lastPositionAccuracy
-              ? `最終 ±${fmtDist(lastPositionAccuracy)}`
-              : "";
-          '''
+          old = (
+              '  function onGeoError(err) {\n'
+              '    setGps(false, "GPS不可");\n'
+              '    els.accText.textContent = "";\n'
+          )
+          new = (
+              '  function onGeoError(err) {\n'
+              '    const hasLastFix = Boolean(userMarker && userMarker.getPosition());\n'
+              '    setGps(false, hasLastFix ? "GPS不可・最終位置" : "GPS不可");\n'
+              '    els.accText.textContent = hasLastFix && lastPositionAccuracy\n'
+              '      ? `最終 ±${fmtDist(lastPositionAccuracy)}`\n'
+              '      : "";\n'
+          )
           if source.count(old) != 1:
               raise SystemExit(f"expected one onGeoError anchor, found {source.count(old)}")
           path.write_text(source.replace(old, new, 1))
