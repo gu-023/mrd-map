@@ -896,12 +896,10 @@
           status
         )
       ),
-      getDetails: (request, callback) => placesService.getDetails(
-        request,
+      getLocation: (placeId, sessionToken, callback) => placesService.getDetails(
+        { placeId, fields: ["geometry"], sessionToken },
         (place, status) => callback(
-          place ? {
-            location: place.geometry && place.geometry.location ? place.geometry.location : null,
-          } : place,
+          place && place.geometry && place.geometry.location ? place.geometry.location : null,
           status
         )
       ),
@@ -1082,15 +1080,16 @@
     renderSearch();
     const requestToken = searchToken;
     searchToken = placesSearchApi.createSessionToken(); // Place Details request で現在の Autocomplete セッションを終了
-    placesSearchApi.getDetails(
-      { placeId: p.placeId, fields: ["geometry"], sessionToken: requestToken },
-      (res, status) => {
+    placesSearchApi.getLocation(
+      p.placeId,
+      requestToken,
+      (location, status) => {
         if (requestId !== placeDetailsRequestId || !searchOpen) return;
         placeDetailsLoading = false;
-        if (status === "OK" && res && res.location) {
+        if (status === "OK" && location) {
           clearError("places");
           closeSearch();
-          openSearchTravelMenu(res.location, p.label);
+          openSearchTravelMenu(location, p.label);
         } else {
           showError("場所を取得できません", placesErrorDetail(status), "places");
           renderSearch();
