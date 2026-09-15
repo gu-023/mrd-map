@@ -25,93 +25,88 @@ jobs:
           path = Path("js/app.js")
           text = path.read_text()
 
-          anchor = "  let predIdx = 0;\n"
-          replacement = (
-              "  let predIdx = 0;\n"
-              "  let searchReturnPrediction = null; // 移動手段から戻る際に直前の候補へD-padフォーカスを復元\n"
+          def replace_once(source, old, new, label):
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label} count={count}")
+              return source.replace(old, new, 1)
+
+          text = replace_once(
+              text,
+              "  let predIdx = 0;\n",
+              "  let predIdx = 0;\n  let searchReturnPrediction = null; // 移動手段から戻る際に直前の候補へD-padフォーカスを復元\n",
+              "predIdx anchor",
           )
-          if text.count(anchor) != 1:
-              raise SystemExit(f"predIdx anchor count={text.count(anchor)}")
-          text = text.replace(anchor, replacement, 1)
 
-          anchor = "    predIdx = 0;\n    els.search.classList.remove(\"hidden\");\n"
-          replacement = (
-              "    predIdx = 0;\n"
-              "    searchReturnPrediction = null;\n"
-              "    els.search.classList.remove(\"hidden\");\n"
+          open_start = text.index("  function openSearch() {")
+          open_end = text.index("\n  function closeSearch()", open_start)
+          open_block = text[open_start:open_end]
+          open_block = replace_once(
+              open_block,
+              "    predIdx = 0;\n",
+              "    predIdx = 0;\n    searchReturnPrediction = null;\n",
+              "openSearch reset anchor",
           )
-          if text.count(anchor) != 1:
-              raise SystemExit(f"openSearch reset anchor count={text.count(anchor)}")
-          text = text.replace(anchor, replacement, 1)
+          text = text[:open_start] + open_block + text[open_end:]
 
-          old = '''  function reopenSearchResults() {
-            closeMenu();
-            searchOpen = true;
-            placeDetailsLoading = false;
-            searchZone = "input";
-            els.search.classList.remove("hidden");
-            refreshPredictions();
-            renderSearch();
-            els.searchQuery.focus();
-          }
-          '''
-          new = '''  function reopenSearchResults() {
-            closeMenu();
-            searchOpen = true;
-            placeDetailsLoading = false;
-            searchZone = "input";
-            els.search.classList.remove("hidden");
-            refreshPredictions(searchReturnPrediction);
-            renderSearch();
-          }
-          '''
-          if text.count(old) != 1:
-              raise SystemExit(f"reopenSearchResults anchor count={text.count(old)}")
-          text = text.replace(old, new, 1)
+          reopen_start = text.index("  function reopenSearchResults() {")
+          reopen_end = text.index("\n  function renderSearch()", reopen_start)
+          reopen_block = text[reopen_start:reopen_end]
+          reopen_block = replace_once(
+              reopen_block,
+              "    refreshPredictions();\n",
+              "    refreshPredictions(searchReturnPrediction);\n",
+              "reopen refresh anchor",
+          )
+          reopen_block = replace_once(
+              reopen_block,
+              "    els.searchQuery.focus();\n",
+              "",
+              "reopen focus anchor",
+          )
+          text = text[:reopen_start] + reopen_block + text[reopen_end:]
 
-          old = "  function refreshPredictions() {\n"
-          new = "  function refreshPredictions(returnPrediction = null) {\n"
-          if text.count(old) != 1:
-              raise SystemExit(f"refreshPredictions signature count={text.count(old)}")
-          text = text.replace(old, new, 1)
+          text = replace_once(
+              text,
+              "  function refreshPredictions() {\n",
+              "  function refreshPredictions(returnPrediction = null) {\n",
+              "refresh signature",
+          )
 
-          anchor = '''      searchPredictions = status === "OK" && preds ? preds.slice(0, 6) : [];
-            searchEmpty = status === "ZERO_RESULTS" || (status === "OK" && searchPredictions.length === 0);
-            if (!searchPredictions.length && searchZone === "preds") searchZone = "keys";
-            if (predIdx >= searchPredictions.length) predIdx = 0;
-            renderSearch();
-          '''
-          replacement = '''      searchPredictions = status === "OK" && preds ? preds.slice(0, 6) : [];
-            searchEmpty = status === "ZERO_RESULTS" || (status === "OK" && searchPredictions.length === 0);
-            if (returnPrediction && searchZone === "input" && searchPredictions.length) {
-              const restoredIdx = returnPrediction.placeId
-                ? searchPredictions.findIndex((prediction) => prediction.place_id === returnPrediction.placeId)
-                : -1;
-              searchZone = "preds";
-              predIdx = restoredIdx >= 0
-                ? restoredIdx
-                : Math.min(returnPrediction.index, searchPredictions.length - 1);
-            }
-            if (!searchPredictions.length && searchZone === "preds") searchZone = "keys";
-            if (predIdx >= searchPredictions.length) predIdx = 0;
-            renderSearch();
-          '''
-          if text.count(anchor) != 1:
-              raise SystemExit(f"prediction callback anchor count={text.count(anchor)}")
-          text = text.replace(anchor, replacement, 1)
+          callback_start = text.index('      searchPredictions = status === "OK" && preds ? preds.slice(0, 6) : [];')
+          callback_end = text.index("      renderSearch();", callback_start)
+          callback_block = text[callback_start:callback_end]
+          restore_anchor = '      searchEmpty = status === "ZERO_RESULTS" || (status === "OK" && searchPredictions.length === 0);\n'
+          restore_code = (
+              restore_anchor
+              + '      if (returnPrediction && searchZone === "input" && searchPredictions.length) {\n'
+              + '        const restoredIdx = returnPrediction.placeId\n'
+              + '          ? searchPredictions.findIndex((prediction) => prediction.place_id === returnPrediction.placeId)\n'
+              + '          : -1;\n'
+              + '        searchZone = "preds";\n'
+              + '        predIdx = restoredIdx >= 0\n'
+              + '          ? restoredIdx\n'
+              + '          : Math.min(returnPrediction.index, searchPredictions.length - 1);\n'
+              + '      }\n'
+          )
+          callback_block = replace_once(
+              callback_block,
+              restore_anchor,
+              restore_code,
+              "prediction restore anchor",
+          )
+          text = text[:callback_start] + callback_block + text[callback_end:]
 
-          anchor = '''  function selectPrediction(p) {
-            if (!p || placeDetailsLoading) return;
-            clearError("places"); // 再試行中は古い Places error だけ解除
-          '''
-          replacement = '''  function selectPrediction(p) {
-            if (!p || placeDetailsLoading) return;
-            searchReturnPrediction = { placeId: p.place_id || null, index: predIdx };
-            clearError("places"); // 再試行中は古い Places error だけ解除
-          '''
-          if text.count(anchor) != 1:
-              raise SystemExit(f"selectPrediction anchor count={text.count(anchor)}")
-          text = text.replace(anchor, replacement, 1)
+          select_start = text.index("  function selectPrediction(p) {")
+          select_end = text.index("\n  // 検索画面のキー操作", select_start)
+          select_block = text[select_start:select_end]
+          select_block = replace_once(
+              select_block,
+              "    if (!p || placeDetailsLoading) return;\n",
+              "    if (!p || placeDetailsLoading) return;\n    searchReturnPrediction = { placeId: p.place_id || null, index: predIdx };\n",
+              "selectPrediction anchor",
+          )
+          text = text[:select_start] + select_block + text[select_end:]
 
           path.write_text(text)
           PY
@@ -125,7 +120,7 @@ jobs:
           grep -F 'let searchReturnPrediction = null;' js/app.js
           grep -F 'refreshPredictions(searchReturnPrediction);' js/app.js
           grep -F 'searchReturnPrediction = { placeId: p.place_id || null, index: predIdx };' js/app.js
-          grep -F 'searchZone = "preds";' js/app.js
+          grep -F 'const restoredIdx = returnPrediction.placeId' js/app.js
       - name: Commit product change
         run: |
           git config user.name "chatgpt-codex-connector[bot]"
