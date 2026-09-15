@@ -362,13 +362,14 @@
   }
 
   function onWatchError(err) {
-    if (err && err.code === err.PERMISSION_DENIED) {
+    const code = err && err.code;
+    if (code === 1) {
       geoWatchGeneration += 1;
       geoWatchId = null;
       onGeoError(err);
       return;
     }
-    if (err && (err.code === err.TIMEOUT || err.code === err.POSITION_UNAVAILABLE)) {
+    if (code === 2 || code === 3) {
       setGps(
         false,
         hasUnknownGeoWatchOwnership() ? "GPS監視異常・↻再読込" : "GPS更新待ち…"
