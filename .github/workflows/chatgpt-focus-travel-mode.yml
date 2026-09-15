@@ -1,0 +1,73 @@
+name: ChatGPT focus current travel mode
+
+on:
+  push:
+    branches:
+      - chatgpt/focus-current-travel-mode
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chatgpt/focus-current-travel-mode
+          fetch-depth: 0
+
+      - name: Apply focused travel-mode menu change
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('js/app.js')
+          text = path.read_text()
+
+          old_open = '''  function openMenu(title, items) {
+            menuItems = items;
+            menuIdx = 0;
+            menuOpen = true;'''
+          new_open = '''  function openMenu(title, items, initialIdx = 0) {
+            menuItems = items;
+            menuIdx = Math.max(0, Math.min(initialIdx, items.length - 1));
+            menuOpen = true;'''
+          if text.count(old_open) != 1:
+              raise SystemExit(f'openMenu anchor count: {text.count(old_open)}')
+          text = text.replace(old_open, new_open, 1)
+
+          old_call = '    openMenu("移動手段", items);'
+          new_call = '    openMenu("移動手段", items, modes.findIndex(([m]) => m === travelMode));'
+          if text.count(old_call) != 2:
+              raise SystemExit(f'travel menu call count: {text.count(old_call)}')
+          text = text.replace(old_call, new_call)
+
+          path.write_text(text)
+          PY
+
+      - name: Verify product change
+        shell: bash
+        run: |
+          node --check js/app.js
+          git diff --check
+          test "$(git diff --name-only | tr '\n' ' ')" = "js/app.js "
+          grep -F 'function openMenu(title, items, initialIdx = 0)' js/app.js
+          test "$(grep -Fc 'openMenu("移動手段", items, modes.findIndex(([m]) => m === travelMode));' js/app.js)" -eq 2
+          if git diff -- js/app.js | grep -Eq 'AIza[0-9A-Za-z_-]{20,}'; then
+            echo 'Possible API key added in diff' >&2
+            exit 1
+          fi
+
+      - name: Commit product change and remove helper
+        shell: bash
+        run: |
+          rm .github/workflows/chatgpt-focus-travel-mode.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add js/app.js .github/workflows/chatgpt-focus-travel-mode.yml
+          git diff --cached --check
+          git commit -m 'Focus the current travel mode in menus'
+          git push origin HEAD:chatgpt/focus-current-travel-mode
