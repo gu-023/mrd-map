@@ -1,0 +1,202 @@
+name: ChatGPT native search composer helper
+
+on:
+  push:
+    branches:
+      - chatgpt/native-search-composer-entry
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: chatgpt/native-search-composer-entry
+
+      - name: Apply atomic native search input change
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected exactly one anchor, found {count}")
+              p.write_text(text.replace(old, new, 1))
+
+          replace_once(
+              "index.html",
+              '      <div id="search-query"></div>',
+              '      <input id="search-query" type="search" autocomplete="off" enterkeyhint="search" aria-label="場所を検索" placeholder="🎙 音声/手書き入力" />',
+          )
+          replace_once(
+              "index.html",
+              '      <div id="search-hint">↑↓←→ 移動 / 決定 / ✕ 閉じる</div>',
+              '      <div id="search-hint">入力欄: 決定で音声/手書き / ↓ キーボード・候補 / ✕ 閉じる</div>',
+          )
+
+          replace_once(
+              "css/style.css",
+              '''#search-query {
+            font-size: 26px; font-weight: 700; color: var(--accent);
+            min-height: 34px; padding: 4px 8px; margin-bottom: 8px;
+            border-bottom: 2px solid rgba(255, 255, 255, 0.2);
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+          }'''.replace("          ", ""),
+              '''#search-query {
+            width: 100%; min-height: 42px; padding: 4px 8px; margin-bottom: 8px;
+            font: inherit; font-size: 26px; font-weight: 700; color: var(--accent);
+            background: transparent; outline: none;
+            border: 2px solid rgba(255, 255, 255, 0.2); border-radius: 10px;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+          }
+          #search-query::placeholder { color: rgba(255, 255, 255, 0.55); }
+          #search-query.focused {
+            border-color: var(--focus);
+            box-shadow: 0 0 12px var(--focus);
+            background: rgba(77, 214, 160, 0.10);
+          }'''.replace("          ", ""),
+          )
+
+          replace_once(
+              "js/app.js",
+              '''    searchZone = "keys";
+              keyIdx = 0;
+              predIdx = 0;
+              els.search.classList.remove("hidden");
+              renderSearch();'''.replace("              ", ""),
+              '''    searchZone = "input";
+              keyIdx = 0;
+              predIdx = 0;
+              els.search.classList.remove("hidden");
+              renderSearch();
+              els.searchQuery.focus();'''.replace("              ", ""),
+          )
+          replace_once(
+              "js/app.js",
+              '''    searchOpen = false;
+              els.search.classList.add("hidden");'''.replace("              ", ""),
+              '''    searchOpen = false;
+              els.searchQuery.blur();
+              els.search.classList.add("hidden");'''.replace("              ", ""),
+          )
+          replace_once(
+              "js/app.js",
+              '''  function renderSearch() {
+            els.searchQuery.textContent = searchQuery || "（A〜Zで入力 → 候補を選択）";
+            els.searchKeyboard.innerHTML = "";'''.replace("          ", ""),
+              '''  function renderSearch() {
+            if (els.searchQuery.value !== searchQuery) els.searchQuery.value = searchQuery;
+            els.searchQuery.classList.toggle("focused", searchZone === "input");
+            els.searchKeyboard.innerHTML = "";'''.replace("          ", ""),
+          )
+          replace_once(
+              "js/app.js",
+              '''      d.addEventListener("click", () => {
+                searchZone = "keys";'''.replace("              ", ""),
+              '''      d.addEventListener("click", () => {
+                els.searchQuery.blur();
+                searchZone = "keys";'''.replace("              ", ""),
+          )
+          replace_once(
+              "js/app.js",
+              '''      li.addEventListener("click", () => { searchZone = "preds"; predIdx = i; selectPrediction(p); });'''.replace("      ", ""),
+              '''      li.addEventListener("click", () => { els.searchQuery.blur(); searchZone = "preds"; predIdx = i; selectPrediction(p); });'''.replace("      ", ""),
+          )
+          replace_once(
+              "js/app.js",
+              '''  function pressKey(k) {''',
+              '''  els.searchQuery.addEventListener("focus", () => {
+            if (!searchOpen) return;
+            searchZone = "input";
+            renderSearch();
+          });
+
+          els.searchQuery.addEventListener("input", () => {
+            if (!searchOpen) return;
+            searchQuery = els.searchQuery.value;
+            searchZone = "input";
+            refreshPredictions();
+            renderSearch();
+          });
+
+          function pressKey(k) {'''.replace("          ", ""),
+          )
+          replace_once(
+              "js/app.js",
+              '''    if (searchZone === "keys") {
+              switch (key) {'''.replace("              ", ""),
+              '''    if (searchZone === "input") {
+              if (key === "ArrowDown") {
+                els.searchQuery.blur();
+                searchZone = "keys";
+                renderSearch();
+              }
+              return;
+            }
+            if (searchZone === "keys") {
+              switch (key) {'''.replace("              ", ""),
+          )
+          replace_once(
+              "js/app.js",
+              '''        case "ArrowUp":    if (keyIdx - SEARCH_COLS >= 0) keyIdx -= SEARCH_COLS; break;''',
+              '''        case "ArrowUp":
+            if (keyIdx - SEARCH_COLS >= 0) keyIdx -= SEARCH_COLS;
+            else { searchZone = "input"; els.searchQuery.focus(); }
+            break;''',
+          )
+          replace_once(
+              "js/app.js",
+              '''    if (searchOpen) {
+              if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "].indexOf(e.key) >= 0) {
+                searchKeydown(e.key);
+                e.preventDefault();
+              }
+              return;
+            }'''.replace("              ", ""),
+              '''    if (searchOpen) {
+              const nativeSearchInputActive = searchZone === "input" && document.activeElement === els.searchQuery;
+              if (nativeSearchInputActive && e.key !== "ArrowDown") return;
+              if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "].indexOf(e.key) >= 0) {
+                searchKeydown(e.key);
+                e.preventDefault();
+              }
+              return;
+            }'''.replace("              ", ""),
+          )
+          PY
+
+      - name: Static and focused validation
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check js/app.js
+          git diff --check
+          grep -Fq '<input id="search-query" type="search"' index.html
+          grep -Fq 'searchZone = "input"' js/app.js
+          grep -Fq 'els.searchQuery.addEventListener("input"' js/app.js
+          grep -Fq 'nativeSearchInputActive' js/app.js
+          grep -Fq '#search-query.focused' css/style.css
+          if git grep -nE 'AIza[0-9A-Za-z_-]{35}' -- .; then
+            echo "::error::A Google API key pattern is present in a tracked file"
+            exit 1
+          fi
+
+      - name: Commit product change and remove helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/chatgpt-native-search-composer.yml
+          git add index.html css/style.css js/app.js .github/workflows/chatgpt-native-search-composer.yml
+          git diff --cached --check
+          git config user.name "gu-023"
+          git config user.email "59335552+gu-023@users.noreply.github.com"
+          git commit -m "Add native search composer entry"
+          git push origin HEAD:chatgpt/native-search-composer-entry
