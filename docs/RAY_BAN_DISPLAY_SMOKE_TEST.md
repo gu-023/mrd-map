@@ -41,12 +41,14 @@ Run the native-composer path first. Then repeat the input portion with the fallb
 - [ ] The committed composer text appears in the search field and starts Places prediction loading.
 - [ ] `検索中…`, an empty-result state, or predictions are visually distinguishable.
 - [ ] When predictions exist, one `↓` from the search input moves directly to the first prediction instead of forcing a trip through the fallback keyboard.
+- [ ] From that first prediction, one `↑` returns focus to the standard search input (not the fallback keyboard), so native-composer editing remains the active path.
 - [ ] Moving through predictions keeps the focused item visible.
 - [ ] Selecting one prediction opens the four-choice travel-mode menu instead of immediately starting a route.
 - [ ] The travel-mode menu contains 🚶徒歩 / 🚗自動車 / 🚲自転車 / 🚆公共交通, and initial focus matches the currently selected/default mode rather than always falling back to 徒歩.
 - [ ] Choosing a mode starts routing only to the selected prediction and uses that mode; rapid D-pad movement does not resurrect an older Places result.
 - [ ] If native composer is unavailable, move from the search input to the on-screen keyboard and enter a short query with D-pad only.
 - [ ] On the fallback keyboard, horizontal movement stays within the visible row, vertical movement matches the displayed geometry, and predictions can still be selected normally.
+- [ ] Enter the prediction list from the fallback keyboard, then press `↑` on the first prediction; focus returns to the fallback keyboard rather than jumping to the standard search input.
 
 ### 4. Route start and normal guidance
 
