@@ -106,7 +106,7 @@
   let searchLoading = false;
   let searchEmpty = false;
   let placeDetailsLoading = false;
-  let searchZone = "keys"; // keys / preds
+  let searchZone = "input"; // input / keys / preds
   let keyIdx = 0;
   let predIdx = 0;
   let predictionRequestId = 0; // 古い Autocomplete callback を無視するための世代番号
@@ -881,11 +881,12 @@
     searchLoading = false;
     searchEmpty = false;
     placeDetailsLoading = false;
-    searchZone = "keys";
+    searchZone = "input";
     keyIdx = 0;
     predIdx = 0;
     els.search.classList.remove("hidden");
     renderSearch();
+    els.searchQuery.focus();
   }
 
   function closeSearch() {
@@ -894,6 +895,7 @@
     clearError("places"); // 明示的に検索を閉じたら Places 由来の stale error も解除
     placeDetailsLoading = false;
     searchOpen = false;
+    els.searchQuery.blur();
     els.search.classList.add("hidden");
     if (followMode) {
       const currentPosition = userMarker && userMarker.getPosition();
@@ -902,13 +904,15 @@
   }
 
   function renderSearch() {
-    els.searchQuery.textContent = searchQuery || "（A〜Zで入力 → 候補を選択）";
+    if (els.searchQuery.value !== searchQuery) els.searchQuery.value = searchQuery;
+    els.searchQuery.classList.toggle("focused", searchZone === "input");
     els.searchKeyboard.innerHTML = "";
     SEARCH_KEYS.forEach((k, i) => {
       const d = document.createElement("div");
       d.className = "key" + (searchZone === "keys" && i === keyIdx ? " focused" : "");
       d.textContent = k;
       d.addEventListener("click", () => {
+        els.searchQuery.blur();
         searchZone = "keys";
         keyIdx = i;
         placeDetailsLoading = false;
@@ -931,7 +935,7 @@
       const li = document.createElement("li");
       li.className = "pred" + (searchZone === "preds" && i === predIdx ? " focused" : "");
       li.textContent = p.description;
-      li.addEventListener("click", () => { searchZone = "preds"; predIdx = i; selectPrediction(p); });
+      li.addEventListener("click", () => { els.searchQuery.blur(); searchZone = "preds"; predIdx = i; selectPrediction(p); });
       els.searchPreds.appendChild(li);
     });
     const focusedPrediction = els.searchPreds.querySelector(".focused");
@@ -940,6 +944,19 @@
     }
   }
 
+  els.searchQuery.addEventListener("focus", () => {
+    if (!searchOpen) return;
+    searchZone = "input";
+    renderSearch();
+  });
+
+  els.searchQuery.addEventListener("input", () => {
+    if (!searchOpen) return;
+    searchQuery = els.searchQuery.value;
+    searchZone = "input";
+    refreshPredictions();
+    renderSearch();
+  });
   function pressKey(k) {
     if (k === "✕") { closeSearch(); return; }
     if (k === "⌫") searchQuery = searchQuery.slice(0, -1);
@@ -1019,11 +1036,22 @@
     placeDetailsLoading = false;
     placeDetailsRequestId++; // 検索操作を再開したら未完了の Place Details callback を無効化
     clearError("places"); // 検索を続ける D-pad 操作で stale Places error を解除
+    if (searchZone === "input") {
+      if (key === "ArrowDown") {
+        els.searchQuery.blur();
+        searchZone = "keys";
+        renderSearch();
+      }
+      return;
+    }
     if (searchZone === "keys") {
       switch (key) {
         case "ArrowLeft":  if (keyIdx % SEARCH_COLS > 0) keyIdx--; break;
         case "ArrowRight": if (keyIdx % SEARCH_COLS < SEARCH_COLS - 1 && keyIdx + 1 < SEARCH_KEYS.length) keyIdx++; break;
-        case "ArrowUp":    if (keyIdx - SEARCH_COLS >= 0) keyIdx -= SEARCH_COLS; break;
+        case "ArrowUp":
+          if (keyIdx - SEARCH_COLS >= 0) keyIdx -= SEARCH_COLS;
+          else { searchZone = "input"; els.searchQuery.focus(); }
+          break;
         case "ArrowDown": {
           const below = keyIdx + SEARCH_COLS;
           if (below < SEARCH_KEYS.length) keyIdx = below;
@@ -1858,6 +1886,8 @@
   document.addEventListener("keydown", (e) => {
     // 検索画面: キーボード/候補を操作
     if (searchOpen) {
+      const nativeSearchInputActive = searchZone === "input" && document.activeElement === els.searchQuery;
+      if (nativeSearchInputActive && e.key !== "ArrowDown") return;
       if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "].indexOf(e.key) >= 0) {
         searchKeydown(e.key);
         e.preventDefault();

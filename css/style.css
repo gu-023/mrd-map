@@ -222,10 +222,17 @@ html, body {
   z-index: 16;
 }
 #search-query {
-  font-size: 26px; font-weight: 700; color: var(--accent);
-  min-height: 34px; padding: 4px 8px; margin-bottom: 8px;
-  border-bottom: 2px solid rgba(255, 255, 255, 0.2);
+  width: 100%; min-height: 42px; padding: 4px 8px; margin-bottom: 8px;
+  font: inherit; font-size: 26px; font-weight: 700; color: var(--accent);
+  background: transparent; outline: none;
+  border: 2px solid rgba(255, 255, 255, 0.2); border-radius: 10px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+#search-query::placeholder { color: rgba(255, 255, 255, 0.55); }
+#search-query.focused {
+  border-color: var(--focus);
+  box-shadow: 0 0 12px var(--focus);
+  background: rgba(77, 214, 160, 0.10);
 }
 #search-keyboard {
   display: flex; flex-wrap: wrap; gap: 4px; justify-content: center;
