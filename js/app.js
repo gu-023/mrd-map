@@ -98,7 +98,6 @@
   let menuItems = [];
   // 検索
   let placesSearchApi = null;
-  let searchToken = null;
   let searchOpen = false;
   let searchQuery = "";
   let searchPredictions = [];
@@ -884,6 +883,14 @@
   function createPlacesSearchApi() {
     const autocompleteService = new google.maps.places.AutocompleteService();
     const placesService = new google.maps.places.PlacesService(map);
+    let sessionToken = null;
+    function createSessionToken() {
+      return new google.maps.places.AutocompleteSessionToken();
+    }
+    function requireSessionToken() {
+      if (!sessionToken) sessionToken = createSessionToken();
+      return sessionToken;
+    }
     function normalizeStatus(status) {
       let kind = "error";
       if (status === "OK") kind = "ok";
@@ -895,11 +902,13 @@
       };
     }
     return {
-      createSessionToken: () => new google.maps.places.AutocompleteSessionToken(),
-      getPredictions: (input, sessionToken, location, callback) => {
+      startSession: () => {
+        sessionToken = createSessionToken();
+      },
+      getPredictions: (input, location, callback) => {
         const request = {
           input,
-          sessionToken,
+          sessionToken: requireSessionToken(),
           componentRestrictions: { country: "jp" },
         };
         if (location) {
@@ -917,13 +926,17 @@
           )
         );
       },
-      getLocation: (placeId, sessionToken, callback) => placesService.getDetails(
-        { placeId, fields: ["geometry"], sessionToken },
-        (place, status) => callback(
-          place && place.geometry && place.geometry.location ? place.geometry.location : null,
-          normalizeStatus(status)
-        )
-      ),
+      getLocation: (placeId, callback) => {
+        const requestToken = requireSessionToken();
+        sessionToken = createSessionToken();
+        placesService.getDetails(
+          { placeId, fields: ["geometry"], sessionToken: requestToken },
+          (place, status) => callback(
+            place && place.geometry && place.geometry.location ? place.geometry.location : null,
+            normalizeStatus(status)
+          )
+        );
+      },
     };
   }
 
@@ -938,7 +951,7 @@
     }
     closeMenu();
     if (!placesSearchApi) placesSearchApi = createPlacesSearchApi();
-    searchToken = placesSearchApi.createSessionToken();
+    placesSearchApi.startSession();
     searchOpen = true;
     searchQuery = "";
     searchPredictions = [];
@@ -1061,7 +1074,7 @@
     searchLoading = q.length > 0;
     if (!searchLoading) return;
     const pos = userMarker && userMarker.getPosition();
-    placesSearchApi.getPredictions(q, searchToken, pos, (preds, status) => {
+    placesSearchApi.getPredictions(q, pos, (preds, status) => {
       if (requestId !== predictionRequestId || !searchOpen) return;
       searchLoading = false;
       const statusKind = status && status.kind;
@@ -1095,11 +1108,8 @@
     const requestId = ++placeDetailsRequestId;
     placeDetailsLoading = true;
     renderSearch();
-    const requestToken = searchToken;
-    searchToken = placesSearchApi.createSessionToken(); // Place Details request で現在の Autocomplete セッションを終了
     placesSearchApi.getLocation(
       p.placeId,
-      requestToken,
       (location, status) => {
         if (requestId !== placeDetailsRequestId || !searchOpen) return;
         placeDetailsLoading = false;
