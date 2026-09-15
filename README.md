@@ -17,7 +17,8 @@ js/config.js             ★ローカル開発用。キー入り・.gitignore �
 - 移動モード（✥）: `←↑↓→` で地図移動、決定で終了
 - コンパス（🧭）: 向いている方向が画面の上になるよう地図を回転（ヘディングアップ）。中央の矢印が進行方向、ステータスに方位を表示
 - ナビ（🚩）: **目的地メニュー**を開く（`↑↓`で選択 / 決定 / `←`戻る）
-  - 🔍 場所を検索（オンスクリーンキーボードで入力→候補を選択。↑↓←→移動/決定/✕閉じる）
+  - 🔍 場所を検索: 標準の検索入力欄から、Ray-Ban Display が対応する場合はネイティブ composer の音声/手書き入力を使用。候補が出たら `↓` で先頭候補へ直接移動できる。composer が使えない場合もオンスクリーンキーボードを D-pad で操作できる
+  - 検索候補を確定後、🚶 徒歩 / 🚗 自動車 / 🚲 自転車 / 🚆 公共交通から移動手段を選んで経路を開始する。初期フォーカスは現在選択中の移動手段
   - 📍 地図で目的地を選ぶ（中央の十字に合わせて決定）
   - ⭐ お気に入り / 🕘 最近の目的地（端末内に保存・ログイン不要）
   - 🚶 移動手段: 徒歩 / 🚗 自動車 / 🚲 自転車 / 🚆 公共交通
@@ -77,17 +78,18 @@ python3 -m http.server 8080                # http://localhost:8080 を Chrome �
 - Chrome を 600×600 にして確認（DevTools のデバイスツールバー）
 - 位置情報は DevTools → ⋮ → More tools → Sensors で緯度経度を上書き
 - D-pad は **矢印キー**、決定は **Enter**
+- 検索入力欄はデスクトップChromeでは通常の検索inputとして動く。Ray-Ban Display固有のnative composer（音声/手書き）は実機smoke testで確認し、composerが利用できない場合は既存のオンスクリーンキーボードfallbackを確認する
 - ローカルで実キーを使う場合は、リファラーに `http://localhost:8080/*` を一時追加（不要になったら削除）
 
 ---
 
 ## 実機RC確認
 
-主要なナビ機能は実装済みです。Ray-Ban Display 実機でリリース候補を確認するときは、D-pad、GPS、検索、ルート案内、リルート、コンパス、suspend/resume をまとめた [実機 smoke-test checklist](docs/RAY_BAN_DISPLAY_SMOKE_TEST.md) を使ってください。
+主要なナビ機能は実装済みです。Ray-Ban Display 実機でリリース候補を確認するときは、D-pad、GPS、native composer検索、検索後の移動手段選択、ルート案内、リルート、コンパス、suspend/resume をまとめた [実機 smoke-test checklist](docs/RAY_BAN_DISPLAY_SMOKE_TEST.md) を使ってください。
 
 ## 今後の拡張
 
-- 音声入力など、Web App が直接提供しないデバイス機能は別の実装方式・公式SDKの適用可否を確認してから追加する
+- Places / Directions のGoogle Maps Platform側API世代更新は、現在のRay-Ban向け検索・D-pad・HUD UXを保ったまま段階的に行う
 - 公式 Claude Code プラグイン（このデバイス専用の雛形・スキル）:
   ```
   /plugin marketplace add https://github.com/facebookincubator/meta-wearables-webapp

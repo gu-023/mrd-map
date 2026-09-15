@@ -1,6 +1,6 @@
 # Ray-Ban Display real-device smoke test
 
-Use this checklist before treating a build as release-candidate quality on a physical Ray-Ban Display. It is intentionally short enough to run repeatedly after navigation, D-pad, geolocation, compass, or lifecycle changes.
+Use this checklist before treating a build as release-candidate quality on a physical Ray-Ban Display. It is intentionally short enough to run repeatedly after navigation, D-pad, geolocation, compass, search/composer, or lifecycle changes.
 
 ## Preconditions
 
@@ -32,13 +32,21 @@ A run passes only if every required check below passes. Any crash, stuck overlay
 - [ ] A failed attempt does not leave the app permanently believing a continuous watch is active.
 - [ ] No unrelated error overlay is cleared by a successful GPS retry.
 
-### 3. Search and destination selection
+### 3. Native composer search, fallback input, and destination selection
 
-- [ ] Open search and enter a short query using only the on-screen keyboard and D-pad.
-- [ ] Horizontal key movement stays within the visible keyboard row; vertical movement matches the displayed geometry.
+Run the native-composer path first. Then repeat the input portion with the fallback keyboard if the device/build exposes a way to do so.
+
+- [ ] Open `🔍 場所を検索`; the standard search input is the initial focus target.
+- [ ] Activate the search input using the normal Ray-Ban Display interaction. When the host supports it, the native composer accepts voice or handwriting input without requiring the on-screen fallback keyboard.
+- [ ] The committed composer text appears in the search field and starts Places prediction loading.
 - [ ] `検索中…`, an empty-result state, or predictions are visually distinguishable.
+- [ ] When predictions exist, one `↓` from the search input moves directly to the first prediction instead of forcing a trip through the fallback keyboard.
 - [ ] Moving through predictions keeps the focused item visible.
-- [ ] Selecting one prediction starts routing only to that selected destination; rapid D-pad movement does not resurrect an older result.
+- [ ] Selecting one prediction opens the four-choice travel-mode menu instead of immediately starting a route.
+- [ ] The travel-mode menu contains 🚶徒歩 / 🚗自動車 / 🚲自転車 / 🚆公共交通, and initial focus matches the currently selected/default mode rather than always falling back to 徒歩.
+- [ ] Choosing a mode starts routing only to the selected prediction and uses that mode; rapid D-pad movement does not resurrect an older Places result.
+- [ ] If native composer is unavailable, move from the search input to the on-screen keyboard and enter a short query with D-pad only.
+- [ ] On the fallback keyboard, horizontal movement stays within the visible row, vertical movement matches the displayed geometry, and predictions can still be selected normally.
 
 ### 4. Route start and normal guidance
 
@@ -106,6 +114,8 @@ Ray-Ban / firmware:
 Meta AI app version:
 Phone OS / model:
 Test mode: walking / driving / stationary
+Search input: native voice / native handwriting / fallback keyboard
+Selected travel mode: walking / driving / bicycling / transit
 Result: PASS / FAIL
 Failed checklist item(s):
 Observed behavior:
