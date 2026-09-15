@@ -886,7 +886,16 @@
     const placesService = new google.maps.places.PlacesService(map);
     return {
       createSessionToken: () => new google.maps.places.AutocompleteSessionToken(),
-      getPredictions: (request, callback) => autocompleteService.getPlacePredictions(request, callback),
+      getPredictions: (request, callback) => autocompleteService.getPlacePredictions(
+        request,
+        (predictions, status) => callback(
+          predictions ? predictions.map((prediction) => ({
+            placeId: prediction.place_id,
+            label: prediction.description,
+          })) : predictions,
+          status
+        )
+      ),
       getDetails: (request, callback) => placesService.getDetails(request, callback),
     };
   }
@@ -975,7 +984,7 @@
     searchPredictions.forEach((p, i) => {
       const li = document.createElement("li");
       li.className = "pred" + (searchZone === "preds" && i === predIdx ? " focused" : "");
-      li.textContent = p.description;
+      li.textContent = p.label;
       li.addEventListener("click", () => { els.searchQuery.blur(); searchZone = "preds"; predIdx = i; selectPrediction(p); });
       els.searchPreds.appendChild(li);
     });
@@ -1042,7 +1051,7 @@
       searchEmpty = status === "ZERO_RESULTS" || (status === "OK" && searchPredictions.length === 0);
       if (returnPrediction && searchZone === "input" && searchPredictions.length) {
         const restoredIdx = returnPrediction.placeId
-          ? searchPredictions.findIndex((prediction) => prediction.place_id === returnPrediction.placeId)
+          ? searchPredictions.findIndex((prediction) => prediction.placeId === returnPrediction.placeId)
           : -1;
         searchZone = "preds";
         predictionBackZone = returnPrediction.backZone === "keys" ? "keys" : "input";
@@ -1058,7 +1067,7 @@
 
   function selectPrediction(p) {
     if (!p || placeDetailsLoading) return;
-    searchReturnPrediction = { placeId: p.place_id || null, index: predIdx, backZone: predictionBackZone };
+    searchReturnPrediction = { placeId: p.placeId || null, index: predIdx, backZone: predictionBackZone };
     clearError("places"); // 再試行中は古い Places error だけ解除
     const requestId = ++placeDetailsRequestId;
     placeDetailsLoading = true;
@@ -1066,14 +1075,14 @@
     const requestToken = searchToken;
     searchToken = placesSearchApi.createSessionToken(); // Place Details request で現在の Autocomplete セッションを終了
     placesSearchApi.getDetails(
-      { placeId: p.place_id, fields: ["geometry"], sessionToken: requestToken },
+      { placeId: p.placeId, fields: ["geometry"], sessionToken: requestToken },
       (res, status) => {
         if (requestId !== placeDetailsRequestId || !searchOpen) return;
         placeDetailsLoading = false;
         if (status === "OK" && res && res.geometry && res.geometry.location) {
           clearError("places");
           closeSearch();
-          openSearchTravelMenu(res.geometry.location, p.description);
+          openSearchTravelMenu(res.geometry.location, p.label);
         } else {
           showError("場所を取得できません", placesErrorDetail(status), "places");
           renderSearch();
