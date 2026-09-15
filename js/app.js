@@ -720,9 +720,9 @@
   }
 
   /* ---------- メニュー（上下キーで選択） ---------- */
-  function openMenu(title, items) {
+  function openMenu(title, items, initialIdx = 0) {
     menuItems = items;
-    menuIdx = 0;
+    menuIdx = Math.max(0, Math.min(initialIdx, items.length - 1));
     menuOpen = true;
     els.menuTitle.textContent = title;
     renderMenu();
@@ -859,7 +859,7 @@
       },
     }));
     items.push({ label: "← 戻る", action: openDestinationMenu });
-    openMenu("移動手段", items);
+    openMenu("移動手段", items, modes.findIndex(([m]) => m === travelMode));
   }
 
   // 検索結果を確定した後に、その目的地へ使う移動手段を選ぶ。
@@ -876,7 +876,7 @@
       },
     }));
     items.push({ label: "← 戻る", action: openDestinationMenu });
-    openMenu("移動手段", items);
+    openMenu("移動手段", items, modes.findIndex(([m]) => m === travelMode));
   }
 
   /* ---------- 場所検索（オンスクリーンキーボード＋Autocomplete） ---------- */
