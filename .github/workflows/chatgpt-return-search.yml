@@ -60,7 +60,9 @@ jobs:
         run: |
           node --check js/app.js
           git diff --check
-          test "$(git diff --name-only | sort)" = "$(printf '%s\n' '.github/workflows/chatgpt-return-search.yml' 'js/app.js' | sort)"
+          changed="$( { git diff --name-only; git diff --cached --name-only; } | sort -u )"
+          expected="$(printf '%s\n' '.github/workflows/chatgpt-return-search.yml' 'js/app.js' | sort)"
+          test "$changed" = "$expected"
           grep -F '← 検索結果へ戻る' js/app.js
           grep -F 'function reopenSearchResults()' js/app.js
       - name: Commit product change
