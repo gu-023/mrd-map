@@ -23,34 +23,35 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
 
-          def replace_once(path, old, new):
-              p = Path(path)
-              text = p.read_text()
-              count = text.count(old)
-              if count != 1:
-                  raise SystemExit(f"{path}: expected exactly one anchor, found {count}")
-              p.write_text(text.replace(old, new, 1))
+          def load(path):
+              return Path(path).read_text().splitlines()
 
-          replace_once(
-              "index.html",
-              '      <div id="search-query"></div>',
-              '      <input id="search-query" type="search" autocomplete="off" enterkeyhint="search" aria-label="場所を検索" placeholder="🎙 音声/手書き入力" />',
-          )
-          replace_once(
-              "index.html",
-              '      <div id="search-hint">↑↓←→ 移動 / 決定 / ✕ 閉じる</div>',
-              '      <div id="search-hint">入力欄: 決定で音声/手書き / ↓ キーボード・候補 / ✕ 閉じる</div>',
-          )
+          def save(path, lines):
+              Path(path).write_text("\n".join(lines) + "\n")
 
-          replace_once(
-              "css/style.css",
-              '''#search-query {
-            font-size: 26px; font-weight: 700; color: var(--accent);
-            min-height: 34px; padding: 4px 8px; margin-bottom: 8px;
-            border-bottom: 2px solid rgba(255, 255, 255, 0.2);
-            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-          }'''.replace("          ", ""),
-              '''#search-query {
+          def one(lines, predicate, label, start=0, end=None):
+              if end is None:
+                  end = len(lines)
+              matches = [i for i in range(start, end) if predicate(lines[i])]
+              if len(matches) != 1:
+                  raise SystemExit(f"{label}: expected one match, found {len(matches)}")
+              return matches[0]
+
+          # index.html: make the existing query row a standards-based search input so
+          # Ray-Ban's native composer can own text/voice/handwriting entry.
+          lines = load("index.html")
+          i = one(lines, lambda s: s.strip() == '<div id="search-query"></div>', "search query element")
+          lines[i] = '      <input id="search-query" type="search" autocomplete="off" enterkeyhint="search" aria-label="場所を検索" placeholder="🎙 音声/手書き入力" />'
+          i = one(lines, lambda s: 'id="search-hint"' in s, "search hint")
+          lines[i] = '      <div id="search-hint">入力欄: 決定で音声/手書き / ↓ キーボード・候補 / ✕ 閉じる</div>'
+          save("index.html", lines)
+
+          # css/style.css: retain the same compact footprint, but make real input
+          # focus visible on the additive display and suppress browser chrome.
+          lines = load("css/style.css")
+          start = one(lines, lambda s: s.strip() == '#search-query {', "search query style")
+          end = one(lines, lambda s: s.strip() == '#search-keyboard {', "search keyboard style", start=start + 1)
+          replacement = '''#search-query {
             width: 100%; min-height: 42px; padding: 4px 8px; margin-bottom: 8px;
             font: inherit; font-size: 26px; font-weight: 700; color: var(--accent);
             background: transparent; outline: none;
@@ -62,58 +63,45 @@ jobs:
             border-color: var(--focus);
             box-shadow: 0 0 12px var(--focus);
             background: rgba(77, 214, 160, 0.10);
-          }'''.replace("          ", ""),
-          )
+          }'''.splitlines()
+          replacement = [s[10:] if s.startswith("          ") else s for s in replacement]
+          lines[start:end] = replacement
+          save("css/style.css", lines)
 
-          replace_once(
-              "js/app.js",
-              '''    searchZone = "keys";
-              keyIdx = 0;
-              predIdx = 0;
-              els.search.classList.remove("hidden");
-              renderSearch();'''.replace("              ", ""),
-              '''    searchZone = "input";
-              keyIdx = 0;
-              predIdx = 0;
-              els.search.classList.remove("hidden");
-              renderSearch();
-              els.searchQuery.focus();'''.replace("              ", ""),
-          )
-          replace_once(
-              "js/app.js",
-              '''    searchOpen = false;
-              els.search.classList.add("hidden");'''.replace("              ", ""),
-              '''    searchOpen = false;
-              els.searchQuery.blur();
-              els.search.classList.add("hidden");'''.replace("              ", ""),
-          )
-          replace_once(
-              "js/app.js",
-              '''  function renderSearch() {
-            els.searchQuery.textContent = searchQuery || "（A〜Zで入力 → 候補を選択）";
-            els.searchKeyboard.innerHTML = "";'''.replace("          ", ""),
-              '''  function renderSearch() {
-            if (els.searchQuery.value !== searchQuery) els.searchQuery.value = searchQuery;
-            els.searchQuery.classList.toggle("focused", searchZone === "input");
-            els.searchKeyboard.innerHTML = "";'''.replace("          ", ""),
-          )
-          replace_once(
-              "js/app.js",
-              '''      d.addEventListener("click", () => {
-                searchZone = "keys";'''.replace("              ", ""),
-              '''      d.addEventListener("click", () => {
-                els.searchQuery.blur();
-                searchZone = "keys";'''.replace("              ", ""),
-          )
-          replace_once(
-              "js/app.js",
-              '''      li.addEventListener("click", () => { searchZone = "preds"; predIdx = i; selectPrediction(p); });'''.replace("      ", ""),
-              '''      li.addEventListener("click", () => { els.searchQuery.blur(); searchZone = "preds"; predIdx = i; selectPrediction(p); });'''.replace("      ", ""),
-          )
-          replace_once(
-              "js/app.js",
-              '''  function pressKey(k) {''',
-              '''  els.searchQuery.addEventListener("focus", () => {
+          lines = load("js/app.js")
+
+          open_start = one(lines, lambda s: s.strip() == 'function openSearch() {', "openSearch")
+          close_start = one(lines, lambda s: s.strip() == 'function closeSearch() {', "closeSearch", start=open_start + 1)
+          render_start = one(lines, lambda s: s.strip() == 'function renderSearch() {', "renderSearch", start=close_start + 1)
+          press_start = one(lines, lambda s: s.strip() == 'function pressKey(k) {', "pressKey", start=render_start + 1)
+          search_key_start = one(lines, lambda s: s.strip() == 'function searchKeydown(key) {', "searchKeydown", start=press_start + 1)
+
+          i = one(lines, lambda s: s.strip() == 'searchZone = "keys";', "openSearch initial zone", start=open_start, end=close_start)
+          lines[i] = '    searchZone = "input";'
+          i = one(lines, lambda s: s.strip() == 'renderSearch();', "openSearch render", start=open_start, end=close_start)
+          lines.insert(i + 1, '    els.searchQuery.focus();')
+          close_start += 1; render_start += 1; press_start += 1; search_key_start += 1
+
+          i = one(lines, lambda s: s.strip() == 'searchOpen = false;', "closeSearch state", start=close_start, end=render_start)
+          lines.insert(i + 1, '    els.searchQuery.blur();')
+          render_start += 1; press_start += 1; search_key_start += 1
+
+          i = one(lines, lambda s: 'els.searchQuery.textContent =' in s, "render search query", start=render_start, end=press_start)
+          lines[i:i + 1] = [
+              '    if (els.searchQuery.value !== searchQuery) els.searchQuery.value = searchQuery;',
+              '    els.searchQuery.classList.toggle("focused", searchZone === "input");',
+          ]
+          press_start += 1; search_key_start += 1
+
+          i = one(lines, lambda s: 'd.addEventListener("click"' in s, "virtual key click", start=render_start, end=press_start)
+          lines.insert(i + 1, '        els.searchQuery.blur();')
+          press_start += 1; search_key_start += 1
+
+          i = one(lines, lambda s: 'li.addEventListener("click"' in s and 'selectPrediction' in s, "prediction click", start=render_start, end=press_start)
+          indent = lines[i][:len(lines[i]) - len(lines[i].lstrip())]
+          lines[i] = indent + 'li.addEventListener("click", () => { els.searchQuery.blur(); searchZone = "preds"; predIdx = i; selectPrediction(p); });'
+
+          listeners = '''  els.searchQuery.addEventListener("focus", () => {
             if (!searchOpen) return;
             searchZone = "input";
             renderSearch();
@@ -126,51 +114,41 @@ jobs:
             refreshPredictions();
             renderSearch();
           });
+          '''.splitlines()
+          listeners = [s[10:] if s.startswith("          ") else s for s in listeners]
+          lines[press_start:press_start] = listeners
+          search_key_start += len(listeners)
 
-          function pressKey(k) {'''.replace("          ", ""),
-          )
-          replace_once(
-              "js/app.js",
-              '''    if (searchZone === "keys") {
-              switch (key) {'''.replace("              ", ""),
-              '''    if (searchZone === "input") {
-              if (key === "ArrowDown") {
-                els.searchQuery.blur();
-                searchZone = "keys";
-                renderSearch();
-              }
-              return;
+          first_keys = one(lines, lambda s: s.strip() == 'if (searchZone === "keys") {', "search keyboard zone", start=search_key_start)
+          input_block = '''    if (searchZone === "input") {
+            if (key === "ArrowDown") {
+              els.searchQuery.blur();
+              searchZone = "keys";
+              renderSearch();
             }
-            if (searchZone === "keys") {
-              switch (key) {'''.replace("              ", ""),
-          )
-          replace_once(
-              "js/app.js",
-              '''        case "ArrowUp":    if (keyIdx - SEARCH_COLS >= 0) keyIdx -= SEARCH_COLS; break;''',
-              '''        case "ArrowUp":
-            if (keyIdx - SEARCH_COLS >= 0) keyIdx -= SEARCH_COLS;
-            else { searchZone = "input"; els.searchQuery.focus(); }
-            break;''',
-          )
-          replace_once(
-              "js/app.js",
-              '''    if (searchOpen) {
-              if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "].indexOf(e.key) >= 0) {
-                searchKeydown(e.key);
-                e.preventDefault();
-              }
-              return;
-            }'''.replace("              ", ""),
-              '''    if (searchOpen) {
-              const nativeSearchInputActive = searchZone === "input" && document.activeElement === els.searchQuery;
-              if (nativeSearchInputActive && e.key !== "ArrowDown") return;
-              if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "].indexOf(e.key) >= 0) {
-                searchKeydown(e.key);
-                e.preventDefault();
-              }
-              return;
-            }'''.replace("              ", ""),
-          )
+            return;
+          }
+          '''.splitlines()
+          input_block = [s[10:] if s.startswith("          ") else s for s in input_block]
+          lines[first_keys:first_keys] = input_block
+
+          i = one(lines, lambda s: 'case "ArrowUp":' in s and 'keyIdx - SEARCH_COLS' in s, "keyboard arrow up", start=search_key_start)
+          indent = lines[i][:len(lines[i]) - len(lines[i].lstrip())]
+          lines[i:i + 1] = [
+              indent + 'case "ArrowUp":',
+              indent + '  if (keyIdx - SEARCH_COLS >= 0) keyIdx -= SEARCH_COLS;',
+              indent + '  else { searchZone = "input"; els.searchQuery.focus(); }',
+              indent + '  break;',
+          ]
+
+          global_key = one(lines, lambda s: s.strip() == 'document.addEventListener("keydown", (e) => {', "global keydown")
+          search_if = one(lines, lambda s: s.strip() == 'if (searchOpen) {', "global search guard", start=global_key)
+          lines[search_if + 1:search_if + 1] = [
+              '      const nativeSearchInputActive = searchZone === "input" && document.activeElement === els.searchQuery;',
+              '      if (nativeSearchInputActive && e.key !== "ArrowDown") return;',
+          ]
+
+          save("js/app.js", lines)
           PY
 
       - name: Static and focused validation
@@ -184,6 +162,7 @@ jobs:
           grep -Fq 'els.searchQuery.addEventListener("input"' js/app.js
           grep -Fq 'nativeSearchInputActive' js/app.js
           grep -Fq '#search-query.focused' css/style.css
+          test "$(git diff --name-only | sort | tr '\n' ' ')" = "css/style.css index.html js/app.js "
           if git grep -nE 'AIza[0-9A-Za-z_-]{35}' -- .; then
             echo "::error::A Google API key pattern is present in a tracked file"
             exit 1
