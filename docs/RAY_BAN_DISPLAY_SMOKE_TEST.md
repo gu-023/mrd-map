@@ -45,6 +45,7 @@ Run the native-composer path first. Then repeat the input portion with the fallb
 - [ ] Moving through predictions keeps the focused item visible.
 - [ ] Selecting one prediction opens the four-choice travel-mode menu instead of immediately starting a route.
 - [ ] The travel-mode menu contains 🚶徒歩 / 🚗自動車 / 🚲自転車 / 🚆公共交通, and initial focus matches the currently selected/default mode rather than always falling back to 徒歩.
+- [ ] After selecting a prediction, open the travel-mode menu and press `← 検索結果へ戻る`; the previously selected prediction regains D-pad focus, and after moving back to the first prediction, one `↑` returns to the input surface that originally entered the prediction list (standard search input for native composer, fallback keyboard for D-pad fallback).
 - [ ] Choosing a mode starts routing only to the selected prediction and uses that mode; rapid D-pad movement does not resurrect an older Places result.
 - [ ] If native composer is unavailable, move from the search input to the on-screen keyboard and enter a short query with D-pad only.
 - [ ] On the fallback keyboard, horizontal movement stays within the visible row, vertical movement matches the displayed geometry, and predictions can still be selected normally.
