@@ -1,34 +1,33 @@
 name: ChatGPT native search polish helper
 
-on:
-  push:
-    branches:
-      - chatgpt/native-search-composer-entry
+on: [push]
 
 permissions:
   contents: write
 
 jobs:
-  polish-and-verify:
+  polish:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: chatgpt/native-search-composer-entry
 
-      - name: Polish native search code
+      - name: Polish and validate
         shell: bash
         run: |
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
-          p = Path('js/app.js')
+          p = Path("js/app.js")
           text = p.read_text()
+          text = text.replace(
+              '  let searchZone = "keys"; // keys / preds',
+              '  let searchZone = "input"; // input / keys / preds',
+              1,
+          )
 
-          replacements = [
-            ('  let searchZone = "keys"; // keys / preds',
-             '  let searchZone = "input"; // input / keys / preds'),
-            ('''  els.searchQuery.addEventListener("focus", () => {
+          bad_focus = '''  els.searchQuery.addEventListener("focus", () => {
           if (!searchOpen) return;
           searchZone = "input";
           renderSearch();
@@ -40,8 +39,8 @@ jobs:
           searchZone = "input";
           refreshPredictions();
           renderSearch();
-        });'''.replace('        ', ''),
-             '''  els.searchQuery.addEventListener("focus", () => {
+        });'''.replace("        ", "")
+          good_focus = '''  els.searchQuery.addEventListener("focus", () => {
             if (!searchOpen) return;
             searchZone = "input";
             renderSearch();
@@ -53,46 +52,41 @@ jobs:
             searchZone = "input";
             refreshPredictions();
             renderSearch();
-          });'''.replace('          ', '')),
-            ('''    if (searchZone === "input") {
+          });'''.replace("          ", "")
+          if bad_focus not in text:
+              raise SystemExit("focus listener anchor missing")
+          text = text.replace(bad_focus, good_focus, 1)
+
+          bad_zone = '''    if (searchZone === "input") {
         if (key === "ArrowDown") {
           els.searchQuery.blur();
           searchZone = "keys";
           renderSearch();
         }
         return;
-      }'''.replace('      ', ''),
-             '''    if (searchZone === "input") {
+      }'''.replace("      ", "")
+          good_zone = '''    if (searchZone === "input") {
             if (key === "ArrowDown") {
               els.searchQuery.blur();
               searchZone = "keys";
               renderSearch();
             }
             return;
-          }'''.replace('          ', '')),
-          ]
-
-          for old, new in replacements:
-              count = text.count(old)
-              if count != 1:
-                  raise SystemExit(f'expected one polish anchor, found {count}: {old[:50]!r}')
-              text = text.replace(old, new, 1)
+          }'''.replace("          ", "")
+          if bad_zone not in text:
+              raise SystemExit("input zone anchor missing")
+          text = text.replace(bad_zone, good_zone, 1)
           p.write_text(text)
           PY
-
-      - name: Validate
-        shell: bash
-        run: |
-          set -euo pipefail
           node --check js/app.js
           git diff --check
           grep -Fq 'let searchZone = "input"; // input / keys / preds' js/app.js
           if git grep -nE 'AIza[0-9A-Za-z_-]{35}' -- .; then
-            echo "::error::A Google API key pattern is present in a tracked file"
+            echo "Google API key pattern found"
             exit 1
           fi
 
-      - name: Commit polish and remove helper
+      - name: Commit and remove helper
         shell: bash
         run: |
           set -euo pipefail
