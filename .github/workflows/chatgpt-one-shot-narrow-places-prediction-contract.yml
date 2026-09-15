@@ -1,0 +1,127 @@
+name: ChatGPT one-shot narrow Places prediction contract
+
+on:
+  push:
+    branches:
+      - chatgpt/narrow-places-prediction-contract
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chatgpt/narrow-places-prediction-contract
+          fetch-depth: 0
+
+      - name: Narrow Places prediction request contract
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("js/app.js")
+          text = path.read_text()
+
+          old_adapter = '''      getPredictions: (request, callback) => autocompleteService.getPlacePredictions(
+            request,
+            (predictions, status) => callback(
+              predictions ? predictions.map((prediction) => ({
+                placeId: prediction.place_id,
+                label: prediction.description,
+              })) : predictions,
+              status
+            )
+          ),'''
+          new_adapter = '''      getPredictions: (input, sessionToken, location, callback) => {
+            const request = {
+              input,
+              sessionToken,
+              componentRestrictions: { country: "jp" },
+            };
+            if (location) {
+              request.location = location;
+              request.radius = 50000;
+            }
+            autocompleteService.getPlacePredictions(
+              request,
+              (predictions, status) => callback(
+                predictions ? predictions.map((prediction) => ({
+                  placeId: prediction.place_id,
+                  label: prediction.description,
+                })) : predictions,
+                status
+              )
+            );
+          },'''
+
+          old_call = '''    const req = {
+              input: q,
+              sessionToken: searchToken,
+              componentRestrictions: { country: "jp" },
+            };
+            const pos = userMarker && userMarker.getPosition();
+            if (pos) { req.location = pos; req.radius = 50000; }
+            placesSearchApi.getPredictions(req, (preds, status) => {'''
+          new_call = '''    const pos = userMarker && userMarker.getPosition();
+            placesSearchApi.getPredictions(q, searchToken, pos, (preds, status) => {'''
+
+          if text.count(old_adapter) != 1:
+              raise SystemExit(f"expected one adapter block, found {text.count(old_adapter)}")
+          if text.count(old_call) != 1:
+              raise SystemExit(f"expected one prediction call block, found {text.count(old_call)}")
+
+          text = text.replace(old_adapter, new_adapter).replace(old_call, new_call)
+          path.write_text(text)
+          PY
+
+      - name: Static checks
+        run: |
+          node --check js/app.js
+          git diff --check
+          python3 - <<'PY'
+          from pathlib import Path
+          text = Path("js/app.js").read_text()
+          start = text.index("function createPlacesSearchApi()")
+          end = text.index("function openSearch()", start)
+          adapter = text[start:end]
+          outside = text[:start] + text[end:]
+          required = [
+              'getPredictions: (input, sessionToken, location, callback) => {',
+              'componentRestrictions: { country: "jp" }',
+              'request.location = location;',
+              'request.radius = 50000;',
+              'placesSearchApi.getPredictions(q, searchToken, pos, (preds, status) => {',
+          ]
+          missing = [token for token in required if token not in text]
+          if missing:
+              raise SystemExit(f"missing expected tokens: {missing}")
+          for legacy_request_token in [
+              'componentRestrictions: { country: "jp" }',
+              'request.location = location;',
+              'request.radius = 50000;',
+          ]:
+              if legacy_request_token not in adapter:
+                  raise SystemExit(f"legacy prediction request detail left adapter: {legacy_request_token}")
+          if 'componentRestrictions: { country: "jp" }' in outside:
+              raise SystemExit("componentRestrictions leaked outside Places adapter")
+          if 'req.location' in outside or 'req.radius' in outside:
+              raise SystemExit("legacy location-bias request fields remain in search UI")
+          PY
+
+      - name: Ensure final diff is product-only
+        run: |
+          rm .github/workflows/chatgpt-one-shot-narrow-places-prediction-contract.yml
+          git diff --check
+          changed="$(git diff --name-only HEAD^ 2>/dev/null || true)"
+          test -f js/app.js
+
+      - name: Commit product change and helper cleanup
+        run: |
+          git config user.name "gu-023"
+          git config user.email "59335552+gu-023@users.noreply.github.com"
+          git add js/app.js .github/workflows/chatgpt-one-shot-narrow-places-prediction-contract.yml
+          git commit -m "Narrow Places prediction adapter contract"
+          git push origin HEAD:chatgpt/narrow-places-prediction-contract
