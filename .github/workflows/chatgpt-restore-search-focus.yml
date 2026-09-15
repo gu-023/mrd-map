@@ -1,0 +1,134 @@
+name: ChatGPT one-shot restore search result focus
+
+on:
+  push:
+    branches:
+      - chatgpt/restore-search-prediction-focus
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chatgpt/restore-search-prediction-focus
+          fetch-depth: 0
+      - name: Apply atomic search-result focus restore
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("js/app.js")
+          text = path.read_text()
+
+          anchor = "  let predIdx = 0;\n"
+          replacement = (
+              "  let predIdx = 0;\n"
+              "  let searchReturnPrediction = null; // 移動手段から戻る際に直前の候補へD-padフォーカスを復元\n"
+          )
+          if text.count(anchor) != 1:
+              raise SystemExit(f"predIdx anchor count={text.count(anchor)}")
+          text = text.replace(anchor, replacement, 1)
+
+          anchor = "    predIdx = 0;\n    els.search.classList.remove(\"hidden\");\n"
+          replacement = (
+              "    predIdx = 0;\n"
+              "    searchReturnPrediction = null;\n"
+              "    els.search.classList.remove(\"hidden\");\n"
+          )
+          if text.count(anchor) != 1:
+              raise SystemExit(f"openSearch reset anchor count={text.count(anchor)}")
+          text = text.replace(anchor, replacement, 1)
+
+          old = '''  function reopenSearchResults() {
+            closeMenu();
+            searchOpen = true;
+            placeDetailsLoading = false;
+            searchZone = "input";
+            els.search.classList.remove("hidden");
+            refreshPredictions();
+            renderSearch();
+            els.searchQuery.focus();
+          }
+          '''
+          new = '''  function reopenSearchResults() {
+            closeMenu();
+            searchOpen = true;
+            placeDetailsLoading = false;
+            searchZone = "input";
+            els.search.classList.remove("hidden");
+            refreshPredictions(searchReturnPrediction);
+            renderSearch();
+          }
+          '''
+          if text.count(old) != 1:
+              raise SystemExit(f"reopenSearchResults anchor count={text.count(old)}")
+          text = text.replace(old, new, 1)
+
+          old = "  function refreshPredictions() {\n"
+          new = "  function refreshPredictions(returnPrediction = null) {\n"
+          if text.count(old) != 1:
+              raise SystemExit(f"refreshPredictions signature count={text.count(old)}")
+          text = text.replace(old, new, 1)
+
+          anchor = '''      searchPredictions = status === "OK" && preds ? preds.slice(0, 6) : [];
+            searchEmpty = status === "ZERO_RESULTS" || (status === "OK" && searchPredictions.length === 0);
+            if (!searchPredictions.length && searchZone === "preds") searchZone = "keys";
+            if (predIdx >= searchPredictions.length) predIdx = 0;
+            renderSearch();
+          '''
+          replacement = '''      searchPredictions = status === "OK" && preds ? preds.slice(0, 6) : [];
+            searchEmpty = status === "ZERO_RESULTS" || (status === "OK" && searchPredictions.length === 0);
+            if (returnPrediction && searchZone === "input" && searchPredictions.length) {
+              const restoredIdx = returnPrediction.placeId
+                ? searchPredictions.findIndex((prediction) => prediction.place_id === returnPrediction.placeId)
+                : -1;
+              searchZone = "preds";
+              predIdx = restoredIdx >= 0
+                ? restoredIdx
+                : Math.min(returnPrediction.index, searchPredictions.length - 1);
+            }
+            if (!searchPredictions.length && searchZone === "preds") searchZone = "keys";
+            if (predIdx >= searchPredictions.length) predIdx = 0;
+            renderSearch();
+          '''
+          if text.count(anchor) != 1:
+              raise SystemExit(f"prediction callback anchor count={text.count(anchor)}")
+          text = text.replace(anchor, replacement, 1)
+
+          anchor = '''  function selectPrediction(p) {
+            if (!p || placeDetailsLoading) return;
+            clearError("places"); // 再試行中は古い Places error だけ解除
+          '''
+          replacement = '''  function selectPrediction(p) {
+            if (!p || placeDetailsLoading) return;
+            searchReturnPrediction = { placeId: p.place_id || null, index: predIdx };
+            clearError("places"); // 再試行中は古い Places error だけ解除
+          '''
+          if text.count(anchor) != 1:
+              raise SystemExit(f"selectPrediction anchor count={text.count(anchor)}")
+          text = text.replace(anchor, replacement, 1)
+
+          path.write_text(text)
+          PY
+      - name: Remove one-shot helper
+        run: git rm .github/workflows/chatgpt-restore-search-focus.yml
+      - name: Verify diff
+        run: |
+          node --check js/app.js
+          git diff --check HEAD
+          test "$(git diff HEAD --name-only | sort)" = "$(printf '%s\n' '.github/workflows/chatgpt-restore-search-focus.yml' 'js/app.js' | sort)"
+          grep -F 'let searchReturnPrediction = null;' js/app.js
+          grep -F 'refreshPredictions(searchReturnPrediction);' js/app.js
+          grep -F 'searchReturnPrediction = { placeId: p.place_id || null, index: predIdx };' js/app.js
+          grep -F 'searchZone = "preds";' js/app.js
+      - name: Commit product change
+        run: |
+          git config user.name "chatgpt-codex-connector[bot]"
+          git config user.email "chatgpt-codex-connector[bot]@users.noreply.github.com"
+          git commit -am "Restore selected search result focus"
+          git push origin HEAD:chatgpt/restore-search-prediction-focus
