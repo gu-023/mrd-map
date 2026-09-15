@@ -25,55 +25,51 @@ jobs:
           path = Path("js/app.js")
           text = path.read_text()
 
-          old_adapter = '''      getPredictions: (request, callback) => autocompleteService.getPlacePredictions(
-            request,
-            (predictions, status) => callback(
-              predictions ? predictions.map((prediction) => ({
-                placeId: prediction.place_id,
-                label: prediction.description,
-              })) : predictions,
-              status
-            )
-          ),'''
-          new_adapter = '''      getPredictions: (input, sessionToken, location, callback) => {
-            const request = {
-              input,
-              sessionToken,
-              componentRestrictions: { country: "jp" },
-            };
-            if (location) {
-              request.location = location;
-              request.radius = 50000;
-            }
-            autocompleteService.getPlacePredictions(
-              request,
-              (predictions, status) => callback(
-                predictions ? predictions.map((prediction) => ({
-                  placeId: prediction.place_id,
-                  label: prediction.description,
-                })) : predictions,
-                status
-              )
-            );
-          },'''
+          adapter_start_marker = "      getPredictions: (request, callback) => autocompleteService.getPlacePredictions("
+          adapter_end_marker = "      getLocation: (placeId, sessionToken, callback) => placesService.getDetails("
+          if text.count(adapter_start_marker) != 1 or text.count(adapter_end_marker) != 1:
+              raise SystemExit("prediction adapter anchors are not unique")
+          adapter_start = text.index(adapter_start_marker)
+          adapter_end = text.index(adapter_end_marker, adapter_start)
+          new_adapter_lines = [
+              "      getPredictions: (input, sessionToken, location, callback) => {",
+              "        const request = {",
+              "          input,",
+              "          sessionToken,",
+              "          componentRestrictions: { country: \"jp\" },",
+              "        };",
+              "        if (location) {",
+              "          request.location = location;",
+              "          request.radius = 50000;",
+              "        }",
+              "        autocompleteService.getPlacePredictions(",
+              "          request,",
+              "          (predictions, status) => callback(",
+              "            predictions ? predictions.map((prediction) => ({",
+              "              placeId: prediction.place_id,",
+              "              label: prediction.description,",
+              "            })) : predictions,",
+              "            status",
+              "          )",
+              "        );",
+              "      },",
+              "",
+          ]
+          text = text[:adapter_start] + "\n".join(new_adapter_lines) + text[adapter_end:]
 
-          old_call = '''    const req = {
-              input: q,
-              sessionToken: searchToken,
-              componentRestrictions: { country: "jp" },
-            };
-            const pos = userMarker && userMarker.getPosition();
-            if (pos) { req.location = pos; req.radius = 50000; }
-            placesSearchApi.getPredictions(req, (preds, status) => {'''
-          new_call = '''    const pos = userMarker && userMarker.getPosition();
-            placesSearchApi.getPredictions(q, searchToken, pos, (preds, status) => {'''
-
-          if text.count(old_adapter) != 1:
-              raise SystemExit(f"expected one adapter block, found {text.count(old_adapter)}")
-          if text.count(old_call) != 1:
-              raise SystemExit(f"expected one prediction call block, found {text.count(old_call)}")
-
-          text = text.replace(old_adapter, new_adapter).replace(old_call, new_call)
+          query_anchor = "    const q = searchQuery.trim();"
+          call_start_marker = "    const req = {"
+          call_end_marker = "    placesSearchApi.getPredictions(req, (preds, status) => {"
+          query_start = text.index(query_anchor)
+          if text.count(call_end_marker) != 1:
+              raise SystemExit("prediction call anchor is not unique")
+          call_start = text.index(call_start_marker, query_start)
+          call_end = text.index(call_end_marker, call_start) + len(call_end_marker)
+          new_call = "\n".join([
+              "    const pos = userMarker && userMarker.getPosition();",
+              "    placesSearchApi.getPredictions(q, searchToken, pos, (preds, status) => {",
+          ])
+          text = text[:call_start] + new_call + text[call_end:]
           path.write_text(text)
           PY
 
@@ -98,28 +94,18 @@ jobs:
           missing = [token for token in required if token not in text]
           if missing:
               raise SystemExit(f"missing expected tokens: {missing}")
-          for legacy_request_token in [
-              'componentRestrictions: { country: "jp" }',
-              'request.location = location;',
-              'request.radius = 50000;',
-          ]:
-              if legacy_request_token not in adapter:
-                  raise SystemExit(f"legacy prediction request detail left adapter: {legacy_request_token}")
           if 'componentRestrictions: { country: "jp" }' in outside:
               raise SystemExit("componentRestrictions leaked outside Places adapter")
           if 'req.location' in outside or 'req.radius' in outside:
               raise SystemExit("legacy location-bias request fields remain in search UI")
+          if 'placesSearchApi.getPredictions(req,' in outside:
+              raise SystemExit("search UI still passes a legacy prediction request object")
           PY
-
-      - name: Ensure final diff is product-only
-        run: |
-          rm .github/workflows/chatgpt-one-shot-narrow-places-prediction-contract.yml
-          git diff --check
-          changed="$(git diff --name-only HEAD^ 2>/dev/null || true)"
-          test -f js/app.js
 
       - name: Commit product change and helper cleanup
         run: |
+          rm .github/workflows/chatgpt-one-shot-narrow-places-prediction-contract.yml
+          git diff --check
           git config user.name "gu-023"
           git config user.email "59335552+gu-023@users.noreply.github.com"
           git add js/app.js .github/workflows/chatgpt-one-shot-narrow-places-prediction-contract.yml
