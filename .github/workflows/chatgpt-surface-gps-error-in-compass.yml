@@ -27,20 +27,24 @@ jobs:
 
           path = Path("js/app.js")
           text = path.read_text()
-          old = '''    const gpsRecoveryHint = hasUnknownGeoWatchOwnership()
-              ? "GPS↻再読込"
-              : geoWatchId === null && lastPositionTimestamp !== null
-                ? "GPS◎再試行"
-                : null;'''
-          new = '''    const gpsRecoveryHint = gpsStatusText === "GPS不可・最終位置"
-              ? "GPS最終位置"
-              : gpsStatusText === "GPS不可"
-                ? "GPS不可"
-                : hasUnknownGeoWatchOwnership()
-                  ? "GPS↻再読込"
-                  : geoWatchId === null && lastPositionTimestamp !== null
-                    ? "GPS◎再試行"
-                    : null;'''
+          old = "\n".join([
+              '    const gpsRecoveryHint = hasUnknownGeoWatchOwnership()',
+              '      ? "GPS↻再読込"',
+              '      : geoWatchId === null && lastPositionTimestamp !== null',
+              '        ? "GPS◎再試行"',
+              '        : null;',
+          ])
+          new = "\n".join([
+              '    const gpsRecoveryHint = gpsStatusText === "GPS不可・最終位置"',
+              '      ? "GPS最終位置"',
+              '      : gpsStatusText === "GPS不可"',
+              '        ? "GPS不可"',
+              '        : hasUnknownGeoWatchOwnership()',
+              '          ? "GPS↻再読込"',
+              '          : geoWatchId === null && lastPositionTimestamp !== null',
+              '            ? "GPS◎再試行"',
+              '            : null;',
+          ])
           if text.count(old) != 1:
               raise SystemExit(f"expected one renderGpsCompassStatus anchor, found {text.count(old)}")
           path.write_text(text.replace(old, new, 1))
