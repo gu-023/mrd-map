@@ -884,6 +884,16 @@
   function createPlacesSearchApi() {
     const autocompleteService = new google.maps.places.AutocompleteService();
     const placesService = new google.maps.places.PlacesService(map);
+    function normalizeStatus(status) {
+      let kind = "error";
+      if (status === "OK") kind = "ok";
+      else if (status === "ZERO_RESULTS") kind = "empty";
+      else if (status === "REQUEST_DENIED") kind = "denied";
+      return {
+        kind,
+        code: typeof status === "string" && status ? status : "UNKNOWN",
+      };
+    }
     return {
       createSessionToken: () => new google.maps.places.AutocompleteSessionToken(),
       getPredictions: (input, sessionToken, location, callback) => {
@@ -903,7 +913,7 @@
               placeId: prediction.place_id,
               label: prediction.description,
             })) : predictions,
-            status
+            normalizeStatus(status)
           )
         );
       },
@@ -911,7 +921,7 @@
         { placeId, fields: ["geometry"], sessionToken },
         (place, status) => callback(
           place && place.geometry && place.geometry.location ? place.geometry.location : null,
-          status
+          normalizeStatus(status)
         )
       ),
     };
@@ -1034,10 +1044,11 @@
   }
 
   function placesErrorDetail(status) {
-    const hint = status === "REQUEST_DENIED"
+    const hint = status && status.kind === "denied"
       ? "<br>APIキーの制限と <b>Places API</b> の有効化を確認してください。"
       : "";
-    return `ステータス: <code>${status}</code>${hint}`;
+    const code = status && status.code ? escapeHtml(status.code) : "UNKNOWN";
+    return `ステータス: <code>${code}</code>${hint}`;
   }
 
   function refreshPredictions(returnPrediction = null) {
@@ -1053,13 +1064,14 @@
     placesSearchApi.getPredictions(q, searchToken, pos, (preds, status) => {
       if (requestId !== predictionRequestId || !searchOpen) return;
       searchLoading = false;
-      if (status !== "OK" && status !== "ZERO_RESULTS") {
+      const statusKind = status && status.kind;
+      if (statusKind !== "ok" && statusKind !== "empty") {
         showError("場所を検索できません", placesErrorDetail(status), "places");
       } else {
         clearError("places");
       }
-      searchPredictions = status === "OK" && preds ? preds.slice(0, 6) : [];
-      searchEmpty = status === "ZERO_RESULTS" || (status === "OK" && searchPredictions.length === 0);
+      searchPredictions = statusKind === "ok" && preds ? preds.slice(0, 6) : [];
+      searchEmpty = statusKind === "empty" || (statusKind === "ok" && searchPredictions.length === 0);
       if (returnPrediction && searchZone === "input" && searchPredictions.length) {
         const restoredIdx = returnPrediction.placeId
           ? searchPredictions.findIndex((prediction) => prediction.placeId === returnPrediction.placeId)
@@ -1091,7 +1103,7 @@
       (location, status) => {
         if (requestId !== placeDetailsRequestId || !searchOpen) return;
         placeDetailsLoading = false;
-        if (status === "OK" && location) {
+        if (status && status.kind === "ok" && location) {
           clearError("places");
           closeSearch();
           openSearchTravelMenu(location, p.label);
