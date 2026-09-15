@@ -1039,7 +1039,12 @@
     if (searchZone === "input") {
       if (key === "ArrowDown") {
         els.searchQuery.blur();
-        searchZone = "keys";
+        if (searchPredictions.length) {
+          searchZone = "preds";
+          predIdx = 0;
+        } else {
+          searchZone = "keys";
+        }
         renderSearch();
       }
       return;
