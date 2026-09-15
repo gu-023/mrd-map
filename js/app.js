@@ -109,6 +109,7 @@
   let searchZone = "input"; // input / keys / preds
   let keyIdx = 0;
   let predIdx = 0;
+  let predictionBackZone = "input"; // 候補先頭から↑で、候補へ入った元の入力手段へ戻す
   let searchReturnPrediction = null; // 移動手段から戻る際に直前の候補へD-padフォーカスを復元
   let predictionRequestId = 0; // 古い Autocomplete callback を無視するための世代番号
   let placeDetailsRequestId = 0; // 古い Place Details callback を無視するための世代番号
@@ -902,6 +903,7 @@
     searchZone = "input";
     keyIdx = 0;
     predIdx = 0;
+    predictionBackZone = "input";
     searchReturnPrediction = null;
     els.search.classList.remove("hidden");
     renderSearch();
@@ -1034,6 +1036,7 @@
           ? searchPredictions.findIndex((prediction) => prediction.place_id === returnPrediction.placeId)
           : -1;
         searchZone = "preds";
+        predictionBackZone = returnPrediction.backZone === "keys" ? "keys" : "input";
         predIdx = restoredIdx >= 0
           ? restoredIdx
           : Math.min(returnPrediction.index, searchPredictions.length - 1);
@@ -1046,7 +1049,7 @@
 
   function selectPrediction(p) {
     if (!p || placeDetailsLoading) return;
-    searchReturnPrediction = { placeId: p.place_id || null, index: predIdx };
+    searchReturnPrediction = { placeId: p.place_id || null, index: predIdx, backZone: predictionBackZone };
     clearError("places"); // 再試行中は古い Places error だけ解除
     const requestId = ++placeDetailsRequestId;
     placeDetailsLoading = true;
@@ -1081,6 +1084,7 @@
         els.searchQuery.blur();
         if (searchPredictions.length) {
           searchZone = "preds";
+          predictionBackZone = "input";
           predIdx = 0;
         } else {
           searchZone = "keys";
@@ -1100,7 +1104,7 @@
         case "ArrowDown": {
           const below = keyIdx + SEARCH_COLS;
           if (below < SEARCH_KEYS.length) keyIdx = below;
-          else if (searchPredictions.length) { searchZone = "preds"; predIdx = 0; }
+          else if (searchPredictions.length) { searchZone = "preds"; predictionBackZone = "keys"; predIdx = 0; }
           break;
         }
         case "Enter": case " ": pressKey(SEARCH_KEYS[keyIdx]); return;
@@ -1108,7 +1112,13 @@
       }
     } else {
       switch (key) {
-        case "ArrowUp":   if (predIdx > 0) predIdx--; else searchZone = "keys"; break;
+        case "ArrowUp":
+          if (predIdx > 0) predIdx--;
+          else {
+            searchZone = predictionBackZone;
+            if (searchZone === "input") els.searchQuery.focus();
+          }
+          break;
         case "ArrowDown": predIdx = Math.min(searchPredictions.length - 1, predIdx + 1); break;
         case "ArrowLeft": break;
         case "Enter": case " ": selectPrediction(searchPredictions[predIdx]); return;
