@@ -104,8 +104,8 @@ jobs:
           missing = [token for token in required_adapter if token not in adapter]
           if missing:
               raise SystemExit(f"missing adapter normalization tokens: {missing}")
-          if adapter.count("normalizeStatus(status)") != 2:
-              raise SystemExit("expected both Places callbacks to normalize status")
+          if adapter.count("normalizeStatus(status)") != 3:
+              raise SystemExit("expected normalizeStatus declaration plus both Places callback uses")
 
           forbidden_ui = ['status === "OK"', 'status !== "OK"', '"ZERO_RESULTS"', '"REQUEST_DENIED"']
           leaked = [token for token in forbidden_ui if token in search_ui]
