@@ -615,11 +615,15 @@
       return;
     }
     const headingText = `🧭 ${Math.round(curHeading)}° ${cardinal(curHeading)}`;
-    const gpsRecoveryHint = hasUnknownGeoWatchOwnership()
-      ? "GPS↻再読込"
-      : geoWatchId === null && lastPositionTimestamp !== null
-        ? "GPS◎再試行"
-        : null;
+    const gpsRecoveryHint = gpsStatusText === "GPS不可・最終位置"
+      ? "GPS最終位置"
+      : gpsStatusText === "GPS不可"
+        ? "GPS不可"
+        : hasUnknownGeoWatchOwnership()
+          ? "GPS↻再読込"
+          : geoWatchId === null && lastPositionTimestamp !== null
+            ? "GPS◎再試行"
+            : null;
     els.gpsText.textContent = gpsRecoveryHint
       ? `${headingText} ・ ${gpsRecoveryHint}`
       : headingText;
