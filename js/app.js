@@ -896,7 +896,15 @@
           status
         )
       ),
-      getDetails: (request, callback) => placesService.getDetails(request, callback),
+      getDetails: (request, callback) => placesService.getDetails(
+  request,
+  (place, status) => callback(
+    place ? {
+      location: place.geometry && place.geometry.location ? place.geometry.location : null,
+    } : place,
+    status
+  )
+),
     };
   }
 
@@ -1079,10 +1087,10 @@
       (res, status) => {
         if (requestId !== placeDetailsRequestId || !searchOpen) return;
         placeDetailsLoading = false;
-        if (status === "OK" && res && res.geometry && res.geometry.location) {
+        if (status === "OK" && res && res.location) {
           clearError("places");
           closeSearch();
-          openSearchTravelMenu(res.geometry.location, p.label);
+          openSearchTravelMenu(res.location, p.label);
         } else {
           showError("場所を取得できません", placesErrorDetail(status), "places");
           renderSearch();
