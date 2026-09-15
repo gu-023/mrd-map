@@ -97,8 +97,7 @@
   let menuIdx = 0;
   let menuItems = [];
   // 検索
-  let autocompleteService = null;
-  let placesService = null;
+  let placesSearchApi = null;
   let searchToken = null;
   let searchOpen = false;
   let searchQuery = "";
@@ -881,6 +880,17 @@
     openMenu("移動手段", items, modes.findIndex(([m]) => m === travelMode));
   }
 
+  /* Legacy Places constructors/calls live behind this boundary so the search UI can migrate APIs independently. */
+  function createPlacesSearchApi() {
+    const autocompleteService = new google.maps.places.AutocompleteService();
+    const placesService = new google.maps.places.PlacesService(map);
+    return {
+      createSessionToken: () => new google.maps.places.AutocompleteSessionToken(),
+      getPredictions: (request, callback) => autocompleteService.getPlacePredictions(request, callback),
+      getDetails: (request, callback) => placesService.getDetails(request, callback),
+    };
+  }
+
   /* ---------- 場所検索（オンスクリーンキーボード＋Autocomplete） ---------- */
   function openSearch() {
     if (navRerouting) {
@@ -891,9 +901,8 @@
       routePreviousNavBanner = null;
     }
     closeMenu();
-    if (!autocompleteService) autocompleteService = new google.maps.places.AutocompleteService();
-    if (!placesService) placesService = new google.maps.places.PlacesService(map);
-    searchToken = new google.maps.places.AutocompleteSessionToken();
+    if (!placesSearchApi) placesSearchApi = createPlacesSearchApi();
+    searchToken = placesSearchApi.createSessionToken();
     searchOpen = true;
     searchQuery = "";
     searchPredictions = [];
@@ -1021,7 +1030,7 @@
     };
     const pos = userMarker && userMarker.getPosition();
     if (pos) { req.location = pos; req.radius = 50000; }
-    autocompleteService.getPlacePredictions(req, (preds, status) => {
+    placesSearchApi.getPredictions(req, (preds, status) => {
       if (requestId !== predictionRequestId || !searchOpen) return;
       searchLoading = false;
       if (status !== "OK" && status !== "ZERO_RESULTS") {
@@ -1055,8 +1064,8 @@
     placeDetailsLoading = true;
     renderSearch();
     const requestToken = searchToken;
-    searchToken = new google.maps.places.AutocompleteSessionToken(); // Place Details request で現在の Autocomplete セッションを終了
-    placesService.getDetails(
+    searchToken = placesSearchApi.createSessionToken(); // Place Details request で現在の Autocomplete セッションを終了
+    placesSearchApi.getDetails(
       { placeId: p.place_id, fields: ["geometry"], sessionToken: requestToken },
       (res, status) => {
         if (requestId !== placeDetailsRequestId || !searchOpen) return;
