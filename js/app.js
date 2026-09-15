@@ -1754,8 +1754,11 @@
   }
 
   function onGeoError(err) {
-    setGps(false, "GPS不可");
-    els.accText.textContent = "";
+    const hasLastFix = Boolean(userMarker && userMarker.getPosition());
+    setGps(false, hasLastFix ? "GPS不可・最終位置" : "GPS不可");
+    els.accText.textContent = hasLastFix && lastPositionAccuracy
+      ? `最終 ±${fmtDist(lastPositionAccuracy)}`
+      : "";
     const code = err && err.code;
     let body;
     if (code === 1) {
