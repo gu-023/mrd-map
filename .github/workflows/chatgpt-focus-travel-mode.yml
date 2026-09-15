@@ -27,14 +27,8 @@ jobs:
           path = Path('js/app.js')
           text = path.read_text()
 
-          old_open = '''  function openMenu(title, items) {
-            menuItems = items;
-            menuIdx = 0;
-            menuOpen = true;'''
-          new_open = '''  function openMenu(title, items, initialIdx = 0) {
-            menuItems = items;
-            menuIdx = Math.max(0, Math.min(initialIdx, items.length - 1));
-            menuOpen = true;'''
+          old_open = '  function openMenu(title, items) {\n    menuItems = items;\n    menuIdx = 0;'
+          new_open = '  function openMenu(title, items, initialIdx = 0) {\n    menuItems = items;\n    menuIdx = Math.max(0, Math.min(initialIdx, items.length - 1));'
           if text.count(old_open) != 1:
               raise SystemExit(f'openMenu anchor count: {text.count(old_open)}')
           text = text.replace(old_open, new_open, 1)
