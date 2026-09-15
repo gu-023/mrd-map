@@ -1,0 +1,173 @@
+name: ChatGPT one-shot Places session-token helper
+
+on:
+  push:
+    branches: [chatgpt/hide-places-session-token]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Hide Places session tokens behind adapter
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("js/app.js")
+          text = path.read_text()
+
+          def replace_once(old, new, label):
+              global text
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected 1 match, found {count}")
+              text = text.replace(old, new, 1)
+
+          replace_once(
+              '  let placesSearchApi = null;\n  let searchToken = null;\n',
+              '  let placesSearchApi = null;\n',
+              'searchToken declaration',
+          )
+
+          replace_once(
+              '    const autocompleteService = new google.maps.places.AutocompleteService();\n'
+              '    const placesService = new google.maps.places.PlacesService(map);\n'
+              '    function normalizeStatus(status) {\n',
+              '    const autocompleteService = new google.maps.places.AutocompleteService();\n'
+              '    const placesService = new google.maps.places.PlacesService(map);\n'
+              '    let sessionToken = null;\n'
+              '    function createSessionToken() {\n'
+              '      return new google.maps.places.AutocompleteSessionToken();\n'
+              '    }\n'
+              '    function requireSessionToken() {\n'
+              '      if (!sessionToken) sessionToken = createSessionToken();\n'
+              '      return sessionToken;\n'
+              '    }\n'
+              '    function normalizeStatus(status) {\n',
+              'adapter session state',
+          )
+
+          replace_once(
+              '    return {\n'
+              '      createSessionToken: () => new google.maps.places.AutocompleteSessionToken(),\n'
+              '      getPredictions: (input, sessionToken, location, callback) => {\n'
+              '        const request = {\n'
+              '          input,\n'
+              '          sessionToken,\n',
+              '    return {\n'
+              '      startSession: () => {\n'
+              '        sessionToken = createSessionToken();\n'
+              '      },\n'
+              '      getPredictions: (input, location, callback) => {\n'
+              '        const request = {\n'
+              '          input,\n'
+              '          sessionToken: requireSessionToken(),\n',
+              'adapter prediction contract',
+          )
+
+          replace_once(
+              '      getLocation: (placeId, sessionToken, callback) => placesService.getDetails(\n'
+              '        { placeId, fields: ["geometry"], sessionToken },\n'
+              '        (place, status) => callback(\n'
+              '          place && place.geometry && place.geometry.location ? place.geometry.location : null,\n'
+              '          normalizeStatus(status)\n'
+              '        )\n'
+              '      ),\n',
+              '      getLocation: (placeId, callback) => {\n'
+              '        const requestToken = requireSessionToken();\n'
+              '        sessionToken = createSessionToken();\n'
+              '        placesService.getDetails(\n'
+              '          { placeId, fields: ["geometry"], sessionToken: requestToken },\n'
+              '          (place, status) => callback(\n'
+              '            place && place.geometry && place.geometry.location ? place.geometry.location : null,\n'
+              '            normalizeStatus(status)\n'
+              '          )\n'
+              '        );\n'
+              '      },\n',
+              'adapter Place Details contract',
+          )
+
+          replace_once(
+              '    if (!placesSearchApi) placesSearchApi = createPlacesSearchApi();\n'
+              '    searchToken = placesSearchApi.createSessionToken();\n',
+              '    if (!placesSearchApi) placesSearchApi = createPlacesSearchApi();\n'
+              '    placesSearchApi.startSession();\n',
+              'openSearch session start',
+          )
+
+          replace_once(
+              '    placesSearchApi.getPredictions(q, searchToken, pos, (preds, status) => {\n',
+              '    placesSearchApi.getPredictions(q, pos, (preds, status) => {\n',
+              'prediction call',
+          )
+
+          replace_once(
+              '    const requestToken = searchToken;\n'
+              '    searchToken = placesSearchApi.createSessionToken(); // Place Details request で現在の Autocomplete セッションを終了\n'
+              '    placesSearchApi.getLocation(\n'
+              '      p.placeId,\n'
+              '      requestToken,\n',
+              '    placesSearchApi.getLocation(\n'
+              '      p.placeId,\n',
+              'Place Details call',
+          )
+
+          path.write_text(text)
+          PY
+
+      - name: Validate change
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check js/app.js
+          git diff --check
+          python3 - <<'PY'
+          from pathlib import Path
+
+          text = Path("js/app.js").read_text()
+          start = text.index("  function createPlacesSearchApi() {")
+          end = text.index("  /* ---------- 場所検索（オンスクリーンキーボード＋Autocomplete） ---------- */", start)
+          adapter = text[start:end]
+          outside = text[:start] + text[end:]
+
+          if "searchToken" in text:
+              raise SystemExit("searchToken leaked into final source")
+          if text.count("google.maps.places.AutocompleteSessionToken()") != 1:
+              raise SystemExit("AutocompleteSessionToken constructor should have one adapter-owned call site")
+          if "google.maps.places.AutocompleteSessionToken()" not in adapter:
+              raise SystemExit("AutocompleteSessionToken constructor is not adapter-owned")
+          if "google.maps.places.AutocompleteSessionToken()" in outside:
+              raise SystemExit("AutocompleteSessionToken constructor leaked outside adapter")
+          required = [
+              "placesSearchApi.startSession();",
+              "placesSearchApi.getPredictions(q, pos, (preds, status) => {",
+              "getLocation: (placeId, callback) => {",
+              "sessionToken: requireSessionToken()",
+              "sessionToken: requestToken",
+          ]
+          missing = [item for item in required if item not in text]
+          if missing:
+              raise SystemExit("Missing expected session-boundary source: " + ", ".join(missing))
+          PY
+          if git grep -nE 'AIza[0-9A-Za-z_-]{35}' -- .; then
+            echo "::error::A Google API key pattern is present in a tracked file"
+            exit 1
+          fi
+
+      - name: Commit product change and remove helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add js/app.js
+          git rm .github/workflows/chatgpt-hide-places-session-token.yml
+          git commit -m "Hide Places session tokens behind adapter"
+          git push origin HEAD:${GITHUB_REF_NAME}
