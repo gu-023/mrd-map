@@ -1,0 +1,80 @@
+name: ChatGPT isolate Places search API
+
+on:
+  push:
+    branches: [chatgpt/isolate-places-search-api]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: chatgpt/isolate-places-search-api
+
+      - name: Isolate Places search API boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('js/app.js')
+          text = path.read_text()
+
+          replacements = [
+              (
+                  '  let autocompleteService = null;\n  let placesService = null;\n  let searchToken = null;',
+                  '  let placesSearchApi = null;\n  let searchToken = null;',
+              ),
+              (
+                  '  /* ---------- 場所検索（オンスクリーンキーボード＋Autocomplete） ---------- */\n  function openSearch() {',
+                  '''  /* Legacy Places constructors/calls live behind this boundary so the search UI can migrate APIs independently. */\n  function createPlacesSearchApi() {\n    const autocompleteService = new google.maps.places.AutocompleteService();\n    const placesService = new google.maps.places.PlacesService(map);\n    return {\n      createSessionToken: () => new google.maps.places.AutocompleteSessionToken(),\n      getPredictions: (request, callback) => autocompleteService.getPlacePredictions(request, callback),\n      getDetails: (request, callback) => placesService.getDetails(request, callback),\n    };\n  }\n\n  /* ---------- 場所検索（オンスクリーンキーボード＋Autocomplete） ---------- */\n  function openSearch() {''',
+              ),
+              (
+                  '    if (!autocompleteService) autocompleteService = new google.maps.places.AutocompleteService();\n    if (!placesService) placesService = new google.maps.places.PlacesService(map);\n    searchToken = new google.maps.places.AutocompleteSessionToken();',
+                  '    if (!placesSearchApi) placesSearchApi = createPlacesSearchApi();\n    searchToken = placesSearchApi.createSessionToken();',
+              ),
+              (
+                  '    autocompleteService.getPlacePredictions(req, (preds, status) => {',
+                  '    placesSearchApi.getPredictions(req, (preds, status) => {',
+              ),
+              (
+                  '    searchToken = new google.maps.places.AutocompleteSessionToken(); // Place Details request で現在の Autocomplete セッションを終了',
+                  '    searchToken = placesSearchApi.createSessionToken(); // Place Details request で現在の Autocomplete セッションを終了',
+              ),
+              (
+                  '    placesService.getDetails(',
+                  '    placesSearchApi.getDetails(',
+              ),
+          ]
+
+          for old, new in replacements:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'expected exactly one anchor, found {count}: {old[:80]!r}')
+              text = text.replace(old, new, 1)
+
+          path.write_text(text)
+          PY
+
+          node --check js/app.js
+          git diff --check
+          grep -q 'function createPlacesSearchApi()' js/app.js
+          grep -q 'placesSearchApi.getPredictions(req' js/app.js
+          grep -q 'placesSearchApi.getDetails(' js/app.js
+          if git grep -nE 'AIza[0-9A-Za-z_-]{35}' -- .; then
+            echo '::error::Google API key pattern found in tracked files'
+            exit 1
+          fi
+
+          git config user.name 'gu-023'
+          git config user.email '59335552+gu-023@users.noreply.github.com'
+          git rm .github/workflows/chatgpt-isolate-places-search-api.yml
+          git add js/app.js
+          git diff --cached --check
+          git commit -m 'Isolate Places search API boundary'
+          git push origin HEAD:chatgpt/isolate-places-search-api
