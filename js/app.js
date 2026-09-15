@@ -897,14 +897,14 @@
         )
       ),
       getDetails: (request, callback) => placesService.getDetails(
-  request,
-  (place, status) => callback(
-    place ? {
-      location: place.geometry && place.geometry.location ? place.geometry.location : null,
-    } : place,
-    status
-  )
-),
+        request,
+        (place, status) => callback(
+          place ? {
+            location: place.geometry && place.geometry.location ? place.geometry.location : null,
+          } : place,
+          status
+        )
+      ),
     };
   }
 
