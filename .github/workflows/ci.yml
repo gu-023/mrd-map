@@ -43,14 +43,25 @@ jobs:
               'componentRestrictions: { country: "jp" }',
               "request.location = location;",
               "request.radius = 50000;",
+              'status === "OK"',
+              'status === "ZERO_RESULTS"',
+              'status === "REQUEST_DENIED"',
+          ]
+          ui_status_tokens = [
+              "const statusKind = status && status.kind;",
+              'statusKind !== "ok" && statusKind !== "empty"',
+              'status && status.kind === "ok"',
           ]
 
           missing = [token for token in legacy_tokens if token not in adapter]
           leaked = [token for token in legacy_tokens if token in outside]
+          missing_ui = [token for token in ui_status_tokens if token not in outside]
           if missing:
               raise SystemExit("Places adapter no longer owns expected legacy tokens: " + ", ".join(missing))
           if leaked:
               raise SystemExit("Legacy Places details leaked outside adapter: " + ", ".join(leaked))
+          if missing_ui:
+              raise SystemExit("Search UI no longer consumes the normalized Places status contract: " + ", ".join(missing_ui))
           PY
 
       - name: Check required files and config hygiene
