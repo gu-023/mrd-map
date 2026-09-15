@@ -875,7 +875,7 @@
         computeRoute(dest, false, name, m);
       },
     }));
-    items.push({ label: "← 戻る", action: openDestinationMenu });
+    items.push({ label: "← 検索結果へ戻る", action: reopenSearchResults });
     openMenu("移動手段", items, modes.findIndex(([m]) => m === travelMode));
   }
 
@@ -919,6 +919,17 @@
       if (currentPosition) map.panTo(currentPosition);
     }
   }
+
+  function reopenSearchResults() {
+  closeMenu();
+  searchOpen = true;
+  placeDetailsLoading = false;
+  searchZone = "input";
+  els.search.classList.remove("hidden");
+  refreshPredictions();
+  renderSearch();
+  els.searchQuery.focus();
+}
 
   function renderSearch() {
     if (els.searchQuery.value !== searchQuery) els.searchQuery.value = searchQuery;
