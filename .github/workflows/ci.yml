@@ -40,6 +40,9 @@ jobs:
               "prediction.description",
               'fields: ["geometry"]',
               "place.geometry.location",
+              'componentRestrictions: { country: "jp" }',
+              "request.location = location;",
+              "request.radius = 50000;",
           ]
 
           missing = [token for token in legacy_tokens if token not in adapter]
