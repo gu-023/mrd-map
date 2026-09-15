@@ -21,53 +21,20 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
-
-          path = Path('js/app.js')
+          path = Path("js/app.js")
           text = path.read_text()
-
-          old_adapter = '''      getDetails: (request, callback) => placesService.getDetails(
-            request,
-            (place, status) => callback(
-              place ? {
-                location: place.geometry && place.geometry.location ? place.geometry.location : null,
-              } : place,
-              status
-            )
-          ),'''
-          new_adapter = '''      getLocation: (placeId, sessionToken, callback) => placesService.getDetails(
-            { placeId, fields: ["geometry"], sessionToken },
-            (place, status) => callback(
-              place && place.geometry && place.geometry.location ? place.geometry.location : null,
-              status
-            )
-          ),'''
-          old_call = '''    placesSearchApi.getDetails(
-      { placeId: p.placeId, fields: ["geometry"], sessionToken: requestToken },
-      (res, status) => {
-        if (requestId !== placeDetailsRequestId || !searchOpen) return;
-        placeDetailsLoading = false;
-        if (status === "OK" && res && res.location) {
-          clearError("places");
-          closeSearch();
-          openSearchTravelMenu(res.location, p.label);'''
-          new_call = '''    placesSearchApi.getLocation(
-      p.placeId,
-      requestToken,
-      (location, status) => {
-        if (requestId !== placeDetailsRequestId || !searchOpen) return;
-        placeDetailsLoading = false;
-        if (status === "OK" && location) {
-          clearError("places");
-          closeSearch();
-          openSearchTravelMenu(location, p.label);'''
-
-          if text.count(old_adapter) != 1:
-              raise SystemExit(f'adapter anchor count={text.count(old_adapter)}')
-          if text.count(old_call) != 1:
-              raise SystemExit(f'call anchor count={text.count(old_call)}')
-
-          text = text.replace(old_adapter, new_adapter, 1)
-          text = text.replace(old_call, new_call, 1)
+          replacements = [
+              ('      getDetails: (request, callback) => placesService.getDetails(\n        request,\n', '      getLocation: (placeId, sessionToken, callback) => placesService.getDetails(\n        { placeId, fields: ["geometry"], sessionToken },\n'),
+              ('          place ? {\n            location: place.geometry && place.geometry.location ? place.geometry.location : null,\n          } : place,\n', '          place && place.geometry && place.geometry.location ? place.geometry.location : null,\n'),
+              ('    placesSearchApi.getDetails(\n      { placeId: p.placeId, fields: ["geometry"], sessionToken: requestToken },\n      (res, status) => {\n', '    placesSearchApi.getLocation(\n      p.placeId,\n      requestToken,\n      (location, status) => {\n'),
+              ('        if (status === "OK" && res && res.location) {\n', '        if (status === "OK" && location) {\n'),
+              ('          openSearchTravelMenu(res.location, p.label);\n', '          openSearchTravelMenu(location, p.label);\n'),
+          ]
+          for old, new in replacements:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"anchor count={count}: {old[:60]!r}")
+              text = text.replace(old, new, 1)
           path.write_text(text)
           PY
 
