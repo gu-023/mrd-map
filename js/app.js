@@ -887,15 +887,15 @@
     return {
       createSessionToken: () => new google.maps.places.AutocompleteSessionToken(),
       getPredictions: (request, callback) => autocompleteService.getPlacePredictions(
-  request,
-  (predictions, status) => callback(
-    predictions ? predictions.map((prediction) => ({
-      placeId: prediction.place_id,
-      label: prediction.description,
-    })) : predictions,
-    status
-  )
-),
+        request,
+        (predictions, status) => callback(
+          predictions ? predictions.map((prediction) => ({
+            placeId: prediction.place_id,
+            label: prediction.description,
+          })) : predictions,
+          status
+        )
+      ),
       getDetails: (request, callback) => placesService.getDetails(request, callback),
     };
   }
