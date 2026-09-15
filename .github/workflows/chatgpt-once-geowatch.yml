@@ -1,0 +1,65 @@
+name: ChatGPT one-shot geowatch fallback
+
+on:
+  push:
+    branches:
+      - chatgpt/handle-unknown-geowatch-errors
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: ${{ github.actor != 'github-actions[bot]' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chatgpt/handle-unknown-geowatch-errors
+      - name: Apply focused change
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("js/app.js")
+          text = path.read_text(encoding="utf-8")
+          old = '''    if (code === 2 || code === 3) {
+              setGps(
+                false,
+                hasUnknownGeoWatchOwnership() ? "GPS監視異常・↻再読込" : "GPS更新待ち…"
+              );
+            }
+            // 一時的な失敗では watch を維持し、次の成功 callback で GPS 表示を復帰する。
+          '''
+          new = '''    setGps(
+              false,
+              hasUnknownGeoWatchOwnership() ? "GPS監視異常・↻再読込" : "GPS更新待ち…"
+            );
+            // permission denial 以外は未知の code も含め watch を維持し、次の成功 callback で GPS 表示を復帰する。
+          '''
+          if text.count(old) != 1:
+              raise SystemExit(f"expected one target block, found {text.count(old)}")
+          path.write_text(text.replace(old, new), encoding="utf-8")
+          PY
+          rm .github/workflows/chatgpt-once-geowatch.yml
+      - name: Verify
+        shell: bash
+        run: |
+          node --check js/app.js
+          git diff --check
+          changed="$(git diff --name-only | sort)"
+          expected="$(printf '%s\n' '.github/workflows/chatgpt-once-geowatch.yml' 'js/app.js' | sort)"
+          test "$changed" = "$expected"
+          if git grep -nE 'AIza[0-9A-Za-z_-]{20,}' -- ':!js/config.template.js'; then
+            echo 'Potential Google API key found in tracked files' >&2
+            exit 1
+          fi
+      - name: Commit product change
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'Handle unknown geolocation watch errors'
+          git push origin HEAD:chatgpt/handle-unknown-geowatch-errors
