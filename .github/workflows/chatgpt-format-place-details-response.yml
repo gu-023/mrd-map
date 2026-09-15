@@ -1,0 +1,72 @@
+name: ChatGPT format Place Details response adapter
+
+on:
+  push:
+    branches:
+      - chatgpt/normalize-place-details-response
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chatgpt/normalize-place-details-response
+      - name: Fix adapter indentation
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("js/app.js")
+          text = path.read_text()
+          old = "\n".join([
+              "      getDetails: (request, callback) => placesService.getDetails(",
+              "  request,",
+              "  (place, status) => callback(",
+              "    place ? {",
+              "      location: place.geometry && place.geometry.location ? place.geometry.location : null,",
+              "    } : place,",
+              "    status",
+              "  )",
+              "),",
+          ])
+          new = "\n".join([
+              "      getDetails: (request, callback) => placesService.getDetails(",
+              "        request,",
+              "        (place, status) => callback(",
+              "          place ? {",
+              "            location: place.geometry && place.geometry.location ? place.geometry.location : null,",
+              "          } : place,",
+              "          status",
+              "        )",
+              "      ),",
+          ])
+          count = text.count(old)
+          if count != 1:
+              raise SystemExit(f"expected exactly one misindented block, found {count}")
+          path.write_text(text.replace(old, new, 1))
+          PY
+      - name: Verify formatted atomic change
+        run: |
+          node --check js/app.js
+          git diff --check
+          test "$(git diff --name-only)" = "js/app.js"
+          grep -F '            location: place.geometry && place.geometry.location ? place.geometry.location : null,' js/app.js
+          grep -F '        if (status === "OK" && res && res.location) {' js/app.js
+          grep -F '          openSearchTravelMenu(res.location, p.label);' js/app.js
+          if git grep -nE 'AIza[0-9A-Za-z_-]{20,}' -- ':!js/config.template.js'; then
+            echo 'Possible tracked Google API key found' >&2
+            exit 1
+          fi
+      - name: Remove helper and commit
+        run: |
+          rm .github/workflows/chatgpt-format-place-details-response.yml
+          git config user.name 'chatgpt-codex-connector[bot]'
+          git config user.email 'chatgpt-codex-connector[bot]@users.noreply.github.com'
+          git add js/app.js .github/workflows/chatgpt-format-place-details-response.yml
+          git diff --cached --check
+          git commit -m 'Format normalized Place Details adapter'
+          git push origin HEAD:chatgpt/normalize-place-details-response
