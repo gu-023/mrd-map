@@ -106,7 +106,7 @@
   let searchLoading = false;
   let searchEmpty = false;
   let placeDetailsLoading = false;
-  let searchZone = "keys"; // keys / preds
+  let searchZone = "input"; // input / keys / preds
   let keyIdx = 0;
   let predIdx = 0;
   let predictionRequestId = 0; // 古い Autocomplete callback を無視するための世代番号
@@ -945,18 +945,18 @@
   }
 
   els.searchQuery.addEventListener("focus", () => {
-  if (!searchOpen) return;
-  searchZone = "input";
-  renderSearch();
-});
+    if (!searchOpen) return;
+    searchZone = "input";
+    renderSearch();
+  });
 
-els.searchQuery.addEventListener("input", () => {
-  if (!searchOpen) return;
-  searchQuery = els.searchQuery.value;
-  searchZone = "input";
-  refreshPredictions();
-  renderSearch();
-});
+  els.searchQuery.addEventListener("input", () => {
+    if (!searchOpen) return;
+    searchQuery = els.searchQuery.value;
+    searchZone = "input";
+    refreshPredictions();
+    renderSearch();
+  });
   function pressKey(k) {
     if (k === "✕") { closeSearch(); return; }
     if (k === "⌫") searchQuery = searchQuery.slice(0, -1);
@@ -1037,13 +1037,13 @@ els.searchQuery.addEventListener("input", () => {
     placeDetailsRequestId++; // 検索操作を再開したら未完了の Place Details callback を無効化
     clearError("places"); // 検索を続ける D-pad 操作で stale Places error を解除
     if (searchZone === "input") {
-  if (key === "ArrowDown") {
-    els.searchQuery.blur();
-    searchZone = "keys";
-    renderSearch();
-  }
-  return;
-}
+      if (key === "ArrowDown") {
+        els.searchQuery.blur();
+        searchZone = "keys";
+        renderSearch();
+      }
+      return;
+    }
     if (searchZone === "keys") {
       switch (key) {
         case "ArrowLeft":  if (keyIdx % SEARCH_COLS > 0) keyIdx--; break;
