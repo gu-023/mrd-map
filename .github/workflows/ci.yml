@@ -21,6 +21,7 @@ jobs:
         shell: bash
         run: |
           python3 - <<'PY'
+          import re
           from pathlib import Path
 
           text = Path("js/app.js").read_text()
@@ -85,6 +86,14 @@ jobs:
           ui_identifier_leaks = [
               "placeId",
           ]
+          adapter_callback_result_patterns = {
+              "Autocomplete named result": r"\(predictions,\s*status\)\s*=>\s*callback\(\{\s*predictions:",
+              "Place Details named result": r"\(place,\s*status\)\s*=>\s*callback\(\{\s*location:",
+          }
+          ui_callback_result_patterns = {
+              "Autocomplete named result": r"placesSearchApi\.getPredictions\(\s*q,\s*pos,\s*\(\{\s*predictions,\s*status\s*\}\)\s*=>",
+              "Place Details named result": r"placesSearchApi\.getLocation\(\s*p\.id,\s*\(\{\s*location,\s*status\s*\}\)\s*=>",
+          }
 
           missing = [token for token in legacy_tokens if token not in adapter]
           leaked = [token for token in legacy_tokens if token in outside]
@@ -97,6 +106,14 @@ jobs:
           leaked_ui_locations = [token for token in ui_location_leaks if token in search_ui]
           missing_ui_identifiers = [token for token in ui_identifier_tokens if token not in search_ui]
           leaked_ui_identifiers = [token for token in ui_identifier_leaks if token in search_ui]
+          missing_adapter_callback_results = [
+              name for name, pattern in adapter_callback_result_patterns.items()
+              if not re.search(pattern, adapter)
+          ]
+          missing_ui_callback_results = [
+              name for name, pattern in ui_callback_result_patterns.items()
+              if not re.search(pattern, search_ui)
+          ]
           if missing:
               raise SystemExit("Places adapter no longer owns expected legacy tokens: " + ", ".join(missing))
           if leaked:
@@ -119,6 +136,10 @@ jobs:
               raise SystemExit("Search UI no longer consumes the normalized Places identifier contract: " + ", ".join(missing_ui_identifiers))
           if leaked_ui_identifiers:
               raise SystemExit("Google placeId naming leaked into search UI: " + ", ".join(leaked_ui_identifiers))
+          if missing_adapter_callback_results:
+              raise SystemExit("Places adapter no longer exposes named callback results: " + ", ".join(missing_adapter_callback_results))
+          if missing_ui_callback_results:
+              raise SystemExit("Search UI no longer consumes named Places callback results: " + ", ".join(missing_ui_callback_results))
           PY
 
       - name: Check required files and config hygiene
