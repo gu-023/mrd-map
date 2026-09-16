@@ -1082,7 +1082,7 @@
     searchLoading = q.length > 0;
     if (!searchLoading) return;
     const pos = locationLiteral(userMarker && userMarker.getPosition());
-    placesSearchApi.getPredictions(q, pos).then(({ predictions, status }) => {
+    placesSearchApi.getPredictions(q, pos).catch(() => ({ predictions: null, status: null })).then(({ predictions, status }) => {
       if (requestId !== predictionRequestId || !searchOpen) return;
       searchLoading = false;
       const statusKind = status && status.kind;
@@ -1106,11 +1106,6 @@
       if (!searchPredictions.length && searchZone === "preds") searchZone = "keys";
       if (predIdx >= searchPredictions.length) predIdx = 0;
       renderSearch();
-    }).catch(() => {
-      if (requestId !== predictionRequestId || !searchOpen) return;
-      searchLoading = false;
-      showError("場所を検索できません", placesErrorDetail(null), "places");
-      renderSearch();
     });
   }
 
@@ -1121,7 +1116,7 @@
     const requestId = ++placeDetailsRequestId;
     placeDetailsLoading = true;
     renderSearch();
-    placesSearchApi.getLocation(p.id).then(({ location, status }) => {
+    placesSearchApi.getLocation(p.id).catch(() => ({ location: null, status: null })).then(({ location, status }) => {
         if (requestId !== placeDetailsRequestId || !searchOpen) return;
         placeDetailsLoading = false;
         if (status && status.kind === "ok" && location) {
@@ -1132,12 +1127,6 @@
           showError("場所を取得できません", placesErrorDetail(status), "places");
           renderSearch();
         }
-      })
-      .catch(() => {
-        if (requestId !== placeDetailsRequestId || !searchOpen) return;
-        placeDetailsLoading = false;
-        showError("場所を取得できません", placesErrorDetail(null), "places");
-        renderSearch();
       });
   }
 
