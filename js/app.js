@@ -925,13 +925,13 @@
         }
         autocompleteService.getPlacePredictions(
           request,
-          (predictions, status) => callback(
-            predictions ? predictions.map((prediction) => ({
+          (predictions, status) => callback({
+            predictions: predictions ? predictions.map((prediction) => ({
               id: prediction.place_id,
               label: prediction.description,
             })) : predictions,
-            normalizeStatus(status)
-          )
+            status: normalizeStatus(status),
+          })
         );
       },
       getLocation: (id, callback) => {
@@ -939,10 +939,10 @@
         sessionToken = createSessionToken();
         placesService.getDetails(
           { placeId: id, fields: ["geometry"], sessionToken: requestToken },
-          (place, status) => callback(
-            locationLiteral(place && place.geometry && place.geometry.location),
-            normalizeStatus(status)
-          )
+          (place, status) => callback({
+            location: locationLiteral(place && place.geometry && place.geometry.location),
+            status: normalizeStatus(status),
+          })
         );
       },
     };
@@ -1082,7 +1082,7 @@
     searchLoading = q.length > 0;
     if (!searchLoading) return;
     const pos = locationLiteral(userMarker && userMarker.getPosition());
-    placesSearchApi.getPredictions(q, pos, (preds, status) => {
+    placesSearchApi.getPredictions(q, pos, ({ predictions, status }) => {
       if (requestId !== predictionRequestId || !searchOpen) return;
       searchLoading = false;
       const statusKind = status && status.kind;
@@ -1091,7 +1091,7 @@
       } else {
         clearError("places");
       }
-      searchPredictions = statusKind === "ok" && preds ? preds.slice(0, 6) : [];
+      searchPredictions = statusKind === "ok" && predictions ? predictions.slice(0, 6) : [];
       searchEmpty = statusKind === "empty" || (statusKind === "ok" && searchPredictions.length === 0);
       if (returnPrediction && searchZone === "input" && searchPredictions.length) {
         const restoredIdx = returnPrediction.id
@@ -1118,7 +1118,7 @@
     renderSearch();
     placesSearchApi.getLocation(
       p.id,
-      (location, status) => {
+      ({ location, status }) => {
         if (requestId !== placeDetailsRequestId || !searchOpen) return;
         placeDetailsLoading = false;
         if (status && status.kind === "ok" && location) {
