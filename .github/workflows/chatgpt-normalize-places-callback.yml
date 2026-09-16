@@ -27,51 +27,27 @@ jobs:
           text = path.read_text()
 
           replacements = [
-              (
-                  '''          (predictions, status) => callback(
-            predictions ? predictions.map((prediction) => ({
-              id: prediction.place_id,
-              label: prediction.description,
-            })) : predictions,
-            normalizeStatus(status)
-          )''',
-                  '''          (predictions, status) => callback({
-            predictions: predictions ? predictions.map((prediction) => ({
-              id: prediction.place_id,
-              label: prediction.description,
-            })) : predictions,
-            status: normalizeStatus(status),
-          })''',
-              ),
-              (
-                  '''          (place, status) => callback(
-            locationLiteral(place && place.geometry && place.geometry.location),
-            normalizeStatus(status)
-          )''',
-                  '''          (place, status) => callback({
-            location: locationLiteral(place && place.geometry && place.geometry.location),
-            status: normalizeStatus(status),
-          })''',
-              ),
-              (
-                  '''    placesSearchApi.getPredictions(q, pos, (preds, status) => {''',
-                  '''    placesSearchApi.getPredictions(q, pos, ({ predictions, status }) => {''',
-              ),
-              (
-                  '''      searchPredictions = statusKind === "ok" && preds ? preds.slice(0, 6) : [];''',
-                  '''      searchPredictions = statusKind === "ok" && predictions ? predictions.slice(0, 6) : [];''',
-              ),
-              (
-                  "      (location, status) => {\n        if (requestId !== placeDetailsRequestId || !searchOpen) return;",
-                  "      ({ location, status }) => {\n        if (requestId !== placeDetailsRequestId || !searchOpen) return;",
-              ),
+              ("          (predictions, status) => callback(", "          (predictions, status) => callback({", 1),
+              ("            predictions ? predictions.map((prediction) => ({", "            predictions: predictions ? predictions.map((prediction) => ({", 1),
+              ("          (place, status) => callback(", "          (place, status) => callback({", 1),
+              ("            locationLiteral(place && place.geometry && place.geometry.location),", "            location: locationLiteral(place && place.geometry && place.geometry.location),", 1),
+              ("    placesSearchApi.getPredictions(q, pos, (preds, status) => {", "    placesSearchApi.getPredictions(q, pos, ({ predictions, status }) => {", 1),
+              ('      searchPredictions = statusKind === "ok" && preds ? preds.slice(0, 6) : [];', '      searchPredictions = statusKind === "ok" && predictions ? predictions.slice(0, 6) : [];', 1),
+              ("      (location, status) => {", "      ({ location, status }) => {", 1),
           ]
 
-          for old, new in replacements:
+          for old, new, expected in replacements:
               count = text.count(old)
-              if count != 1:
-                  raise SystemExit(f"expected exactly one source anchor, found {count}: {old}")
-              text = text.replace(old, new, 1)
+              if count != expected:
+                  raise SystemExit(f"expected {expected} source anchor(s), found {count}: {old}")
+              text = text.replace(old, new, expected)
+
+          old_status_close = "            normalizeStatus(status)\n          )"
+          new_status_close = "            status: normalizeStatus(status),\n          })"
+          count = text.count(old_status_close)
+          if count != 2:
+              raise SystemExit(f"expected two adapter status/close anchors, found {count}")
+          text = text.replace(old_status_close, new_status_close, 2)
 
           path.write_text(text)
           PY
@@ -109,7 +85,7 @@ jobs:
               raise SystemExit("search UI missing normalized callback result consumption: " + ", ".join(missing_ui))
           for token in [
               "placesSearchApi.getPredictions(q, pos, (preds, status) => {",
-              "      (location, status) => {\n        if (requestId !== placeDetailsRequestId",
+              "      (location, status) => {",
           ]:
               if token in search_ui:
                   raise SystemExit("positional Places callback contract remains in search UI: " + token)
