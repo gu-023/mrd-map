@@ -934,17 +934,17 @@
           })
         );
       }),
-      getLocation: (id, callback) => {
+      getLocation: (id) => new Promise((resolve) => {
         const requestToken = requireSessionToken();
         sessionToken = createSessionToken();
         placesService.getDetails(
           { placeId: id, fields: ["geometry"], sessionToken: requestToken },
-          (place, status) => callback({
+          (place, status) => resolve({
             location: locationLiteral(place && place.geometry && place.geometry.location),
             status: normalizeStatus(status),
           })
         );
-      },
+      }),
     };
   }
 
@@ -1116,9 +1116,7 @@
     const requestId = ++placeDetailsRequestId;
     placeDetailsLoading = true;
     renderSearch();
-    placesSearchApi.getLocation(
-      p.id,
-      ({ location, status }) => {
+    placesSearchApi.getLocation(p.id).then(({ location, status }) => {
         if (requestId !== placeDetailsRequestId || !searchOpen) return;
         placeDetailsLoading = false;
         if (status && status.kind === "ok" && location) {
@@ -1129,8 +1127,7 @@
           showError("場所を取得できません", placesErrorDetail(status), "places");
           renderSearch();
         }
-      }
-    );
+      });
   }
 
   // 検索画面のキー操作
