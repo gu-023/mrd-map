@@ -1106,6 +1106,11 @@
       if (!searchPredictions.length && searchZone === "preds") searchZone = "keys";
       if (predIdx >= searchPredictions.length) predIdx = 0;
       renderSearch();
+    }).catch(() => {
+      if (requestId !== predictionRequestId || !searchOpen) return;
+      searchLoading = false;
+      showError("場所を検索できません", placesErrorDetail(null), "places");
+      renderSearch();
     });
   }
 
@@ -1127,6 +1132,12 @@
           showError("場所を取得できません", placesErrorDetail(status), "places");
           renderSearch();
         }
+      })
+      .catch(() => {
+        if (requestId !== placeDetailsRequestId || !searchOpen) return;
+        placeDetailsLoading = false;
+        showError("場所を取得できません", placesErrorDetail(null), "places");
+        renderSearch();
       });
   }
 
