@@ -1022,6 +1022,8 @@
         keyIdx = i;
         placeDetailsLoading = false;
         placeDetailsRequestId++;
+        if (placeDetailsTimeoutId !== null) clearTimeout(placeDetailsTimeoutId);
+        placeDetailsTimeoutId = null;
         clearError("places");
         pressKey(k);
       });
@@ -1188,6 +1190,8 @@
     if (placeDetailsLoading && (key === "Enter" || key === " ")) return;
     placeDetailsLoading = false;
     placeDetailsRequestId++; // 検索操作を再開したら未完了の Place Details callback を無効化
+    if (placeDetailsTimeoutId !== null) clearTimeout(placeDetailsTimeoutId);
+    placeDetailsTimeoutId = null;
     clearError("places"); // 検索を続ける D-pad 操作で stale Places error を解除
     if (searchZone === "input") {
       if (key === "ArrowDown") {
