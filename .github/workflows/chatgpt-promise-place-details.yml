@@ -33,60 +33,33 @@ jobs:
           app = app_path.read_text()
           app = replace_once(
               app,
-              '''      getLocation: (id, callback) => {
-                const requestToken = requireSessionToken();
-                sessionToken = createSessionToken();
-                placesService.getDetails(
-                  { placeId: id, fields: ["geometry"], sessionToken: requestToken },
-                  (place, status) => callback({
-                    location: locationLiteral(place && place.geometry && place.geometry.location),
-                    status: normalizeStatus(status),
-                  })
-                );
-              },''',
-              '''      getLocation: (id) => new Promise((resolve) => {
-                const requestToken = requireSessionToken();
-                sessionToken = createSessionToken();
-                placesService.getDetails(
-                  { placeId: id, fields: ["geometry"], sessionToken: requestToken },
-                  (place, status) => resolve({
-                    location: locationLiteral(place && place.geometry && place.geometry.location),
-                    status: normalizeStatus(status),
-                  })
-                );
-              }),''',
-              "Place Details adapter",
+              "      getLocation: (id, callback) => {",
+              "      getLocation: (id) => new Promise((resolve) => {",
+              "Place Details adapter signature",
           )
           app = replace_once(
               app,
-              '''    placesSearchApi.getLocation(
-              p.id,
-              ({ location, status }) => {
-                if (requestId !== placeDetailsRequestId || !searchOpen) return;
-                placeDetailsLoading = false;
-                if (status && status.kind === "ok" && location) {
-                  clearError("places");
-                  closeSearch();
-                  openSearchTravelMenu(location, p.label);
-                } else {
-                  showError("場所を取得できません", placesErrorDetail(status), "places");
-                  renderSearch();
-                }
-              }
-            );''',
-              '''    placesSearchApi.getLocation(p.id).then(({ location, status }) => {
-              if (requestId !== placeDetailsRequestId || !searchOpen) return;
-              placeDetailsLoading = false;
-              if (status && status.kind === "ok" && location) {
-                clearError("places");
-                closeSearch();
-                openSearchTravelMenu(location, p.label);
-              } else {
-                showError("場所を取得できません", placesErrorDetail(status), "places");
-                renderSearch();
-              }
-            });''',
-              "Place Details search UI",
+              "          (place, status) => callback({",
+              "          (place, status) => resolve({",
+              "Place Details adapter resolver",
+          )
+          app = replace_once(
+              app,
+              "        );\n      },\n    };\n  }\n\n  /* ---------- 場所検索（オンスクリーンキーボード＋Autocomplete） ---------- */",
+              "        );\n      }),\n    };\n  }\n\n  /* ---------- 場所検索（オンスクリーンキーボード＋Autocomplete） ---------- */",
+              "Place Details adapter close",
+          )
+          app = replace_once(
+              app,
+              "    placesSearchApi.getLocation(\n      p.id,\n      ({ location, status }) => {",
+              "    placesSearchApi.getLocation(p.id).then(({ location, status }) => {",
+              "Place Details UI call",
+          )
+          app = replace_once(
+              app,
+              "        }\n      }\n    );\n  }\n\n  // 検索画面のキー操作",
+              "        }\n      });\n  }\n\n  // 検索画面のキー操作",
+              "Place Details UI close",
           )
           app_path.write_text(app)
 
@@ -134,6 +107,10 @@ jobs:
               "(place, status) => resolve({",
               "placesSearchApi.getLocation(p.id).then(({ location, status }) => {",
               '"Place Details Promise result"',
+              "const requestToken = requireSessionToken();",
+              "sessionToken = createSessionToken();",
+              "sessionToken: requestToken",
+              "if (requestId !== placeDetailsRequestId || !searchOpen) return;",
           ]
           missing = [token for token in required if token not in app + ci]
           forbidden = [
