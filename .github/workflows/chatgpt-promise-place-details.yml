@@ -62,34 +62,6 @@ jobs:
               "Place Details UI close",
           )
           app_path.write_text(app)
-
-          ci_path = Path(".github/workflows/ci.yml")
-          ci = ci_path.read_text()
-          ci = replace_once(
-              ci,
-              '              "Place Details named result": r"\\(place,\\s*status\\)\\s*=>\\s*callback\\(\\{\\s*location:",',
-              '              "Place Details Promise result": r"getLocation:\\s*\\(id\\)\\s*=>\\s*new Promise\\(\\(resolve\\)\\s*=>\\s*\\{[\\s\\S]*?\\(place,\\s*status\\)\\s*=>\\s*resolve\\(\\{\\s*location:",',
-              "Place Details adapter CI contract",
-          )
-          ci = replace_once(
-              ci,
-              '              "Place Details named result": r"placesSearchApi\\.getLocation\\(\\s*p\\.id,\\s*\\(\\{\\s*location,\\s*status\\s*\\}\\)\\s*=>",',
-              '              "Place Details Promise result": r"placesSearchApi\\.getLocation\\(\\s*p\\.id\\s*\\)\\.then\\(\\(\\{\\s*location,\\s*status\\s*\\}\\)\\s*=>",',
-              "Place Details UI CI contract",
-          )
-          ci = replace_once(
-              ci,
-              '              raise SystemExit("Places adapter no longer exposes named callback results: " + ", ".join(missing_adapter_callback_results))',
-              '              raise SystemExit("Places adapter no longer exposes normalized async results: " + ", ".join(missing_adapter_callback_results))',
-              "Adapter CI error text",
-          )
-          ci = replace_once(
-              ci,
-              '              raise SystemExit("Search UI no longer consumes named Places callback results: " + ", ".join(missing_ui_callback_results))',
-              '              raise SystemExit("Search UI no longer consumes normalized Places async results: " + ", ".join(missing_ui_callback_results))',
-              "UI CI error text",
-          )
-          ci_path.write_text(ci)
           PY
 
           node --check js/app.js
@@ -101,18 +73,16 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           app = Path("js/app.js").read_text()
-          ci = Path(".github/workflows/ci.yml").read_text()
           required = [
               "getLocation: (id) => new Promise((resolve) => {",
               "(place, status) => resolve({",
               "placesSearchApi.getLocation(p.id).then(({ location, status }) => {",
-              '"Place Details Promise result"',
               "const requestToken = requireSessionToken();",
               "sessionToken = createSessionToken();",
               "sessionToken: requestToken",
               "if (requestId !== placeDetailsRequestId || !searchOpen) return;",
           ]
-          missing = [token for token in required if token not in app + ci]
+          missing = [token for token in required if token not in app]
           forbidden = [
               "getLocation: (id, callback) => {",
               "placesSearchApi.getLocation(\n      p.id,\n      ({ location, status }) => {",
@@ -126,6 +96,6 @@ jobs:
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add js/app.js .github/workflows/ci.yml
+          git add js/app.js
           git commit -m "Promise-wrap Places details adapter"
           git push origin HEAD:chatgpt/promise-wrap-place-details
