@@ -1,0 +1,70 @@
+name: ChatGPT apply native-input Place Details cancellation
+
+on:
+  push:
+    branches:
+      - chatgpt/cancel-place-details-on-input-change
+    paths:
+      - .github/workflows/chatgpt-apply-native-input-details-cancel.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: chatgpt/cancel-place-details-on-input-change
+
+      - name: Apply focused runtime fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("js/app.js")
+          text = path.read_text()
+          old = '  els.searchQuery.addEventListener("input", () => {\n    if (!searchOpen) return;\n    searchQuery = els.searchQuery.value;\n    searchZone = "input";\n    refreshPredictions();\n    renderSearch();\n  });'
+          new = '  els.searchQuery.addEventListener("input", () => {\n    if (!searchOpen) return;\n    placeDetailsLoading = false;\n    placeDetailsRequestId++;\n    if (placeDetailsTimeoutId !== null) clearTimeout(placeDetailsTimeoutId);\n    placeDetailsTimeoutId = null;\n    clearError("places");\n    searchQuery = els.searchQuery.value;\n    searchZone = "input";\n    refreshPredictions();\n    renderSearch();\n  });'
+          if text.count(old) != 1:
+              raise SystemExit("native input listener anchor must appear exactly once")
+          path.write_text(text.replace(old, new, 1))
+          PY
+
+          node --check js/app.js
+          git diff --check
+
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+
+          text = Path("js/app.js").read_text()
+          pattern = re.compile(
+              r'els\.searchQuery\.addEventListener\("input",\s*\(\)\s*=>\s*\{'
+              r'[\s\S]*?if \(!searchOpen\) return;'
+              r'[\s\S]*?placeDetailsLoading\s*=\s*false;'
+              r'[\s\S]*?placeDetailsRequestId\+\+;'
+              r'[\s\S]*?if \(placeDetailsTimeoutId !== null\) clearTimeout\(placeDetailsTimeoutId\);'
+              r'[\s\S]*?placeDetailsTimeoutId\s*=\s*null;'
+              r'[\s\S]*?clearError\("places"\);'
+              r'[\s\S]*?searchQuery\s*=\s*els\.searchQuery\.value;'
+              r'[\s\S]*?refreshPredictions\(\);'
+          )
+          if not pattern.search(text):
+              raise SystemExit("native input cancellation guard missing")
+          PY
+
+          if git diff -- js/app.js | grep -E 'AIza[0-9A-Za-z_-]{20,}' >/dev/null; then
+            echo "::error::diff appears to contain a Google API key"
+            exit 1
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add js/app.js
+          git diff --cached --quiet && { echo "::error::expected js/app.js change was not produced"; exit 1; }
+          git commit -m "Cancel stale Place Details on native input changes"
+          git push origin HEAD:chatgpt/cancel-place-details-on-input-change
