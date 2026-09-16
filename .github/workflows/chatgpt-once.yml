@@ -1,0 +1,81 @@
+name: ChatGPT one-shot Places rejection recovery
+
+on:
+  push:
+    branches:
+      - chatgpt/handle-places-promise-rejections
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: chatgpt/handle-places-promise-rejections
+
+      - name: Recover search UI from rejected Places promises
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("js/app.js")
+          text = path.read_text()
+
+          refresh_start = text.index("  function refreshPredictions(")
+          select_start = text.index("\n  function selectPrediction(p) {", refresh_start)
+          refresh = text[refresh_start:select_start]
+          refresh_tail = "\n      renderSearch();\n    });\n  }\n"
+          if refresh.count(refresh_tail) != 1:
+              raise SystemExit("Autocomplete Promise tail anchor must appear exactly once")
+          refresh = refresh.replace(
+              refresh_tail,
+              "\n      renderSearch();\n    }).catch(() => {\n"
+              "      if (requestId !== predictionRequestId || !searchOpen) return;\n"
+              "      searchLoading = false;\n"
+              "      showError(\"場所を検索できません\", placesErrorDetail(null), \"places\");\n"
+              "      renderSearch();\n"
+              "    });\n  }\n",
+          )
+          text = text[:refresh_start] + refresh + text[select_start:]
+
+          select_start = text.index("  function selectPrediction(p) {")
+          select_end = text.index("\n  // 検索画面のキー操作", select_start)
+          select = text[select_start:select_end]
+          select_tail = "\n      });\n  }\n"
+          if select.count(select_tail) != 1:
+              raise SystemExit("Place Details Promise tail anchor must appear exactly once")
+          select = select.replace(
+              select_tail,
+              "\n      })\n"
+              "      .catch(() => {\n"
+              "        if (requestId !== placeDetailsRequestId || !searchOpen) return;\n"
+              "        placeDetailsLoading = false;\n"
+              "        showError(\"場所を取得できません\", placesErrorDetail(null), \"places\");\n"
+              "        renderSearch();\n"
+              "      });\n  }\n",
+          )
+          text = text[:select_start] + select + text[select_end:]
+          path.write_text(text)
+          PY
+
+          node --check js/app.js
+          git diff --check
+          if git grep -nE 'AIza[0-9A-Za-z_-]{35}' -- .; then
+            echo "Tracked Google API key pattern found"
+            exit 1
+          fi
+
+      - name: Commit product change
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "ChatGPT"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add js/app.js
+          git commit -m "Recover Places search from rejected promises"
+          git push origin HEAD:chatgpt/handle-places-promise-rejections
