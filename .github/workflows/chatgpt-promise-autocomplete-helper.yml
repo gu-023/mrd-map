@@ -51,26 +51,6 @@ jobs:
                   raise SystemExit(f'expected {label} exactly once, found {app.count(old)}')
               app = app.replace(old, new, 1)
           app_path.write_text(app)
-
-          ci_path = Path('.github/workflows/ci.yml')
-          ci = ci_path.read_text()
-          ci_replacements = [
-              (
-                  '              "Autocomplete named result": r"\\(predictions,\\s*status\\)\\s*=>\\s*callback\\(\\{\\s*predictions:",',
-                  '              "Autocomplete Promise result": r"getPredictions:\\s*\\(input,\\s*location\\)\\s*=>\\s*new Promise\\(\\(resolve\\)\\s*=>\\s*\\{[\\s\\S]*?\\(predictions,\\s*status\\)\\s*=>\\s*resolve\\(\\{\\s*predictions:",',
-                  'adapter CI pattern',
-              ),
-              (
-                  '              "Autocomplete named result": r"placesSearchApi\\.getPredictions\\(\\s*q,\\s*pos,\\s*\\(\\{\\s*predictions,\\s*status\\s*\\}\\)\\s*=>",',
-                  '              "Autocomplete Promise result": r"placesSearchApi\\.getPredictions\\(\\s*q,\\s*pos\\s*\\)\\.then\\(\\(\\{\\s*predictions,\\s*status\\s*\\}\\)\\s*=>",',
-                  'UI CI pattern',
-              ),
-          ]
-          for old, new, label in ci_replacements:
-              if ci.count(old) != 1:
-                  raise SystemExit(f'expected {label} exactly once, found {ci.count(old)}')
-              ci = ci.replace(old, new, 1)
-          ci_path.write_text(ci)
           PY
           node --check js/app.js
           git diff --check
@@ -90,7 +70,7 @@ jobs:
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add js/app.js .github/workflows/ci.yml
+          git add js/app.js
           git diff --cached --quiet && exit 0
           git commit -m 'Promise-wrap Places Autocomplete adapter'
           git push origin HEAD:chatgpt/promise-autocomplete-adapter
