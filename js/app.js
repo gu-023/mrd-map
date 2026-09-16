@@ -1059,6 +1059,11 @@
 
   els.searchQuery.addEventListener("input", () => {
     if (!searchOpen) return;
+    placeDetailsLoading = false;
+    placeDetailsRequestId++;
+    if (placeDetailsTimeoutId !== null) clearTimeout(placeDetailsTimeoutId);
+    placeDetailsTimeoutId = null;
+    clearError("places");
     searchQuery = els.searchQuery.value;
     searchZone = "input";
     refreshPredictions();
