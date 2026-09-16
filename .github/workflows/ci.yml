@@ -94,6 +94,11 @@ jobs:
               "Autocomplete named result": r"placesSearchApi\.getPredictions\(\s*q,\s*pos,\s*\(\{\s*predictions,\s*status\s*\}\)\s*=>",
               "Place Details named result": r"placesSearchApi\.getLocation\(\s*p\.id,\s*\(\{\s*location,\s*status\s*\}\)\s*=>",
           }
+          ui_stale_response_patterns = {
+              "Autocomplete stale-response guard": r"function refreshPredictions\([\s\S]*?const requestId = \+\+predictionRequestId;[\s\S]*?placesSearchApi\.getPredictions\([\s\S]*?if \(requestId !== predictionRequestId \|\| !searchOpen\) return;",
+              "Place Details stale-response guard": r"function selectPrediction\([\s\S]*?const requestId = \+\+placeDetailsRequestId;[\s\S]*?placesSearchApi\.getLocation\([\s\S]*?if \(requestId !== placeDetailsRequestId \|\| !searchOpen\) return;",
+              "Search close invalidation": r"function closeSearch\(\)\s*\{[\s\S]*?predictionRequestId\+\+;[\s\S]*?placeDetailsRequestId\+\+;",
+          }
 
           missing = [token for token in legacy_tokens if token not in adapter]
           leaked = [token for token in legacy_tokens if token in outside]
@@ -112,6 +117,10 @@ jobs:
           ]
           missing_ui_callback_results = [
               name for name, pattern in ui_callback_result_patterns.items()
+              if not re.search(pattern, search_ui)
+          ]
+          missing_ui_stale_response_guards = [
+              name for name, pattern in ui_stale_response_patterns.items()
               if not re.search(pattern, search_ui)
           ]
           if missing:
@@ -140,6 +149,8 @@ jobs:
               raise SystemExit("Places adapter no longer exposes named callback results: " + ", ".join(missing_adapter_callback_results))
           if missing_ui_callback_results:
               raise SystemExit("Search UI no longer consumes named Places callback results: " + ", ".join(missing_ui_callback_results))
+          if missing_ui_stale_response_guards:
+              raise SystemExit("Places search UI no longer guards stale async responses: " + ", ".join(missing_ui_stale_response_guards))
           PY
 
       - name: Check required files and config hygiene
