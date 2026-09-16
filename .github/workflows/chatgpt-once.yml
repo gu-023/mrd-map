@@ -25,47 +25,56 @@ jobs:
 
           path = Path("js/app.js")
           text = path.read_text()
-          replacements = {
-            '    placesSearchApi.getPredictions(q, pos).then(({ predictions, status }) => {':
+
+          def replace_once(text, old, new, label):
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label} anchor must appear exactly once, found {count}")
+              return text.replace(old, new)
+
+          text = replace_once(
+              text,
+              '    placesSearchApi.getPredictions(q, pos).then(({ predictions, status }) => {',
               '    placesSearchApi.getPredictions(q, pos).catch(() => ({ predictions: null, status: null })).then(({ predictions, status }) => {',
-            '''      renderSearch();
-    }).catch(() => {
-      if (requestId !== predictionRequestId || !searchOpen) return;
-      searchLoading = false;
-      showError("場所を検索できません", placesErrorDetail(null), "places");
-      renderSearch();
-    });
-  }
+              "Autocomplete call",
+          )
+          autocomplete_old = "\n".join([
+              "      renderSearch();",
+              "    }).catch(() => {",
+              "      if (requestId !== predictionRequestId || !searchOpen) return;",
+              "      searchLoading = false;",
+              '      showError("場所を検索できません", placesErrorDetail(null), "places");',
+              "      renderSearch();",
+              "    });",
+          ])
+          autocomplete_new = "\n".join([
+              "      renderSearch();",
+              "    });",
+          ])
+          text = replace_once(text, autocomplete_old, autocomplete_new, "Autocomplete rejection tail")
 
-  function selectPrediction(p) {''':
-              '''      renderSearch();
-    });
-  }
-
-  function selectPrediction(p) {''',
-            '    placesSearchApi.getLocation(p.id).then(({ location, status }) => {':
+          text = replace_once(
+              text,
+              '    placesSearchApi.getLocation(p.id).then(({ location, status }) => {',
               '    placesSearchApi.getLocation(p.id).catch(() => ({ location: null, status: null })).then(({ location, status }) => {',
-            '''        }
-      })
-      .catch(() => {
-        if (requestId !== placeDetailsRequestId || !searchOpen) return;
-        placeDetailsLoading = false;
-        showError("場所を取得できません", placesErrorDetail(null), "places");
-        renderSearch();
-      });
-  }
+              "Place Details call",
+          )
+          details_old = "\n".join([
+              "        }",
+              "      })",
+              "      .catch(() => {",
+              "        if (requestId !== placeDetailsRequestId || !searchOpen) return;",
+              "        placeDetailsLoading = false;",
+              '        showError("場所を取得できません", placesErrorDetail(null), "places");',
+              "        renderSearch();",
+              "      });",
+          ])
+          details_new = "\n".join([
+              "        }",
+              "      });",
+          ])
+          text = replace_once(text, details_old, details_new, "Place Details rejection tail")
 
-  // 検索画面のキー操作''':
-              '''        }
-      });
-  }
-
-  // 検索画面のキー操作''',
-          }
-          for old, new in replacements.items():
-              if text.count(old) != 1:
-                  raise SystemExit(f"Expected replacement anchor once, found {text.count(old)}: {old[:80]!r}")
-              text = text.replace(old, new)
           path.write_text(text)
           PY
 
