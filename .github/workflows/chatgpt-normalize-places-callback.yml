@@ -1,0 +1,128 @@
+name: ChatGPT normalize Places callback contract
+
+on:
+  push:
+    branches:
+      - chatgpt/normalize-places-callback-contract
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.event.head_commit.message != 'Normalize Places callback result contract'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: chatgpt/normalize-places-callback-contract
+          fetch-depth: 0
+
+      - name: Apply focused adapter contract change
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("js/app.js")
+          text = path.read_text()
+
+          old_predictions = '''          (predictions, status) => callback(
+            predictions ? predictions.map((prediction) => ({
+              id: prediction.place_id,
+              label: prediction.description,
+            })) : predictions,
+            normalizeStatus(status)
+          )'''
+          new_predictions = '''          (predictions, status) => callback({
+            predictions: predictions ? predictions.map((prediction) => ({
+              id: prediction.place_id,
+              label: prediction.description,
+            })) : predictions,
+            status: normalizeStatus(status),
+          })'''
+          if text.count(old_predictions) != 1:
+              raise SystemExit("Autocomplete callback anchor must appear exactly once")
+          text = text.replace(old_predictions, new_predictions)
+
+          old_location = '''          (place, status) => callback(
+            locationLiteral(place && place.geometry && place.geometry.location),
+            normalizeStatus(status)
+          )'''
+          new_location = '''          (place, status) => callback({
+            location: locationLiteral(place && place.geometry && place.geometry.location),
+            status: normalizeStatus(status),
+          })'''
+          if text.count(old_location) != 1:
+              raise SystemExit("Place Details callback anchor must appear exactly once")
+          text = text.replace(old_location, new_location)
+
+          old_prediction_consumer = '''    placesSearchApi.getPredictions(q, pos, (preds, status) => {
+      if (requestId !== predictionRequestId || !searchOpen) return;
+      searchLoading = false;
+      const statusKind = status && status.kind;'''
+          new_prediction_consumer = '''    placesSearchApi.getPredictions(q, pos, ({ predictions, status }) => {
+      if (requestId !== predictionRequestId || !searchOpen) return;
+      searchLoading = false;
+      const statusKind = status && status.kind;'''
+          if text.count(old_prediction_consumer) != 1:
+              raise SystemExit("Autocomplete consumer anchor must appear exactly once")
+          text = text.replace(old_prediction_consumer, new_prediction_consumer)
+
+          old_prediction_assignment = '''      searchPredictions = statusKind === "ok" && preds ? preds.slice(0, 6) : [];'''
+          new_prediction_assignment = '''      searchPredictions = statusKind === "ok" && predictions ? predictions.slice(0, 6) : [];'''
+          if text.count(old_prediction_assignment) != 1:
+              raise SystemExit("Autocomplete assignment anchor must appear exactly once")
+          text = text.replace(old_prediction_assignment, new_prediction_assignment)
+
+          old_location_consumer = '''      (location, status) => {
+        if (requestId !== placeDetailsRequestId || !searchOpen) return;'''
+          new_location_consumer = '''      ({ location, status }) => {
+        if (requestId !== placeDetailsRequestId || !searchOpen) return;'''
+          if text.count(old_location_consumer) != 1:
+              raise SystemExit("Place Details consumer anchor must appear exactly once")
+          text = text.replace(old_location_consumer, new_location_consumer)
+
+          path.write_text(text)
+          PY
+
+          node --check js/app.js
+          git diff --check
+
+          python3 - <<'PY'
+          from pathlib import Path
+          text = Path("js/app.js").read_text()
+          required = [
+              "(predictions, status) => callback({",
+              "predictions: predictions ? predictions.map((prediction) => ({",
+              "status: normalizeStatus(status),",
+              "(place, status) => callback({",
+              "location: locationLiteral(place && place.geometry && place.geometry.location),",
+              "placesSearchApi.getPredictions(q, pos, ({ predictions, status }) => {",
+              'searchPredictions = statusKind === "ok" && predictions ? predictions.slice(0, 6) : [];',
+              "({ location, status }) => {",
+          ]
+          missing = [token for token in required if token not in text]
+          forbidden = [
+              "placesSearchApi.getPredictions(q, pos, (preds, status) => {",
+              "      (location, status) => {\n        if (requestId !== placeDetailsRequestId",
+          ]
+          leaked = [token for token in forbidden if token in text]
+          if missing:
+              raise SystemExit("Missing normalized callback contract tokens: " + ", ".join(missing))
+          if leaked:
+              raise SystemExit("Positional Places callback contract remains: " + ", ".join(leaked))
+          PY
+
+      - name: Commit focused change
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/chatgpt-normalize-places-callback.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add js/app.js .github/workflows/chatgpt-normalize-places-callback.yml
+          git diff --cached --check
+          git commit -m "Normalize Places callback result contract"
+          git push origin HEAD:chatgpt/normalize-places-callback-contract
