@@ -912,7 +912,7 @@
       startSession: () => {
         sessionToken = createSessionToken();
       },
-      getPredictions: (input, location, callback) => {
+      getPredictions: (input, location) => new Promise((resolve) => {
         const request = {
           input,
           sessionToken: requireSessionToken(),
@@ -925,7 +925,7 @@
         }
         autocompleteService.getPlacePredictions(
           request,
-          (predictions, status) => callback({
+          (predictions, status) => resolve({
             predictions: predictions ? predictions.map((prediction) => ({
               id: prediction.place_id,
               label: prediction.description,
@@ -933,7 +933,7 @@
             status: normalizeStatus(status),
           })
         );
-      },
+      }),
       getLocation: (id, callback) => {
         const requestToken = requireSessionToken();
         sessionToken = createSessionToken();
@@ -1082,7 +1082,7 @@
     searchLoading = q.length > 0;
     if (!searchLoading) return;
     const pos = locationLiteral(userMarker && userMarker.getPosition());
-    placesSearchApi.getPredictions(q, pos, ({ predictions, status }) => {
+    placesSearchApi.getPredictions(q, pos).then(({ predictions, status }) => {
       if (requestId !== predictionRequestId || !searchOpen) return;
       searchLoading = false;
       const statusKind = status && status.kind;
