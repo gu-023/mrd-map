@@ -111,6 +111,9 @@
   let searchReturnPrediction = null; // 移動手段から戻る際に直前の候補へD-padフォーカスを復元
   let predictionRequestId = 0; // 古い Autocomplete callback を無視するための世代番号
   let placeDetailsRequestId = 0; // 古い Place Details callback を無視するための世代番号
+  let predictionTimeoutId = null;
+  let placeDetailsTimeoutId = null;
+  const PLACES_REQUEST_TIMEOUT_MS = 10000;
   const SEARCH_COLS = 9;
   const SEARCH_KEYS = "abcdefghijklmnopqrstuvwxyz0123456789".split("").concat(["␣", "⌫", "✕"]);
 
@@ -977,6 +980,10 @@
   }
 
   function closeSearch() {
+    if (predictionTimeoutId !== null) clearTimeout(predictionTimeoutId);
+    if (placeDetailsTimeoutId !== null) clearTimeout(placeDetailsTimeoutId);
+    predictionTimeoutId = null;
+    placeDetailsTimeoutId = null;
     predictionRequestId++; // 閉じた検索の callback が後から UI を更新しないよう無効化
     placeDetailsRequestId++; // 閉じた検索の Place Details callback も無効化
     clearError("places"); // 明示的に検索を閉じたら Places 由来の stale error も解除
@@ -1073,6 +1080,8 @@
   }
 
   function refreshPredictions(returnPrediction = null) {
+    if (predictionTimeoutId !== null) clearTimeout(predictionTimeoutId);
+    predictionTimeoutId = null;
     const requestId = ++predictionRequestId;
     searchPredictions = [];
     searchEmpty = false;
@@ -1082,8 +1091,22 @@
     searchLoading = q.length > 0;
     if (!searchLoading) return;
     const pos = locationLiteral(userMarker && userMarker.getPosition());
+    predictionTimeoutId = setTimeout(() => {
+      if (requestId !== predictionRequestId || !searchOpen) return;
+      predictionRequestId++;
+      predictionTimeoutId = null;
+      searchLoading = false;
+      showError(
+        "場所検索がタイムアウトしました",
+        placesErrorDetail({ kind: "error", code: "TIMEOUT" }),
+        "places"
+      );
+      renderSearch();
+    }, PLACES_REQUEST_TIMEOUT_MS);
     placesSearchApi.getPredictions(q, pos).then(({ predictions, status }) => {
       if (requestId !== predictionRequestId || !searchOpen) return;
+      clearTimeout(predictionTimeoutId);
+      predictionTimeoutId = null;
       searchLoading = false;
       const statusKind = status && status.kind;
       if (statusKind !== "ok" && statusKind !== "empty") {
@@ -1109,6 +1132,8 @@
     }, () => {
       if (requestId !== predictionRequestId || !searchOpen) return;
       searchLoading = false;
+      clearTimeout(predictionTimeoutId);
+      predictionTimeoutId = null;
       showError("場所を検索できません", placesErrorDetail(null), "places");
       renderSearch();
     });
@@ -1118,11 +1143,27 @@
     if (!p || placeDetailsLoading) return;
     searchReturnPrediction = { id: p.id || null, index: predIdx, backZone: predictionBackZone };
     clearError("places"); // 再試行中は古い Places error だけ解除
+    if (placeDetailsTimeoutId !== null) clearTimeout(placeDetailsTimeoutId);
+    placeDetailsTimeoutId = null;
     const requestId = ++placeDetailsRequestId;
     placeDetailsLoading = true;
     renderSearch();
+    placeDetailsTimeoutId = setTimeout(() => {
+      if (requestId !== placeDetailsRequestId || !searchOpen) return;
+      placeDetailsRequestId++;
+      placeDetailsTimeoutId = null;
+      placeDetailsLoading = false;
+      showError(
+        "場所の取得がタイムアウトしました",
+        placesErrorDetail({ kind: "error", code: "TIMEOUT" }),
+        "places"
+      );
+      renderSearch();
+    }, PLACES_REQUEST_TIMEOUT_MS);
     placesSearchApi.getLocation(p.id).then(({ location, status }) => {
         if (requestId !== placeDetailsRequestId || !searchOpen) return;
+        clearTimeout(placeDetailsTimeoutId);
+        placeDetailsTimeoutId = null;
         placeDetailsLoading = false;
         if (status && status.kind === "ok" && location) {
           clearError("places");
@@ -1135,6 +1176,8 @@
       }, () => {
         if (requestId !== placeDetailsRequestId || !searchOpen) return;
         placeDetailsLoading = false;
+        clearTimeout(placeDetailsTimeoutId);
+        placeDetailsTimeoutId = null;
         showError("場所を取得できません", placesErrorDetail(null), "places");
         renderSearch();
       });
