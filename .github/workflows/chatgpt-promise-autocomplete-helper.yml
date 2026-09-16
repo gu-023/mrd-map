@@ -24,71 +24,51 @@ jobs:
 
           app_path = Path('js/app.js')
           app = app_path.read_text()
-          old_adapter = '''      getPredictions: (input, location, callback) => {
-            const request = {
-              input,
-              sessionToken: requireSessionToken(),
-              componentRestrictions: { country: "jp" },
-            };
-            if (location) {
-              location = new google.maps.LatLng(location.lat, location.lng);
-              request.location = location;
-              request.radius = 50000;
-            }
-            autocompleteService.getPlacePredictions(
-              request,
-              (predictions, status) => callback({
-                predictions: predictions ? predictions.map((prediction) => ({
-                  id: prediction.place_id,
-                  label: prediction.description,
-                })) : predictions,
-                status: normalizeStatus(status),
-              })
-            );
-          },'''
-          new_adapter = '''      getPredictions: (input, location) => new Promise((resolve) => {
-            const request = {
-              input,
-              sessionToken: requireSessionToken(),
-              componentRestrictions: { country: "jp" },
-            };
-            if (location) {
-              location = new google.maps.LatLng(location.lat, location.lng);
-              request.location = location;
-              request.radius = 50000;
-            }
-            autocompleteService.getPlacePredictions(
-              request,
-              (predictions, status) => resolve({
-                predictions: predictions ? predictions.map((prediction) => ({
-                  id: prediction.place_id,
-                  label: prediction.description,
-                })) : predictions,
-                status: normalizeStatus(status),
-              })
-            );
-          }),'''
-          old_ui = '    placesSearchApi.getPredictions(q, pos, ({ predictions, status }) => {'
-          new_ui = '    placesSearchApi.getPredictions(q, pos).then(({ predictions, status }) => {'
-          if old_adapter not in app or app.count(old_adapter) != 1:
-              raise SystemExit('expected Autocomplete adapter anchor exactly once')
-          if old_ui not in app or app.count(old_ui) != 1:
-              raise SystemExit('expected Autocomplete UI anchor exactly once')
-          app = app.replace(old_adapter, new_adapter, 1).replace(old_ui, new_ui, 1)
+          replacements = [
+              (
+                  '      getPredictions: (input, location, callback) => {',
+                  '      getPredictions: (input, location) => new Promise((resolve) => {',
+                  'Autocomplete adapter signature',
+              ),
+              (
+                  '          (predictions, status) => callback({',
+                  '          (predictions, status) => resolve({',
+                  'Autocomplete adapter completion',
+              ),
+              (
+                  '        );\n      },\n      getLocation: (id, callback) => {',
+                  '        );\n      }),\n      getLocation: (id, callback) => {',
+                  'Autocomplete adapter closing',
+              ),
+              (
+                  '    placesSearchApi.getPredictions(q, pos, ({ predictions, status }) => {',
+                  '    placesSearchApi.getPredictions(q, pos).then(({ predictions, status }) => {',
+                  'Autocomplete UI consumer',
+              ),
+          ]
+          for old, new, label in replacements:
+              if app.count(old) != 1:
+                  raise SystemExit(f'expected {label} exactly once, found {app.count(old)}')
+              app = app.replace(old, new, 1)
           app_path.write_text(app)
 
           ci_path = Path('.github/workflows/ci.yml')
           ci = ci_path.read_text()
-          old_adapter_pattern = '              "Autocomplete named result": r"\\(predictions,\\s*status\\)\\s*=>\\s*callback\\(\\{\\s*predictions:",'
-          new_adapter_pattern = '              "Autocomplete Promise result": r"getPredictions:\\s*\\(input,\\s*location\\)\\s*=>\\s*new Promise\\(\\(resolve\\)\\s*=>\\s*\\{[\\s\\S]*?\\(predictions,\\s*status\\)\\s*=>\\s*resolve\\(\\{\\s*predictions:",'
-          old_ui_pattern = '              "Autocomplete named result": r"placesSearchApi\\.getPredictions\\(\\s*q,\\s*pos,\\s*\\(\\{\\s*predictions,\\s*status\\s*\\}\\)\\s*=>",'
-          new_ui_pattern = '              "Autocomplete Promise result": r"placesSearchApi\\.getPredictions\\(\\s*q,\\s*pos\\s*\\)\\.then\\(\\(\\{\\s*predictions,\\s*status\\s*\\}\\)\\s*=>",'
-          for old, new, label in [
-              (old_adapter_pattern, new_adapter_pattern, 'adapter CI pattern'),
-              (old_ui_pattern, new_ui_pattern, 'UI CI pattern'),
-          ]:
+          ci_replacements = [
+              (
+                  '              "Autocomplete named result": r"\\(predictions,\\s*status\\)\\s*=>\\s*callback\\(\\{\\s*predictions:",',
+                  '              "Autocomplete Promise result": r"getPredictions:\\s*\\(input,\\s*location\\)\\s*=>\\s*new Promise\\(\\(resolve\\)\\s*=>\\s*\\{[\\s\\S]*?\\(predictions,\\s*status\\)\\s*=>\\s*resolve\\(\\{\\s*predictions:",',
+                  'adapter CI pattern',
+              ),
+              (
+                  '              "Autocomplete named result": r"placesSearchApi\\.getPredictions\\(\\s*q,\\s*pos,\\s*\\(\\{\\s*predictions,\\s*status\\s*\\}\\)\\s*=>",',
+                  '              "Autocomplete Promise result": r"placesSearchApi\\.getPredictions\\(\\s*q,\\s*pos\\s*\\)\\.then\\(\\(\\{\\s*predictions,\\s*status\\s*\\}\\)\\s*=>",',
+                  'UI CI pattern',
+              ),
+          ]
+          for old, new, label in ci_replacements:
               if ci.count(old) != 1:
-                  raise SystemExit(f'expected {label} exactly once')
+                  raise SystemExit(f'expected {label} exactly once, found {ci.count(old)}')
               ci = ci.replace(old, new, 1)
           ci_path.write_text(ci)
           PY
@@ -102,8 +82,8 @@ jobs:
           assert 'placesSearchApi.getPredictions(q, pos).then(({ predictions, status }) => {' in app
           assert 'getPredictions: (input, location, callback)' not in app
           assert 'placesSearchApi.getPredictions(q, pos, ({ predictions, status }) => {' not in app
-          stale = 'if (requestId !== predictionRequestId || !searchOpen) return;'
-          assert stale in app
+          assert 'if (requestId !== predictionRequestId || !searchOpen) return;' in app
+          assert 'getLocation: (id, callback) => {' in app
           PY
       - name: Commit patch
         shell: bash
