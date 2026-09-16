@@ -1067,18 +1067,18 @@
     searchQuery = els.searchQuery.value;
     searchZone = "input";
     if (event.isComposing) {
-    if (predictionTimeoutId !== null) clearTimeout(predictionTimeoutId);
-    predictionTimeoutId = null;
-    predictionRequestId++;
-    searchPredictions = [];
-    searchEmpty = false;
-    searchLoading = false;
-    predIdx = 0;
+      if (predictionTimeoutId !== null) clearTimeout(predictionTimeoutId);
+      predictionTimeoutId = null;
+      predictionRequestId++;
+      searchPredictions = [];
+      searchEmpty = false;
+      searchLoading = false;
+      predIdx = 0;
+      renderSearch();
+      return;
+    }
+    refreshPredictions();
     renderSearch();
-    return;
-  }
-  refreshPredictions();
-  renderSearch();
   });
   function pressKey(k) {
     if (k === "✕") { closeSearch(); return; }
