@@ -50,15 +50,8 @@ jobs:
           text = text.replace(adapter_marker, helper + adapter_marker, 1)
 
           replace_once(
-              '''        if (location) {
-            request.location = location;
-            request.radius = 50000;
-          }''',
-              '''        if (location) {
-            location = new google.maps.LatLng(location.lat, location.lng);
-            request.location = location;
-            request.radius = 50000;
-          }''',
+              "          request.location = location;",
+              "          location = new google.maps.LatLng(location.lat, location.lng);\n          request.location = location;",
               "Autocomplete location conversion",
           )
           replace_once(
