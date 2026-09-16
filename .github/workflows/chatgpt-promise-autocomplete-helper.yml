@@ -1,0 +1,116 @@
+name: ChatGPT Promise Autocomplete helper
+
+on:
+  push:
+    branches:
+      - chatgpt/promise-autocomplete-adapter
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: chatgpt/promise-autocomplete-adapter
+      - name: Patch Autocomplete contract
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          app_path = Path('js/app.js')
+          app = app_path.read_text()
+          old_adapter = '''      getPredictions: (input, location, callback) => {
+            const request = {
+              input,
+              sessionToken: requireSessionToken(),
+              componentRestrictions: { country: "jp" },
+            };
+            if (location) {
+              location = new google.maps.LatLng(location.lat, location.lng);
+              request.location = location;
+              request.radius = 50000;
+            }
+            autocompleteService.getPlacePredictions(
+              request,
+              (predictions, status) => callback({
+                predictions: predictions ? predictions.map((prediction) => ({
+                  id: prediction.place_id,
+                  label: prediction.description,
+                })) : predictions,
+                status: normalizeStatus(status),
+              })
+            );
+          },'''
+          new_adapter = '''      getPredictions: (input, location) => new Promise((resolve) => {
+            const request = {
+              input,
+              sessionToken: requireSessionToken(),
+              componentRestrictions: { country: "jp" },
+            };
+            if (location) {
+              location = new google.maps.LatLng(location.lat, location.lng);
+              request.location = location;
+              request.radius = 50000;
+            }
+            autocompleteService.getPlacePredictions(
+              request,
+              (predictions, status) => resolve({
+                predictions: predictions ? predictions.map((prediction) => ({
+                  id: prediction.place_id,
+                  label: prediction.description,
+                })) : predictions,
+                status: normalizeStatus(status),
+              })
+            );
+          }),'''
+          old_ui = '    placesSearchApi.getPredictions(q, pos, ({ predictions, status }) => {'
+          new_ui = '    placesSearchApi.getPredictions(q, pos).then(({ predictions, status }) => {'
+          if old_adapter not in app or app.count(old_adapter) != 1:
+              raise SystemExit('expected Autocomplete adapter anchor exactly once')
+          if old_ui not in app or app.count(old_ui) != 1:
+              raise SystemExit('expected Autocomplete UI anchor exactly once')
+          app = app.replace(old_adapter, new_adapter, 1).replace(old_ui, new_ui, 1)
+          app_path.write_text(app)
+
+          ci_path = Path('.github/workflows/ci.yml')
+          ci = ci_path.read_text()
+          old_adapter_pattern = '              "Autocomplete named result": r"\\(predictions,\\s*status\\)\\s*=>\\s*callback\\(\\{\\s*predictions:",'
+          new_adapter_pattern = '              "Autocomplete Promise result": r"getPredictions:\\s*\\(input,\\s*location\\)\\s*=>\\s*new Promise\\(\\(resolve\\)\\s*=>\\s*\\{[\\s\\S]*?\\(predictions,\\s*status\\)\\s*=>\\s*resolve\\(\\{\\s*predictions:",'
+          old_ui_pattern = '              "Autocomplete named result": r"placesSearchApi\\.getPredictions\\(\\s*q,\\s*pos,\\s*\\(\\{\\s*predictions,\\s*status\\s*\\}\\)\\s*=>",'
+          new_ui_pattern = '              "Autocomplete Promise result": r"placesSearchApi\\.getPredictions\\(\\s*q,\\s*pos\\s*\\)\\.then\\(\\(\\{\\s*predictions,\\s*status\\s*\\}\\)\\s*=>",'
+          for old, new, label in [
+              (old_adapter_pattern, new_adapter_pattern, 'adapter CI pattern'),
+              (old_ui_pattern, new_ui_pattern, 'UI CI pattern'),
+          ]:
+              if ci.count(old) != 1:
+                  raise SystemExit(f'expected {label} exactly once')
+              ci = ci.replace(old, new, 1)
+          ci_path.write_text(ci)
+          PY
+          node --check js/app.js
+          git diff --check
+          python3 - <<'PY'
+          from pathlib import Path
+          app = Path('js/app.js').read_text()
+          assert 'getPredictions: (input, location) => new Promise((resolve) => {' in app
+          assert '(predictions, status) => resolve({' in app
+          assert 'placesSearchApi.getPredictions(q, pos).then(({ predictions, status }) => {' in app
+          assert 'getPredictions: (input, location, callback)' not in app
+          assert 'placesSearchApi.getPredictions(q, pos, ({ predictions, status }) => {' not in app
+          stale = 'if (requestId !== predictionRequestId || !searchOpen) return;'
+          assert stale in app
+          PY
+      - name: Commit patch
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add js/app.js .github/workflows/ci.yml
+          git diff --cached --quiet && exit 0
+          git commit -m 'Promise-wrap Places Autocomplete adapter'
+          git push origin HEAD:chatgpt/promise-autocomplete-adapter
