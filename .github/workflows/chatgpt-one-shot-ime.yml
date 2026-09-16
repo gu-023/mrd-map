@@ -1,0 +1,110 @@
+name: One-shot suppress composing Autocomplete
+
+on:
+  push:
+    branches:
+      - chatgpt/suppress-composing-autocomplete
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply atomic runtime change
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("js/app.js")
+          text = path.read_text()
+          old = '''  els.searchQuery.addEventListener("input", () => {
+            if (!searchOpen) return;
+            placeDetailsLoading = false;
+            placeDetailsRequestId++;
+            if (placeDetailsTimeoutId !== null) clearTimeout(placeDetailsTimeoutId);
+            placeDetailsTimeoutId = null;
+            clearError("places");
+            searchQuery = els.searchQuery.value;
+            searchZone = "input";
+            refreshPredictions();
+            renderSearch();
+          });'''
+          new = '''  els.searchQuery.addEventListener("input", (event) => {
+            if (!searchOpen) return;
+            placeDetailsLoading = false;
+            placeDetailsRequestId++;
+            if (placeDetailsTimeoutId !== null) clearTimeout(placeDetailsTimeoutId);
+            placeDetailsTimeoutId = null;
+            clearError("places");
+            searchQuery = els.searchQuery.value;
+            searchZone = "input";
+            if (event.isComposing) {
+              if (predictionTimeoutId !== null) clearTimeout(predictionTimeoutId);
+              predictionTimeoutId = null;
+              predictionRequestId++;
+              searchPredictions = [];
+              searchEmpty = false;
+              searchLoading = false;
+              predIdx = 0;
+              renderSearch();
+              return;
+            }
+            refreshPredictions();
+            renderSearch();
+          });'''
+          if text.count(old) != 1:
+            raise SystemExit(f"expected exactly one input-handler anchor, found {text.count(old)}")
+          path.write_text(text.replace(old, new))
+
+      - name: Verify JavaScript syntax
+        run: node --check js/app.js
+
+      - name: Verify diff whitespace
+        run: git diff --check
+
+      - name: Verify IME composition behavior guard
+        shell: python
+        run: |
+          from pathlib import Path
+          text = Path("js/app.js").read_text()
+          start = text.index('els.searchQuery.addEventListener("input", (event) => {')
+          end = text.index('\n  });', start) + len('\n  });')
+          block = text[start:end]
+          required = [
+              'if (event.isComposing)',
+              'predictionRequestId++;',
+              'predictionTimeoutId = null;',
+              'searchLoading = false;',
+              'refreshPredictions();',
+          ]
+          missing = [token for token in required if token not in block]
+          if missing:
+              raise SystemExit(f"missing composition guard tokens: {missing}")
+          if block.index('if (event.isComposing)') > block.index('refreshPredictions();'):
+              raise SystemExit('composition guard must precede Autocomplete request')
+
+      - name: Verify no API key added in runtime diff
+        shell: bash
+        run: |
+          if git diff -U0 -- js/app.js | grep -E 'AIza[0-9A-Za-z_-]{30,}'; then
+            echo "Google API key-like value found in diff" >&2
+            exit 1
+          fi
+
+      - name: Commit product change and remove helper
+        shell: bash
+        run: |
+          rm .github/workflows/chatgpt-one-shot-ime.yml
+          git config user.name "ChatGPT Codex Connector"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add js/app.js .github/workflows/chatgpt-one-shot-ime.yml
+          git diff --cached --check
+          git commit -m "Suppress Places Autocomplete during IME composition"
+          git push origin HEAD
