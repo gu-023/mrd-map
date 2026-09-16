@@ -89,7 +89,7 @@ jobs:
               "returnPrediction.id",
               "prediction.id === returnPrediction.id",
               "searchReturnPrediction = { id: p.id || null",
-              "p.id,",
+              "getLocation(p.id)",
           ]
           ui_identifier_leaks = [
               "placeId",
