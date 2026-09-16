@@ -927,18 +927,18 @@
           request,
           (predictions, status) => callback(
             predictions ? predictions.map((prediction) => ({
-              placeId: prediction.place_id,
+              id: prediction.place_id,
               label: prediction.description,
             })) : predictions,
             normalizeStatus(status)
           )
         );
       },
-      getLocation: (placeId, callback) => {
+      getLocation: (id, callback) => {
         const requestToken = requireSessionToken();
         sessionToken = createSessionToken();
         placesService.getDetails(
-          { placeId, fields: ["geometry"], sessionToken: requestToken },
+          { placeId: id, fields: ["geometry"], sessionToken: requestToken },
           (place, status) => callback(
             locationLiteral(place && place.geometry && place.geometry.location),
             normalizeStatus(status)
@@ -1094,8 +1094,8 @@
       searchPredictions = statusKind === "ok" && preds ? preds.slice(0, 6) : [];
       searchEmpty = statusKind === "empty" || (statusKind === "ok" && searchPredictions.length === 0);
       if (returnPrediction && searchZone === "input" && searchPredictions.length) {
-        const restoredIdx = returnPrediction.placeId
-          ? searchPredictions.findIndex((prediction) => prediction.placeId === returnPrediction.placeId)
+        const restoredIdx = returnPrediction.id
+          ? searchPredictions.findIndex((prediction) => prediction.id === returnPrediction.id)
           : -1;
         searchZone = "preds";
         predictionBackZone = returnPrediction.backZone === "keys" ? "keys" : "input";
@@ -1111,13 +1111,13 @@
 
   function selectPrediction(p) {
     if (!p || placeDetailsLoading) return;
-    searchReturnPrediction = { placeId: p.placeId || null, index: predIdx, backZone: predictionBackZone };
+    searchReturnPrediction = { id: p.id || null, index: predIdx, backZone: predictionBackZone };
     clearError("places"); // 再試行中は古い Places error だけ解除
     const requestId = ++placeDetailsRequestId;
     placeDetailsLoading = true;
     renderSearch();
     placesSearchApi.getLocation(
-      p.placeId,
+      p.id,
       (location, status) => {
         if (requestId !== placeDetailsRequestId || !searchOpen) return;
         placeDetailsLoading = false;
