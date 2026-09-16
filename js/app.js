@@ -1057,7 +1057,7 @@
     renderSearch();
   });
 
-  els.searchQuery.addEventListener("input", () => {
+  els.searchQuery.addEventListener("input", (event) => {
     if (!searchOpen) return;
     placeDetailsLoading = false;
     placeDetailsRequestId++;
@@ -1066,6 +1066,17 @@
     clearError("places");
     searchQuery = els.searchQuery.value;
     searchZone = "input";
+    if (event.isComposing) {
+      if (predictionTimeoutId !== null) clearTimeout(predictionTimeoutId);
+      predictionTimeoutId = null;
+      predictionRequestId++;
+      searchPredictions = [];
+      searchEmpty = false;
+      searchLoading = false;
+      predIdx = 0;
+      renderSearch();
+      return;
+    }
     refreshPredictions();
     renderSearch();
   });
