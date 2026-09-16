@@ -87,11 +87,11 @@ jobs:
               "placeId",
           ]
           adapter_callback_result_patterns = {
-              "Autocomplete named result": r"\(predictions,\s*status\)\s*=>\s*callback\(\{\s*predictions:",
+              "Autocomplete Promise result": r"getPredictions:\s*\(input,\s*location\)\s*=>\s*new Promise\(\(resolve\)\s*=>\s*\{[\s\S]*?\(predictions,\s*status\)\s*=>\s*resolve\(\{\s*predictions:",
               "Place Details named result": r"\(place,\s*status\)\s*=>\s*callback\(\{\s*location:",
           }
           ui_callback_result_patterns = {
-              "Autocomplete named result": r"placesSearchApi\.getPredictions\(\s*q,\s*pos,\s*\(\{\s*predictions,\s*status\s*\}\)\s*=>",
+              "Autocomplete Promise result": r"placesSearchApi\.getPredictions\(\s*q,\s*pos\s*\)\.then\(\(\{\s*predictions,\s*status\s*\}\)\s*=>",
               "Place Details named result": r"placesSearchApi\.getLocation\(\s*p\.id,\s*\(\{\s*location,\s*status\s*\}\)\s*=>",
           }
           ui_stale_response_patterns = {
