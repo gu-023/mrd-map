@@ -25,6 +25,9 @@ jobs:
 
           app_path = Path("js/app.js")
           text = app_path.read_text()
+          if "  function locationLiteral(location) {" in text:
+              print("location contract already normalized")
+              raise SystemExit(0)
 
           def replace_once(old, new, label):
               global text
@@ -44,13 +47,18 @@ jobs:
           }
 
           '''
-          if "  function locationLiteral(location) {" in text:
-              raise SystemExit("locationLiteral already exists")
           text = text.replace(adapter_marker, helper + adapter_marker, 1)
 
           replace_once(
-              "          request.location = location;",
-              "          request.location = new google.maps.LatLng(location.lat, location.lng);",
+              '''        if (location) {
+            request.location = location;
+            request.radius = 50000;
+          }''',
+              '''        if (location) {
+            location = new google.maps.LatLng(location.lat, location.lng);
+            request.location = location;
+            request.radius = 50000;
+          }''',
               "Autocomplete location conversion",
           )
           replace_once(
@@ -91,14 +99,6 @@ jobs:
               "recent destination",
           )
           app_path.write_text(text)
-
-          ci_path = Path(".github/workflows/ci.yml")
-          ci = ci_path.read_text()
-          old_ci = '              "request.location = location;",'
-          new_ci = '              "request.location = new google.maps.LatLng(location.lat, location.lng);",'
-          if ci.count(old_ci) != 1:
-              raise SystemExit(f"CI request.location token: expected exactly one match, found {ci.count(old_ci)}")
-          ci_path.write_text(ci.replace(old_ci, new_ci, 1))
           PY
 
       - name: Validate focused change
@@ -113,7 +113,8 @@ jobs:
           text = Path("js/app.js").read_text()
           required = [
               'function locationLiteral(location) {',
-              'request.location = new google.maps.LatLng(location.lat, location.lng);',
+              'location = new google.maps.LatLng(location.lat, location.lng);',
+              'request.location = location;',
               'locationLiteral(place && place.geometry && place.geometry.location)',
               'const pos = locationLiteral(userMarker && userMarker.getPosition());',
               'const routeDestination = new google.maps.LatLng(destination.lat, destination.lng);',
@@ -124,8 +125,6 @@ jobs:
           missing = [token for token in required if token not in text]
           if missing:
               raise SystemExit("missing normalized location contract tokens: " + ", ".join(missing))
-          if 'request.location = location;' in text:
-              raise SystemExit("raw UI location still passed directly to legacy Autocomplete request")
           PY
           if git grep -nE 'AIza[0-9A-Za-z_-]{35}' -- .; then
             echo "::error::A Google API key pattern is present in a tracked file"
@@ -133,14 +132,17 @@ jobs:
           fi
           git diff --stat
 
-      - name: Commit product change and remove helper
+      - name: Commit product change
         shell: bash
         run: |
           set -euo pipefail
+          if git diff --quiet -- js/app.js; then
+            echo "product change already committed"
+            exit 0
+          fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git rm .github/workflows/chatgpt-plain-places-location.yml
-          git add js/app.js .github/workflows/ci.yml
+          git add js/app.js
           git diff --cached --check
           git commit -m "Normalize Places location contract"
           git push origin HEAD:chatgpt/plain-places-location-contract
