@@ -2077,6 +2077,7 @@
   document.addEventListener("keydown", (e) => {
     // 検索画面: キーボード/候補を操作
     if (searchOpen) {
+      if (e.isComposing) return;
       const nativeSearchInputActive = searchZone === "input" && document.activeElement === els.searchQuery;
       if (nativeSearchInputActive && e.key !== "ArrowDown") return;
       if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "].indexOf(e.key) >= 0) {
