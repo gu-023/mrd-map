@@ -1,0 +1,97 @@
+name: ChatGPT one-shot fix location contract indentation
+
+on:
+  push:
+    branches:
+      - chatgpt/plain-places-location-contract
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: chatgpt/plain-places-location-contract
+
+      - name: Fix indentation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("js/app.js")
+          text = p.read_text()
+          old_helper = '''  function locationLiteral(location) {
+          if (!location) return null;
+          const lat = typeof location.lat === "function" ? location.lat() : location.lat;
+          const lng = typeof location.lng === "function" ? location.lng() : location.lng;
+          return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null;
+        }'''
+          new_helper = '''  function locationLiteral(location) {
+            if (!location) return null;
+            const lat = typeof location.lat === "function" ? location.lat() : location.lat;
+            const lng = typeof location.lng === "function" ? location.lng() : location.lng;
+            return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null;
+          }'''
+          old_route = '''  function computeRoute(dest, isReroute, name, requestedTravelMode, resumeFollowOnFailure) {
+          const destination = locationLiteral(dest);
+          if (!destination) {
+            showError("目的地が無効です", "目的地をもう一度選択してください。", "directions");
+            return;
+          }
+          const routeDestination = new google.maps.LatLng(destination.lat, destination.lng);
+          const origin = userMarker.getPosition();'''
+          new_route = '''  function computeRoute(dest, isReroute, name, requestedTravelMode, resumeFollowOnFailure) {
+            const destination = locationLiteral(dest);
+            if (!destination) {
+              showError("目的地が無効です", "目的地をもう一度選択してください。", "directions");
+              return;
+            }
+            const routeDestination = new google.maps.LatLng(destination.lat, destination.lng);
+            const origin = userMarker.getPosition();'''
+          changed = False
+          if old_helper in text:
+              text = text.replace(old_helper, new_helper, 1)
+              changed = True
+          if old_route in text:
+              text = text.replace(old_route, new_route, 1)
+              changed = True
+          if changed:
+              p.write_text(text)
+          PY
+
+      - name: Validate
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check js/app.js
+          git diff --check
+          python3 - <<'PY'
+          from pathlib import Path
+          text = Path("js/app.js").read_text()
+          required = [
+              '  function locationLiteral(location) {\n    if (!location) return null;',
+              '  function computeRoute(dest, isReroute, name, requestedTravelMode, resumeFollowOnFailure) {\n    const destination = locationLiteral(dest);',
+          ]
+          missing = [token for token in required if token not in text]
+          if missing:
+              raise SystemExit("indentation assertions failed")
+          PY
+
+      - name: Commit product fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- js/app.js; then
+            echo "indentation already fixed"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add js/app.js
+          git diff --cached --check
+          git commit -m "Fix Places location contract indentation"
+          git push origin HEAD:chatgpt/plain-places-location-contract
