@@ -1,0 +1,59 @@
+name: Autocomplete watchdog replacement guard
+
+on:
+  pull_request:
+    paths:
+      - js/app.js
+      - .github/workflows/autocomplete-watchdog-replacement.yml
+  push:
+    branches: [main]
+    paths:
+      - js/app.js
+      - .github/workflows/autocomplete-watchdog-replacement.yml
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check Autocomplete watchdog replacement lifecycle
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+
+          text = Path("js/app.js").read_text()
+          start_marker = "  function refreshPredictions(returnPrediction = null) {"
+          end_marker = "  function selectPrediction(p) {"
+          if text.count(start_marker) != 1 or text.count(end_marker) != 1:
+              raise SystemExit("Autocomplete lifecycle markers must each appear exactly once")
+
+          start = text.index(start_marker)
+          end = text.index(end_marker, start)
+          refresh = text[start:end]
+
+          replacement_pattern = re.compile(
+              r"function refreshPredictions\(returnPrediction = null\) \{\s*"
+              r"if \(predictionTimeoutId !== null\) clearTimeout\(predictionTimeoutId\);\s*"
+              r"predictionTimeoutId = null;\s*"
+              r"const requestId = \+\+predictionRequestId;"
+          )
+          empty_query_pattern = re.compile(
+              r"const q = searchQuery\.trim\(\);\s*"
+              r"searchLoading = q\.length > 0;\s*"
+              r"if \(!searchLoading\) return;"
+          )
+          if not replacement_pattern.search(refresh):
+              raise SystemExit(
+                  "refreshPredictions must clear/null the previous Autocomplete watchdog before advancing predictionRequestId"
+              )
+          if not empty_query_pattern.search(refresh):
+              raise SystemExit(
+                  "refreshPredictions must perform watchdog replacement cleanup before the empty-query early return"
+              )
+          PY
