@@ -23,44 +23,30 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           p = Path("js/app.js")
-          text = p.read_text()
-          old_helper = '''  function locationLiteral(location) {
-          if (!location) return null;
-          const lat = typeof location.lat === "function" ? location.lat() : location.lat;
-          const lng = typeof location.lng === "function" ? location.lng() : location.lng;
-          return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null;
-        }'''
-          new_helper = '''  function locationLiteral(location) {
-            if (!location) return null;
-            const lat = typeof location.lat === "function" ? location.lat() : location.lat;
-            const lng = typeof location.lng === "function" ? location.lng() : location.lng;
-            return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null;
-          }'''
-          old_route = '''  function computeRoute(dest, isReroute, name, requestedTravelMode, resumeFollowOnFailure) {
-          const destination = locationLiteral(dest);
-          if (!destination) {
-            showError("目的地が無効です", "目的地をもう一度選択してください。", "directions");
-            return;
-          }
-          const routeDestination = new google.maps.LatLng(destination.lat, destination.lng);
-          const origin = userMarker.getPosition();'''
-          new_route = '''  function computeRoute(dest, isReroute, name, requestedTravelMode, resumeFollowOnFailure) {
-            const destination = locationLiteral(dest);
-            if (!destination) {
-              showError("目的地が無効です", "目的地をもう一度選択してください。", "directions");
-              return;
-            }
-            const routeDestination = new google.maps.LatLng(destination.lat, destination.lng);
-            const origin = userMarker.getPosition();'''
-          changed = False
-          if old_helper in text:
-              text = text.replace(old_helper, new_helper, 1)
-              changed = True
-          if old_route in text:
-              text = text.replace(old_route, new_route, 1)
-              changed = True
-          if changed:
-              p.write_text(text)
+          lines = p.read_text().splitlines()
+
+          helper_start = lines.index("  function locationLiteral(location) {")
+          helper_expected = [
+              '    if (!location) return null;',
+              '    const lat = typeof location.lat === "function" ? location.lat() : location.lat;',
+              '    const lng = typeof location.lng === "function" ? location.lng() : location.lng;',
+              '    return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null;',
+              '  }',
+          ]
+          lines[helper_start + 1:helper_start + 6] = helper_expected
+
+          route_start = lines.index("  function computeRoute(dest, isReroute, name, requestedTravelMode, resumeFollowOnFailure) {")
+          route_expected = [
+              '    const destination = locationLiteral(dest);',
+              '    if (!destination) {',
+              '      showError("目的地が無効です", "目的地をもう一度選択してください。", "directions");',
+              '      return;',
+              '    }',
+              '    const routeDestination = new google.maps.LatLng(destination.lat, destination.lng);',
+              '    const origin = userMarker.getPosition();',
+          ]
+          lines[route_start + 1:route_start + 8] = route_expected
+          p.write_text("\n".join(lines) + "\n")
           PY
 
       - name: Validate
@@ -71,14 +57,15 @@ jobs:
           git diff --check
           python3 - <<'PY'
           from pathlib import Path
-          text = Path("js/app.js").read_text()
-          required = [
-              '  function locationLiteral(location) {\n    if (!location) return null;',
-              '  function computeRoute(dest, isReroute, name, requestedTravelMode, resumeFollowOnFailure) {\n    const destination = locationLiteral(dest);',
-          ]
-          missing = [token for token in required if token not in text]
-          if missing:
-              raise SystemExit("indentation assertions failed")
+          lines = Path("js/app.js").read_text().splitlines()
+          helper_start = lines.index("  function locationLiteral(location) {")
+          if lines[helper_start + 1] != '    if (!location) return null;' or lines[helper_start + 5] != '  }':
+              raise SystemExit("locationLiteral indentation assertion failed")
+          route_start = lines.index("  function computeRoute(dest, isReroute, name, requestedTravelMode, resumeFollowOnFailure) {")
+          if lines[route_start + 1] != '    const destination = locationLiteral(dest);':
+              raise SystemExit("computeRoute indentation assertion failed")
+          if lines[route_start + 3] != '      showError("目的地が無効です", "目的地をもう一度選択してください。", "directions");':
+              raise SystemExit("computeRoute nested indentation assertion failed")
           PY
 
       - name: Commit product fix
