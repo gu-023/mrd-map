@@ -1,0 +1,154 @@
+name: ChatGPT one-shot Place Details Promise migration
+
+on:
+  push:
+    branches: [chatgpt/promise-wrap-place-details]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: chatgpt/promise-wrap-place-details
+
+      - name: Apply atomic Place Details Promise migration
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(text, old, new, label):
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected 1 match, found {count}")
+              return text.replace(old, new, 1)
+
+          app_path = Path("js/app.js")
+          app = app_path.read_text()
+          app = replace_once(
+              app,
+              '''      getLocation: (id, callback) => {
+                const requestToken = requireSessionToken();
+                sessionToken = createSessionToken();
+                placesService.getDetails(
+                  { placeId: id, fields: ["geometry"], sessionToken: requestToken },
+                  (place, status) => callback({
+                    location: locationLiteral(place && place.geometry && place.geometry.location),
+                    status: normalizeStatus(status),
+                  })
+                );
+              },''',
+              '''      getLocation: (id) => new Promise((resolve) => {
+                const requestToken = requireSessionToken();
+                sessionToken = createSessionToken();
+                placesService.getDetails(
+                  { placeId: id, fields: ["geometry"], sessionToken: requestToken },
+                  (place, status) => resolve({
+                    location: locationLiteral(place && place.geometry && place.geometry.location),
+                    status: normalizeStatus(status),
+                  })
+                );
+              }),''',
+              "Place Details adapter",
+          )
+          app = replace_once(
+              app,
+              '''    placesSearchApi.getLocation(
+              p.id,
+              ({ location, status }) => {
+                if (requestId !== placeDetailsRequestId || !searchOpen) return;
+                placeDetailsLoading = false;
+                if (status && status.kind === "ok" && location) {
+                  clearError("places");
+                  closeSearch();
+                  openSearchTravelMenu(location, p.label);
+                } else {
+                  showError("場所を取得できません", placesErrorDetail(status), "places");
+                  renderSearch();
+                }
+              }
+            );''',
+              '''    placesSearchApi.getLocation(p.id).then(({ location, status }) => {
+              if (requestId !== placeDetailsRequestId || !searchOpen) return;
+              placeDetailsLoading = false;
+              if (status && status.kind === "ok" && location) {
+                clearError("places");
+                closeSearch();
+                openSearchTravelMenu(location, p.label);
+              } else {
+                showError("場所を取得できません", placesErrorDetail(status), "places");
+                renderSearch();
+              }
+            });''',
+              "Place Details search UI",
+          )
+          app_path.write_text(app)
+
+          ci_path = Path(".github/workflows/ci.yml")
+          ci = ci_path.read_text()
+          ci = replace_once(
+              ci,
+              '              "Place Details named result": r"\\(place,\\s*status\\)\\s*=>\\s*callback\\(\\{\\s*location:",',
+              '              "Place Details Promise result": r"getLocation:\\s*\\(id\\)\\s*=>\\s*new Promise\\(\\(resolve\\)\\s*=>\\s*\\{[\\s\\S]*?\\(place,\\s*status\\)\\s*=>\\s*resolve\\(\\{\\s*location:",',
+              "Place Details adapter CI contract",
+          )
+          ci = replace_once(
+              ci,
+              '              "Place Details named result": r"placesSearchApi\\.getLocation\\(\\s*p\\.id,\\s*\\(\\{\\s*location,\\s*status\\s*\\}\\)\\s*=>",',
+              '              "Place Details Promise result": r"placesSearchApi\\.getLocation\\(\\s*p\\.id\\s*\\)\\.then\\(\\(\\{\\s*location,\\s*status\\s*\\}\\)\\s*=>",',
+              "Place Details UI CI contract",
+          )
+          ci = replace_once(
+              ci,
+              '              raise SystemExit("Places adapter no longer exposes named callback results: " + ", ".join(missing_adapter_callback_results))',
+              '              raise SystemExit("Places adapter no longer exposes normalized async results: " + ", ".join(missing_adapter_callback_results))',
+              "Adapter CI error text",
+          )
+          ci = replace_once(
+              ci,
+              '              raise SystemExit("Search UI no longer consumes named Places callback results: " + ", ".join(missing_ui_callback_results))',
+              '              raise SystemExit("Search UI no longer consumes normalized Places async results: " + ", ".join(missing_ui_callback_results))',
+              "UI CI error text",
+          )
+          ci_path.write_text(ci)
+          PY
+
+          node --check js/app.js
+          git diff --check
+          if git grep -nE 'AIza[0-9A-Za-z_-]{35}' -- .; then
+            echo "::error::A Google API key pattern is present in a tracked file"
+            exit 1
+          fi
+          python3 - <<'PY'
+          from pathlib import Path
+          app = Path("js/app.js").read_text()
+          ci = Path(".github/workflows/ci.yml").read_text()
+          required = [
+              "getLocation: (id) => new Promise((resolve) => {",
+              "(place, status) => resolve({",
+              "placesSearchApi.getLocation(p.id).then(({ location, status }) => {",
+              '"Place Details Promise result"',
+          ]
+          missing = [token for token in required if token not in app + ci]
+          forbidden = [
+              "getLocation: (id, callback) => {",
+              "placesSearchApi.getLocation(\n      p.id,\n      ({ location, status }) => {",
+          ]
+          leaked = [token for token in forbidden if token in app]
+          if missing:
+              raise SystemExit("Missing Promise migration tokens: " + ", ".join(missing))
+          if leaked:
+              raise SystemExit("Legacy public callback contract remains: " + ", ".join(leaked))
+          PY
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add js/app.js .github/workflows/ci.yml
+          git commit -m "Promise-wrap Places details adapter"
+          git push origin HEAD:chatgpt/promise-wrap-place-details
