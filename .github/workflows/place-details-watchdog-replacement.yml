@@ -1,0 +1,58 @@
+name: Guard Place Details watchdog replacement cleanup
+
+on:
+  pull_request:
+    paths:
+      - js/app.js
+      - .github/workflows/place-details-watchdog-replacement.yml
+  push:
+    branches: [main]
+    paths:
+      - js/app.js
+      - .github/workflows/place-details-watchdog-replacement.yml
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check Place Details watchdog replacement cleanup
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          text = Path("js/app.js").read_text()
+          start_marker = "  function selectPrediction(p) {"
+          end_marker = "  // 検索画面のキー操作"
+          if text.count(start_marker) != 1 or text.count(end_marker) != 1:
+              raise SystemExit("Place Details selection boundary markers must each appear exactly once")
+
+          start = text.index(start_marker)
+          end = text.index(end_marker, start)
+          block = text[start:end]
+
+          clear_line = "if (placeDetailsTimeoutId !== null) clearTimeout(placeDetailsTimeoutId);"
+          null_line = "placeDetailsTimeoutId = null;"
+          request_line = "const requestId = ++placeDetailsRequestId;"
+          timer_line = "placeDetailsTimeoutId = setTimeout(() => {"
+
+          try:
+              clear_idx = block.index(clear_line)
+              null_idx = block.index(null_line, clear_idx + len(clear_line))
+              request_idx = block.index(request_line, null_idx + len(null_line))
+              timer_idx = block.index(timer_line, request_idx + len(request_line))
+          except ValueError as exc:
+              raise SystemExit(
+                  "Place Details retry no longer preserves watchdog replacement cleanup tokens"
+              ) from exc
+
+          if not (clear_idx < null_idx < request_idx < timer_idx):
+              raise SystemExit(
+                  "Place Details retry must clear/null the previous watchdog before advancing the request generation"
+              )
+          PY
