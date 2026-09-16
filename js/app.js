@@ -880,11 +880,11 @@
   }
 
   function locationLiteral(location) {
-  if (!location) return null;
-  const lat = typeof location.lat === "function" ? location.lat() : location.lat;
-  const lng = typeof location.lng === "function" ? location.lng() : location.lng;
-  return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null;
-}
+    if (!location) return null;
+    const lat = typeof location.lat === "function" ? location.lat() : location.lat;
+    const lng = typeof location.lng === "function" ? location.lng() : location.lng;
+    return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null;
+  }
 
   /* Legacy Places constructors/calls live behind this boundary so the search UI can migrate APIs independently. */
   function createPlacesSearchApi() {
@@ -1217,13 +1217,13 @@
   }
 
   function computeRoute(dest, isReroute, name, requestedTravelMode, resumeFollowOnFailure) {
-  const destination = locationLiteral(dest);
-  if (!destination) {
-    showError("目的地が無効です", "目的地をもう一度選択してください。", "directions");
-    return;
-  }
-  const routeDestination = new google.maps.LatLng(destination.lat, destination.lng);
-  const origin = userMarker.getPosition();
+    const destination = locationLiteral(dest);
+    if (!destination) {
+      showError("目的地が無効です", "目的地をもう一度選択してください。", "directions");
+      return;
+    }
+    const routeDestination = new google.maps.LatLng(destination.lat, destination.lng);
+    const origin = userMarker.getPosition();
     const originIsStale = lastPositionTimestamp !== null &&
       Date.now() - lastPositionTimestamp > ROUTE_ORIGIN_MAX_AGE_MS;
     if (!origin || originIsStale) {
