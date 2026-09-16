@@ -1,0 +1,107 @@
+name: ChatGPT one-shot Places rejection callback
+
+on:
+  push:
+    branches:
+      - chatgpt/handle-places-promise-rejections
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: chatgpt/handle-places-promise-rejections
+
+      - name: Handle adapter rejections without changing Promise success contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("js/app.js")
+          text = path.read_text()
+
+          def replace_once(text, old, new, label):
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label} anchor must appear exactly once, found {count}")
+              return text.replace(old, new)
+
+          text = replace_once(
+              text,
+              '    placesSearchApi.getPredictions(q, pos).catch(() => ({ predictions: null, status: null })).then(({ predictions, status }) => {',
+              '    placesSearchApi.getPredictions(q, pos).then(({ predictions, status }) => {',
+              "Autocomplete call",
+          )
+          autocomplete_old = "\n".join([
+              "      renderSearch();",
+              "    });",
+              "  }",
+              "",
+              "  function selectPrediction(p) {",
+          ])
+          autocomplete_new = "\n".join([
+              "      renderSearch();",
+              "    }, () => {",
+              "      if (requestId !== predictionRequestId || !searchOpen) return;",
+              "      searchLoading = false;",
+              '      showError("場所を検索できません", placesErrorDetail(null), "places");',
+              "      renderSearch();",
+              "    });",
+              "  }",
+              "",
+              "  function selectPrediction(p) {",
+          ])
+          text = replace_once(text, autocomplete_old, autocomplete_new, "Autocomplete rejection handler")
+
+          text = replace_once(
+              text,
+              '    placesSearchApi.getLocation(p.id).catch(() => ({ location: null, status: null })).then(({ location, status }) => {',
+              '    placesSearchApi.getLocation(p.id).then(({ location, status }) => {',
+              "Place Details call",
+          )
+          details_old = "\n".join([
+              "        }",
+              "      });",
+              "  }",
+              "",
+              "  // 検索画面のキー操作",
+          ])
+          details_new = "\n".join([
+              "        }",
+              "      }, () => {",
+              "        if (requestId !== placeDetailsRequestId || !searchOpen) return;",
+              "        placeDetailsLoading = false;",
+              '        showError("場所を取得できません", placesErrorDetail(null), "places");',
+              "        renderSearch();",
+              "      });",
+              "  }",
+              "",
+              "  // 検索画面のキー操作",
+          ])
+          text = replace_once(text, details_old, details_new, "Place Details rejection handler")
+
+          path.write_text(text)
+          PY
+
+          node --check js/app.js
+          git diff --check
+          if git grep -nE 'AIza[0-9A-Za-z_-]{35}' -- .; then
+            echo "Tracked Google API key pattern found"
+            exit 1
+          fi
+
+      - name: Commit product change
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "ChatGPT"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add js/app.js
+          git commit -m "Handle Places promise rejections explicitly"
+          git push origin HEAD:chatgpt/handle-places-promise-rejections
