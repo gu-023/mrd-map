@@ -64,6 +64,16 @@ jobs:
               "searchToken",
               "placesSearchApi.createSessionToken",
           ]
+          adapter_location_tokens = [
+              "location = new google.maps.LatLng(location.lat, location.lng);",
+              "locationLiteral(place && place.geometry && place.geometry.location),",
+          ]
+          ui_location_tokens = [
+              "const pos = locationLiteral(userMarker && userMarker.getPosition());",
+          ]
+          ui_location_leaks = [
+              "new google.maps.LatLng(",
+          ]
 
           missing = [token for token in legacy_tokens if token not in adapter]
           leaked = [token for token in legacy_tokens if token in outside]
@@ -71,6 +81,9 @@ jobs:
           leaked_status = [token for token in status_tokens if token in search_ui]
           missing_ui = [token for token in ui_status_tokens if token not in search_ui]
           leaked_ui_session = [token for token in ui_session_tokens if token in search_ui]
+          missing_adapter_locations = [token for token in adapter_location_tokens if token not in adapter]
+          missing_ui_locations = [token for token in ui_location_tokens if token not in search_ui]
+          leaked_ui_locations = [token for token in ui_location_leaks if token in search_ui]
           if missing:
               raise SystemExit("Places adapter no longer owns expected legacy tokens: " + ", ".join(missing))
           if leaked:
@@ -83,6 +96,12 @@ jobs:
               raise SystemExit("Search UI no longer consumes the normalized Places status contract: " + ", ".join(missing_ui))
           if leaked_ui_session:
               raise SystemExit("Legacy Places session token leaked into search UI: " + ", ".join(leaked_ui_session))
+          if missing_adapter_locations:
+              raise SystemExit("Places adapter no longer normalizes expected location boundaries: " + ", ".join(missing_adapter_locations))
+          if missing_ui_locations:
+              raise SystemExit("Search UI no longer consumes the normalized Places location contract: " + ", ".join(missing_ui_locations))
+          if leaked_ui_locations:
+              raise SystemExit("Google LatLng construction leaked into search UI: " + ", ".join(leaked_ui_locations))
           PY
 
       - name: Check required files and config hygiene
