@@ -879,6 +879,13 @@
     openMenu("移動手段", items, modes.findIndex(([m]) => m === travelMode));
   }
 
+  function locationLiteral(location) {
+    if (!location) return null;
+    const lat = typeof location.lat === "function" ? location.lat() : location.lat;
+    const lng = typeof location.lng === "function" ? location.lng() : location.lng;
+    return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null;
+  }
+
   /* Legacy Places constructors/calls live behind this boundary so the search UI can migrate APIs independently. */
   function createPlacesSearchApi() {
     const autocompleteService = new google.maps.places.AutocompleteService();
@@ -912,6 +919,7 @@
           componentRestrictions: { country: "jp" },
         };
         if (location) {
+          location = new google.maps.LatLng(location.lat, location.lng);
           request.location = location;
           request.radius = 50000;
         }
@@ -932,7 +940,7 @@
         placesService.getDetails(
           { placeId, fields: ["geometry"], sessionToken: requestToken },
           (place, status) => callback(
-            place && place.geometry && place.geometry.location ? place.geometry.location : null,
+            locationLiteral(place && place.geometry && place.geometry.location),
             normalizeStatus(status)
           )
         );
@@ -1073,7 +1081,7 @@
     const q = searchQuery.trim();
     searchLoading = q.length > 0;
     if (!searchLoading) return;
-    const pos = userMarker && userMarker.getPosition();
+    const pos = locationLiteral(userMarker && userMarker.getPosition());
     placesSearchApi.getPredictions(q, pos, (preds, status) => {
       if (requestId !== predictionRequestId || !searchOpen) return;
       searchLoading = false;
@@ -1209,6 +1217,12 @@
   }
 
   function computeRoute(dest, isReroute, name, requestedTravelMode, resumeFollowOnFailure) {
+    const destination = locationLiteral(dest);
+    if (!destination) {
+      showError("目的地が無効です", "目的地をもう一度選択してください。", "directions");
+      return;
+    }
+    const routeDestination = new google.maps.LatLng(destination.lat, destination.lng);
     const origin = userMarker.getPosition();
     const originIsStale = lastPositionTimestamp !== null &&
       Date.now() - lastPositionTimestamp > ROUTE_ORIGIN_MAX_AGE_MS;
@@ -1241,7 +1255,7 @@
     }
     setNavBanner(isReroute ? "ルートを再計算中…" : "経路を計算中…");
     directionsService.route(
-      { origin, destination: dest, travelMode: google.maps.TravelMode[routeTravelMode] },
+      { origin, destination: routeDestination, travelMode: google.maps.TravelMode[routeTravelMode] },
       (res, status) => {
         if (requestId !== routeRequestId) return;
         const previousNavBanner = routePreviousNavBanner;
@@ -1250,7 +1264,7 @@
         if (status === "OK" && res.routes[0]) {
           clearError("directions");
           travelMode = routeTravelMode;
-          navDestination = dest;
+          navDestination = routeDestination;
           clearRoute();
           directionsRenderer = new google.maps.DirectionsRenderer({
             map,
@@ -1291,7 +1305,7 @@
           if (!isReroute) {
             map.setZoom(routeTravelMode === "DRIVING" ? 17 : 18);
             if (requestedTravelMode === undefined || name !== undefined) {
-              saveRecent(dest, name); // 既存ルートの移動手段だけを変える場合は履歴を更新しない
+              saveRecent(routeDestination, name); // 既存ルートの移動手段だけを変える場合は履歴を更新しない
             }
           }
           signalRequestId++; // 前ルートの未完了 Overpass callback を無効化
