@@ -98,6 +98,10 @@ jobs:
               "Autocomplete Promise result": r"getPredictions:\s*\(input,\s*location\)\s*=>\s*new Promise\(\(resolve\)\s*=>\s*\{[\s\S]*?\(predictions,\s*status\)\s*=>\s*resolve\(\{\s*predictions:",
               "Place Details Promise result": r"getLocation:\s*\(id\)\s*=>\s*new Promise\(\(resolve\)\s*=>\s*\{[\s\S]*?\(place,\s*status\)\s*=>\s*resolve\(\{\s*location:",
           }
+          adapter_sync_throw_safety_patterns = {
+              "Autocomplete sync throws reject via Promise executor": r"getPredictions:\s*\(input,\s*location\)\s*=>\s*new Promise\(\(resolve\)\s*=>\s*\{[\s\S]*?autocompleteService\.getPlacePredictions\(",
+              "Place Details sync throws reject via Promise executor": r"getLocation:\s*\(id\)\s*=>\s*new Promise\(\(resolve\)\s*=>\s*\{[\s\S]*?placesService\.getDetails\(",
+          }
           ui_callback_result_patterns = {
               "Autocomplete Promise result": r"placesSearchApi\.getPredictions\(\s*q,\s*pos\s*\)\.then\(\(\{\s*predictions,\s*status\s*\}\)\s*=>",
               "Place Details Promise result": r"placesSearchApi\.getLocation\(\s*p\.id\s*\)\.then\(\(\{\s*location,\s*status\s*\}\)\s*=>",
@@ -133,6 +137,10 @@ jobs:
           leaked_ui_identifiers = [token for token in ui_identifier_leaks if token in search_ui]
           missing_adapter_callback_results = [
               name for name, pattern in adapter_callback_result_patterns.items()
+              if not re.search(pattern, adapter)
+          ]
+          missing_adapter_sync_throw_safety = [
+              name for name, pattern in adapter_sync_throw_safety_patterns.items()
               if not re.search(pattern, adapter)
           ]
           missing_ui_callback_results = [
@@ -175,6 +183,8 @@ jobs:
               raise SystemExit("Google placeId naming leaked into search UI: " + ", ".join(leaked_ui_identifiers))
           if missing_adapter_callback_results:
               raise SystemExit("Places adapter no longer exposes normalized async results: " + ", ".join(missing_adapter_callback_results))
+          if missing_adapter_sync_throw_safety:
+              raise SystemExit("Places adapter no longer converts synchronous Google API throws into Promise rejections: " + ", ".join(missing_adapter_sync_throw_safety))
           if missing_ui_callback_results:
               raise SystemExit("Search UI no longer consumes normalized Places async results: " + ", ".join(missing_ui_callback_results))
           if missing_ui_stale_response_guards:
