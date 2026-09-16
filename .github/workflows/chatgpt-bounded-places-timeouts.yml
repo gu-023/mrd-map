@@ -1,0 +1,97 @@
+name: ChatGPT bounded Places timeouts
+
+on:
+  push:
+    branches:
+      - chatgpt/bound-places-request-timeouts
+    paths:
+      - .github/workflows/chatgpt-bounded-places-timeouts.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: chatgpt/bound-places-request-timeouts
+
+      - name: Apply bounded Places request timeouts
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("js/app.js")
+          text = path.read_text()
+
+          replacements = [
+              (
+                  '''  let predictionRequestId = 0; // 古い Autocomplete callback を無視するための世代番号\n  let placeDetailsRequestId = 0; // 古い Place Details callback を無視するための世代番号\n  const SEARCH_COLS = 9;''',
+                  '''  let predictionRequestId = 0; // 古い Autocomplete callback を無視するための世代番号\n  let placeDetailsRequestId = 0; // 古い Place Details callback を無視するための世代番号\n  let predictionTimeoutId = null;\n  let placeDetailsTimeoutId = null;\n  const PLACES_REQUEST_TIMEOUT_MS = 10000;\n  const SEARCH_COLS = 9;''',
+              ),
+              (
+                  '''  function closeSearch() {\n    predictionRequestId++; // 閉じた検索の callback が後から UI を更新しないよう無効化\n    placeDetailsRequestId++; // 閉じた検索の Place Details callback も無効化''',
+                  '''  function closeSearch() {\n    if (predictionTimeoutId !== null) clearTimeout(predictionTimeoutId);\n    if (placeDetailsTimeoutId !== null) clearTimeout(placeDetailsTimeoutId);\n    predictionTimeoutId = null;\n    placeDetailsTimeoutId = null;\n    predictionRequestId++; // 閉じた検索の callback が後から UI を更新しないよう無効化\n    placeDetailsRequestId++; // 閉じた検索の Place Details callback も無効化''',
+              ),
+              (
+                  '''  function refreshPredictions(returnPrediction = null) {\n    const requestId = ++predictionRequestId;''',
+                  '''  function refreshPredictions(returnPrediction = null) {\n    if (predictionTimeoutId !== null) clearTimeout(predictionTimeoutId);\n    predictionTimeoutId = null;\n    const requestId = ++predictionRequestId;''',
+              ),
+              (
+                  '''    const pos = locationLiteral(userMarker && userMarker.getPosition());\n    placesSearchApi.getPredictions(q, pos).then(({ predictions, status }) => {\n      if (requestId !== predictionRequestId || !searchOpen) return;\n      searchLoading = false;''',
+                  '''    const pos = locationLiteral(userMarker && userMarker.getPosition());\n    predictionTimeoutId = setTimeout(() => {\n      if (requestId !== predictionRequestId || !searchOpen) return;\n      predictionRequestId++;\n      predictionTimeoutId = null;\n      searchLoading = false;\n      showError(\n        "場所検索がタイムアウトしました",\n        placesErrorDetail({ kind: "error", code: "TIMEOUT" }),\n        "places"\n      );\n      renderSearch();\n    }, PLACES_REQUEST_TIMEOUT_MS);\n    placesSearchApi.getPredictions(q, pos).then(({ predictions, status }) => {\n      if (requestId !== predictionRequestId || !searchOpen) return;\n      clearTimeout(predictionTimeoutId);\n      predictionTimeoutId = null;\n      searchLoading = false;''',
+              ),
+              (
+                  '''    }, () => {\n      if (requestId !== predictionRequestId || !searchOpen) return;\n      searchLoading = false;\n      showError("場所を検索できません", placesErrorDetail(null), "places");''',
+                  '''    }, () => {\n      if (requestId !== predictionRequestId || !searchOpen) return;\n      searchLoading = false;\n      clearTimeout(predictionTimeoutId);\n      predictionTimeoutId = null;\n      showError("場所を検索できません", placesErrorDetail(null), "places");''',
+              ),
+              (
+                  '''    clearError("places"); // 再試行中は古い Places error だけ解除\n    const requestId = ++placeDetailsRequestId;''',
+                  '''    clearError("places"); // 再試行中は古い Places error だけ解除\n    if (placeDetailsTimeoutId !== null) clearTimeout(placeDetailsTimeoutId);\n    placeDetailsTimeoutId = null;\n    const requestId = ++placeDetailsRequestId;''',
+              ),
+              (
+                  '''    placeDetailsLoading = true;\n    renderSearch();\n    placesSearchApi.getLocation(p.id).then(({ location, status }) => {\n        if (requestId !== placeDetailsRequestId || !searchOpen) return;\n        placeDetailsLoading = false;''',
+                  '''    placeDetailsLoading = true;\n    renderSearch();\n    placeDetailsTimeoutId = setTimeout(() => {\n      if (requestId !== placeDetailsRequestId || !searchOpen) return;\n      placeDetailsRequestId++;\n      placeDetailsTimeoutId = null;\n      placeDetailsLoading = false;\n      showError(\n        "場所の取得がタイムアウトしました",\n        placesErrorDetail({ kind: "error", code: "TIMEOUT" }),\n        "places"\n      );\n      renderSearch();\n    }, PLACES_REQUEST_TIMEOUT_MS);\n    placesSearchApi.getLocation(p.id).then(({ location, status }) => {\n        if (requestId !== placeDetailsRequestId || !searchOpen) return;\n        clearTimeout(placeDetailsTimeoutId);\n        placeDetailsTimeoutId = null;\n        placeDetailsLoading = false;''',
+              ),
+              (
+                  '''      }, () => {\n        if (requestId !== placeDetailsRequestId || !searchOpen) return;\n        placeDetailsLoading = false;\n        showError("場所を取得できません", placesErrorDetail(null), "places");''',
+                  '''      }, () => {\n        if (requestId !== placeDetailsRequestId || !searchOpen) return;\n        placeDetailsLoading = false;\n        clearTimeout(placeDetailsTimeoutId);\n        placeDetailsTimeoutId = null;\n        showError("場所を取得できません", placesErrorDetail(null), "places");''',
+              ),
+          ]
+
+          for old, new in replacements:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"expected exactly one source anchor, found {count}: {old.splitlines()[0]}")
+              text = text.replace(old, new, 1)
+
+          path.write_text(text)
+          PY
+
+      - name: Verify change
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check js/app.js
+          git diff --check
+          test "$(git diff --name-only | sort)" = "js/app.js"
+          grep -q 'const PLACES_REQUEST_TIMEOUT_MS = 10000;' js/app.js
+          test "$(grep -c 'code: "TIMEOUT"' js/app.js)" -eq 2
+          test "$(grep -c 'setTimeout(() => {' js/app.js)" -ge 2
+          if git grep -nE 'AIza[0-9A-Za-z_-]{35}' -- .; then
+            echo "::error::A Google API key pattern is present in a tracked file"
+            exit 1
+          fi
+
+      - name: Commit product change
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add js/app.js
+          git commit -m "Bound Places search request waits"
+          git push origin HEAD:chatgpt/bound-places-request-timeouts
