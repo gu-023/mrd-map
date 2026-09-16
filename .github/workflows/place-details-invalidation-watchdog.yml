@@ -1,0 +1,41 @@
+name: Guard Place Details invalidation watchdog cleanup
+
+on:
+  pull_request:
+    paths:
+      - js/app.js
+      - .github/workflows/place-details-invalidation-watchdog.yml
+  push:
+    branches: [main]
+    paths:
+      - js/app.js
+      - .github/workflows/place-details-invalidation-watchdog.yml
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check Place Details invalidation cleanup
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+
+          text = Path("js/app.js").read_text()
+          patterns = {
+              "On-screen key invalidation clears watchdog": r"function renderSearch\(\)\s*\{[\s\S]*?keyIdx\s*=\s*i;\s*placeDetailsLoading\s*=\s*false;\s*placeDetailsRequestId\+\+;\s*if \(placeDetailsTimeoutId !== null\) clearTimeout\(placeDetailsTimeoutId\);\s*placeDetailsTimeoutId\s*=\s*null;\s*clearError\(\"places\"\);\s*pressKey\(k\);",
+              "D-pad invalidation clears watchdog": r"function searchKeydown\(key\)\s*\{[\s\S]*?placeDetailsLoading\s*=\s*false;\s*placeDetailsRequestId\+\+;[^\n]*\n\s*if \(placeDetailsTimeoutId !== null\) clearTimeout\(placeDetailsTimeoutId\);\s*placeDetailsTimeoutId\s*=\s*null;\s*clearError\(\"places\"\);",
+          }
+          missing = [name for name, pattern in patterns.items() if not re.search(pattern, text)]
+          if missing:
+              raise SystemExit(
+                  "Place Details invalidation no longer clears its watchdog immediately: "
+                  + ", ".join(missing)
+              )
+          PY
