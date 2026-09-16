@@ -24,28 +24,17 @@ jobs:
 
           path = Path("js/app.js")
           text = path.read_text()
-          old = '''  els.searchQuery.addEventListener("input", () => {
-            if (!searchOpen) return;
-            placeDetailsLoading = false;
-            placeDetailsRequestId++;
-            if (placeDetailsTimeoutId !== null) clearTimeout(placeDetailsTimeoutId);
-            placeDetailsTimeoutId = null;
-            clearError("places");
-            searchQuery = els.searchQuery.value;
-            searchZone = "input";
-            refreshPredictions();
-            renderSearch();
-          });'''
-          new = '''  els.searchQuery.addEventListener("input", (event) => {
-            if (!searchOpen) return;
-            placeDetailsLoading = false;
-            placeDetailsRequestId++;
-            if (placeDetailsTimeoutId !== null) clearTimeout(placeDetailsTimeoutId);
-            placeDetailsTimeoutId = null;
-            clearError("places");
-            searchQuery = els.searchQuery.value;
-            searchZone = "input";
-            if (event.isComposing) {
+          start_token = '  els.searchQuery.addEventListener("input", () => {'
+          if text.count(start_token) != 1:
+              raise SystemExit(f"expected exactly one input-handler start, found {text.count(start_token)}")
+          start = text.index(start_token)
+          end = text.index('\n  });', start) + len('\n  });')
+          block = text[start:end]
+          request_anchor = '    refreshPredictions();\n    renderSearch();'
+          if block.count(request_anchor) != 1:
+              raise SystemExit(f"expected exactly one request anchor, found {block.count(request_anchor)}")
+          block = block.replace(start_token, '  els.searchQuery.addEventListener("input", (event) => {', 1)
+          composition_guard = '''    if (event.isComposing) {
               if (predictionTimeoutId !== null) clearTimeout(predictionTimeoutId);
               predictionTimeoutId = null;
               predictionRequestId++;
@@ -57,11 +46,9 @@ jobs:
               return;
             }
             refreshPredictions();
-            renderSearch();
-          });'''
-          if text.count(old) != 1:
-            raise SystemExit(f"expected exactly one input-handler anchor, found {text.count(old)}")
-          path.write_text(text.replace(old, new))
+            renderSearch();'''
+          block = block.replace(request_anchor, composition_guard, 1)
+          path.write_text(text[:start] + block + text[end:])
 
       - name: Verify JavaScript syntax
         run: node --check js/app.js
