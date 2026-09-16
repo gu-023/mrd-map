@@ -24,13 +24,8 @@ jobs:
           from pathlib import Path
           path = Path('js/app.js')
           text = path.read_text()
-          old = '''    if (searchOpen) {
-              const nativeSearchInputActive = searchZone === "input" && document.activeElement === els.searchQuery;
-          '''
-          new = '''    if (searchOpen) {
-              if (e.isComposing) return;
-              const nativeSearchInputActive = searchZone === "input" && document.activeElement === els.searchQuery;
-          '''
+          old = '    if (searchOpen) {\n      const nativeSearchInputActive = searchZone === "input" && document.activeElement === els.searchQuery;\n'
+          new = '    if (searchOpen) {\n      if (e.isComposing) return;\n      const nativeSearchInputActive = searchZone === "input" && document.activeElement === els.searchQuery;\n'
           if text.count(old) != 1:
               raise SystemExit(f'expected exactly one search keydown anchor, found {text.count(old)}')
           path.write_text(text.replace(old, new, 1))
@@ -43,10 +38,7 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           text = Path('js/app.js').read_text()
-          needle = '''    if (searchOpen) {
-              if (e.isComposing) return;
-              const nativeSearchInputActive = searchZone === "input" && document.activeElement === els.searchQuery;
-          '''
+          needle = '    if (searchOpen) {\n      if (e.isComposing) return;\n      const nativeSearchInputActive = searchZone === "input" && document.activeElement === els.searchQuery;\n'
           if text.count(needle) != 1:
               raise SystemExit('composition keydown guard missing or duplicated')
           PY
