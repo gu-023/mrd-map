@@ -96,11 +96,11 @@ jobs:
           ]
           adapter_callback_result_patterns = {
               "Autocomplete Promise result": r"getPredictions:\s*\(input,\s*location\)\s*=>\s*new Promise\(\(resolve\)\s*=>\s*\{[\s\S]*?\(predictions,\s*status\)\s*=>\s*resolve\(\{\s*predictions:",
-              "Place Details named result": r"\(place,\s*status\)\s*=>\s*callback\(\{\s*location:",
+              "Place Details Promise result": r"getLocation:\s*\(id\)\s*=>\s*new Promise\(\(resolve\)\s*=>\s*\{[\s\S]*?\(place,\s*status\)\s*=>\s*resolve\(\{\s*location:",
           }
           ui_callback_result_patterns = {
               "Autocomplete Promise result": r"placesSearchApi\.getPredictions\(\s*q,\s*pos\s*\)\.then\(\(\{\s*predictions,\s*status\s*\}\)\s*=>",
-              "Place Details named result": r"placesSearchApi\.getLocation\(\s*p\.id,\s*\(\{\s*location,\s*status\s*\}\)\s*=>",
+              "Place Details Promise result": r"placesSearchApi\.getLocation\(\s*p\.id\s*\)\.then\(\(\{\s*location,\s*status\s*\}\)\s*=>",
           }
           ui_stale_response_patterns = {
               "Autocomplete stale-response guard": r"function refreshPredictions\([\s\S]*?const requestId = \+\+predictionRequestId;[\s\S]*?placesSearchApi\.getPredictions\([\s\S]*?if \(requestId !== predictionRequestId \|\| !searchOpen\) return;",
@@ -166,9 +166,9 @@ jobs:
           if leaked_ui_identifiers:
               raise SystemExit("Google placeId naming leaked into search UI: " + ", ".join(leaked_ui_identifiers))
           if missing_adapter_callback_results:
-              raise SystemExit("Places adapter no longer exposes named callback results: " + ", ".join(missing_adapter_callback_results))
+              raise SystemExit("Places adapter no longer exposes normalized async results: " + ", ".join(missing_adapter_callback_results))
           if missing_ui_callback_results:
-              raise SystemExit("Search UI no longer consumes named Places callback results: " + ", ".join(missing_ui_callback_results))
+              raise SystemExit("Search UI no longer consumes normalized Places async results: " + ", ".join(missing_ui_callback_results))
           if missing_ui_stale_response_guards:
               raise SystemExit("Places search UI no longer guards stale async responses: " + ", ".join(missing_ui_stale_response_guards))
           PY
