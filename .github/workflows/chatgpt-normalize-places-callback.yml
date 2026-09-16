@@ -10,15 +10,13 @@ permissions:
 
 jobs:
   apply:
-    if: github.event.head_commit.message != 'Normalize Places callback result contract'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: chatgpt/normalize-places-callback-contract
           fetch-depth: 0
 
-      - name: Apply focused adapter contract change
+      - name: Normalize Places callback result contract
         shell: bash
         run: |
           set -euo pipefail
@@ -28,61 +26,54 @@ jobs:
           path = Path("js/app.js")
           text = path.read_text()
 
-          old_predictions = '''          (predictions, status) => callback(
+          replacements = [
+              (
+                  '''          (predictions, status) => callback(
             predictions ? predictions.map((prediction) => ({
               id: prediction.place_id,
               label: prediction.description,
             })) : predictions,
             normalizeStatus(status)
-          )'''
-          new_predictions = '''          (predictions, status) => callback({
+          )''',
+                  '''          (predictions, status) => callback({
             predictions: predictions ? predictions.map((prediction) => ({
               id: prediction.place_id,
               label: prediction.description,
             })) : predictions,
             status: normalizeStatus(status),
-          })'''
-          if text.count(old_predictions) != 1:
-              raise SystemExit("Autocomplete callback anchor must appear exactly once")
-          text = text.replace(old_predictions, new_predictions)
-
-          old_location = '''          (place, status) => callback(
+          })''',
+              ),
+              (
+                  '''          (place, status) => callback(
             locationLiteral(place && place.geometry && place.geometry.location),
             normalizeStatus(status)
-          )'''
-          new_location = '''          (place, status) => callback({
+          )''',
+                  '''          (place, status) => callback({
             location: locationLiteral(place && place.geometry && place.geometry.location),
             status: normalizeStatus(status),
-          })'''
-          if text.count(old_location) != 1:
-              raise SystemExit("Place Details callback anchor must appear exactly once")
-          text = text.replace(old_location, new_location)
+          })''',
+              ),
+              (
+                  '''    placesSearchApi.getPredictions(q, pos, (preds, status) => {''',
+                  '''    placesSearchApi.getPredictions(q, pos, ({ predictions, status }) => {''',
+              ),
+              (
+                  '''      searchPredictions = statusKind === "ok" && preds ? preds.slice(0, 6) : [];''',
+                  '''      searchPredictions = statusKind === "ok" && predictions ? predictions.slice(0, 6) : [];''',
+              ),
+              (
+                  '''      (location, status) => {
+        if (requestId !== placeDetailsRequestId || !searchOpen) return;''',
+                  '''      ({ location, status }) => {
+        if (requestId !== placeDetailsRequestId || !searchOpen) return;''',
+              ),
+          ]
 
-          old_prediction_consumer = '''    placesSearchApi.getPredictions(q, pos, (preds, status) => {
-      if (requestId !== predictionRequestId || !searchOpen) return;
-      searchLoading = false;
-      const statusKind = status && status.kind;'''
-          new_prediction_consumer = '''    placesSearchApi.getPredictions(q, pos, ({ predictions, status }) => {
-      if (requestId !== predictionRequestId || !searchOpen) return;
-      searchLoading = false;
-      const statusKind = status && status.kind;'''
-          if text.count(old_prediction_consumer) != 1:
-              raise SystemExit("Autocomplete consumer anchor must appear exactly once")
-          text = text.replace(old_prediction_consumer, new_prediction_consumer)
-
-          old_prediction_assignment = '''      searchPredictions = statusKind === "ok" && preds ? preds.slice(0, 6) : [];'''
-          new_prediction_assignment = '''      searchPredictions = statusKind === "ok" && predictions ? predictions.slice(0, 6) : [];'''
-          if text.count(old_prediction_assignment) != 1:
-              raise SystemExit("Autocomplete assignment anchor must appear exactly once")
-          text = text.replace(old_prediction_assignment, new_prediction_assignment)
-
-          old_location_consumer = '''      (location, status) => {
-        if (requestId !== placeDetailsRequestId || !searchOpen) return;'''
-          new_location_consumer = '''      ({ location, status }) => {
-        if (requestId !== placeDetailsRequestId || !searchOpen) return;'''
-          if text.count(old_location_consumer) != 1:
-              raise SystemExit("Place Details consumer anchor must appear exactly once")
-          text = text.replace(old_location_consumer, new_location_consumer)
+          for old, new in replacements:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"expected exactly one source anchor, found {count}: {old}")
+              text = text.replace(old, new, 1)
 
           path.write_text(text)
           PY
@@ -92,37 +83,57 @@ jobs:
 
           python3 - <<'PY'
           from pathlib import Path
+
           text = Path("js/app.js").read_text()
-          required = [
+          start = text.index("  function createPlacesSearchApi() {")
+          end = text.index("  /* ---------- 場所検索（オンスクリーンキーボード＋Autocomplete） ---------- */", start)
+          search_end = text.index("  function enterPickMode() {", end)
+          adapter = text[start:end]
+          search_ui = text[end:search_end]
+
+          required_adapter = [
               "(predictions, status) => callback({",
               "predictions: predictions ? predictions.map((prediction) => ({",
               "status: normalizeStatus(status),",
               "(place, status) => callback({",
               "location: locationLiteral(place && place.geometry && place.geometry.location),",
+          ]
+          required_ui = [
               "placesSearchApi.getPredictions(q, pos, ({ predictions, status }) => {",
               'searchPredictions = statusKind === "ok" && predictions ? predictions.slice(0, 6) : [];',
               "({ location, status }) => {",
           ]
-          missing = [token for token in required if token not in text]
-          forbidden = [
+          missing_adapter = [token for token in required_adapter if token not in adapter]
+          missing_ui = [token for token in required_ui if token not in search_ui]
+          if missing_adapter:
+              raise SystemExit("normalized callback result contract missing from adapter: " + ", ".join(missing_adapter))
+          if missing_ui:
+              raise SystemExit("search UI missing normalized callback result consumption: " + ", ".join(missing_ui))
+          for token in [
               "placesSearchApi.getPredictions(q, pos, (preds, status) => {",
               "      (location, status) => {\n        if (requestId !== placeDetailsRequestId",
-          ]
-          leaked = [token for token in forbidden if token in text]
-          if missing:
-              raise SystemExit("Missing normalized callback contract tokens: " + ", ".join(missing))
-          if leaked:
-              raise SystemExit("Positional Places callback contract remains: " + ", ".join(leaked))
+          ]:
+              if token in search_ui:
+                  raise SystemExit("positional Places callback contract remains in search UI: " + token)
           PY
 
-      - name: Commit focused change
+          if git grep -nE 'AIza[0-9A-Za-z_-]{35}' -- .; then
+            echo "::error::A Google API key pattern is present in a tracked file"
+            exit 1
+          fi
+
+      - name: Remove helper and commit product change
         shell: bash
         run: |
           set -euo pipefail
           rm .github/workflows/chatgpt-normalize-places-callback.yml
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add js/app.js .github/workflows/chatgpt-normalize-places-callback.yml
           git diff --cached --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -m "Normalize Places callback result contract"
-          git push origin HEAD:chatgpt/normalize-places-callback-contract
+          git push origin HEAD
+
+          git fetch origin main
+          changed="$(git diff --name-only origin/main...HEAD)"
+          test "$changed" = "js/app.js"
