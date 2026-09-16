@@ -115,6 +115,16 @@ jobs:
               "Autocomplete rejection recovery": r"function refreshPredictions\([\s\S]*?placesSearchApi\.getPredictions\(\s*q,\s*pos\s*\)\.then\([\s\S]*?\},\s*\(\)\s*=>\s*\{\s*if \(requestId !== predictionRequestId \|\| !searchOpen\) return;\s*searchLoading\s*=\s*false;[\s\S]*?showError\([\s\S]*?renderSearch\(\);\s*\}\);",
               "Place Details rejection recovery": r"function selectPrediction\([\s\S]*?placesSearchApi\.getLocation\(\s*p\.id\s*\)\.then\([\s\S]*?\},\s*\(\)\s*=>\s*\{\s*if \(requestId !== placeDetailsRequestId \|\| !searchOpen\) return;\s*placeDetailsLoading\s*=\s*false;[\s\S]*?showError\([\s\S]*?renderSearch\(\);\s*\}\);",
           }
+          timeout_state_tokens = [
+              "let predictionTimeoutId = null;",
+              "let placeDetailsTimeoutId = null;",
+              "const PLACES_REQUEST_TIMEOUT_MS = 10000;",
+          ]
+          ui_timeout_recovery_patterns = {
+              "Autocomplete timeout recovery": r"function refreshPredictions\([\s\S]*?predictionTimeoutId\s*=\s*setTimeout\(\(\)\s*=>\s*\{\s*if \(requestId !== predictionRequestId \|\| !searchOpen\) return;\s*predictionRequestId\+\+;\s*predictionTimeoutId\s*=\s*null;\s*searchLoading\s*=\s*false;[\s\S]*?code:\s*\"TIMEOUT\"[\s\S]*?renderSearch\(\);\s*\},\s*PLACES_REQUEST_TIMEOUT_MS\);[\s\S]*?clearTimeout\(predictionTimeoutId\);[\s\S]*?predictionTimeoutId\s*=\s*null;",
+              "Place Details timeout recovery": r"function selectPrediction\([\s\S]*?placeDetailsTimeoutId\s*=\s*setTimeout\(\(\)\s*=>\s*\{\s*if \(requestId !== placeDetailsRequestId \|\| !searchOpen\) return;\s*placeDetailsRequestId\+\+;\s*placeDetailsTimeoutId\s*=\s*null;\s*placeDetailsLoading\s*=\s*false;[\s\S]*?code:\s*\"TIMEOUT\"[\s\S]*?renderSearch\(\);\s*\},\s*PLACES_REQUEST_TIMEOUT_MS\);[\s\S]*?clearTimeout\(placeDetailsTimeoutId\);[\s\S]*?placeDetailsTimeoutId\s*=\s*null;",
+              "Search close timeout cleanup": r"function closeSearch\(\)\s*\{[\s\S]*?if \(predictionTimeoutId !== null\) clearTimeout\(predictionTimeoutId\);[\s\S]*?if \(placeDetailsTimeoutId !== null\) clearTimeout\(placeDetailsTimeoutId\);[\s\S]*?predictionTimeoutId\s*=\s*null;[\s\S]*?placeDetailsTimeoutId\s*=\s*null;",
+          }
 
           missing = [token for token in legacy_tokens if token not in adapter]
           leaked = [token for token in legacy_tokens if token in outside]
@@ -155,6 +165,11 @@ jobs:
               name for name, pattern in ui_rejection_recovery_patterns.items()
               if not re.search(pattern, search_ui)
           ]
+          missing_timeout_state = [token for token in timeout_state_tokens if token not in text]
+          missing_ui_timeout_recovery = [
+              name for name, pattern in ui_timeout_recovery_patterns.items()
+              if not re.search(pattern, search_ui)
+          ]
           if missing:
               raise SystemExit("Places adapter no longer owns expected legacy tokens: " + ", ".join(missing))
           if leaked:
@@ -191,6 +206,10 @@ jobs:
               raise SystemExit("Places search UI no longer guards stale async responses: " + ", ".join(missing_ui_stale_response_guards))
           if missing_ui_rejection_recovery:
               raise SystemExit("Places search UI no longer recovers from rejected async requests: " + ", ".join(missing_ui_rejection_recovery))
+          if missing_timeout_state:
+              raise SystemExit("Places search timeout state/config no longer matches the bounded-wait contract: " + ", ".join(missing_timeout_state))
+          if missing_ui_timeout_recovery:
+              raise SystemExit("Places search UI no longer preserves bounded timeout recovery: " + ", ".join(missing_ui_timeout_recovery))
           PY
 
       - name: Check required files and config hygiene
