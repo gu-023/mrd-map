@@ -41,6 +41,7 @@ jobs:
           legacy_tokens = [
               "google.maps.places.AutocompleteService()",
               "google.maps.places.PlacesService(map)",
+              "google.maps.places.AutocompleteSessionToken()",
               "prediction.place_id",
               "prediction.description",
               'fields: ["geometry"]',
@@ -59,12 +60,17 @@ jobs:
               'statusKind !== "ok" && statusKind !== "empty"',
               'status && status.kind === "ok"',
           ]
+          ui_session_tokens = [
+              "searchToken",
+              "placesSearchApi.createSessionToken",
+          ]
 
           missing = [token for token in legacy_tokens if token not in adapter]
           leaked = [token for token in legacy_tokens if token in outside]
           missing_status = [token for token in status_tokens if token not in adapter]
           leaked_status = [token for token in status_tokens if token in search_ui]
           missing_ui = [token for token in ui_status_tokens if token not in search_ui]
+          leaked_ui_session = [token for token in ui_session_tokens if token in search_ui]
           if missing:
               raise SystemExit("Places adapter no longer owns expected legacy tokens: " + ", ".join(missing))
           if leaked:
@@ -75,6 +81,8 @@ jobs:
               raise SystemExit("Legacy Places statuses leaked into search UI: " + ", ".join(leaked_status))
           if missing_ui:
               raise SystemExit("Search UI no longer consumes the normalized Places status contract: " + ", ".join(missing_ui))
+          if leaked_ui_session:
+              raise SystemExit("Legacy Places session token leaked into search UI: " + ", ".join(leaked_ui_session))
           PY
 
       - name: Check required files and config hygiene
