@@ -1,0 +1,51 @@
+name: One-shot clear invalidated Place Details watchdog v2
+
+on:
+  push:
+    branches:
+      - chatgpt/clear-invalidated-place-details-watchdog
+    paths:
+      - .github/workflows/temp-clear-place-details-watchdog-v2.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chatgpt/clear-invalidated-place-details-watchdog
+          fetch-depth: 0
+      - name: Apply focused cleanup
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('js/app.js')
+          text = path.read_text()
+          click_old = "        placeDetailsLoading = false;\n        placeDetailsRequestId++;\n        clearError(\"places\");\n        pressKey(k);"
+          click_new = "        placeDetailsLoading = false;\n        placeDetailsRequestId++;\n        if (placeDetailsTimeoutId !== null) clearTimeout(placeDetailsTimeoutId);\n        placeDetailsTimeoutId = null;\n        clearError(\"places\");\n        pressKey(k);"
+          dpad_old = "    placeDetailsLoading = false;\n    placeDetailsRequestId++; // 検索操作を再開したら未完了の Place Details callback を無効化\n    clearError(\"places\"); // 検索を続ける D-pad 操作で stale Places error を解除"
+          dpad_new = "    placeDetailsLoading = false;\n    placeDetailsRequestId++; // 検索操作を再開したら未完了の Place Details callback を無効化\n    if (placeDetailsTimeoutId !== null) clearTimeout(placeDetailsTimeoutId);\n    placeDetailsTimeoutId = null;\n    clearError(\"places\"); // 検索を続ける D-pad 操作で stale Places error を解除"
+          if text.count(click_old) != 1:
+              raise SystemExit(f'expected one onscreen-key cancellation anchor, found {text.count(click_old)}')
+          if text.count(dpad_old) != 1:
+              raise SystemExit(f'expected one D-pad cancellation anchor, found {text.count(dpad_old)}')
+          path.write_text(text.replace(click_old, click_new).replace(dpad_old, dpad_new))
+          PY
+          node --check js/app.js
+          git diff --check
+      - name: Commit product change
+        shell: bash
+        run: |
+          if git diff --quiet -- js/app.js; then
+            echo "No product diff produced" >&2
+            exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add js/app.js
+          git commit -m "Clear invalidated Place Details watchdogs"
+          git push origin HEAD:chatgpt/clear-invalidated-place-details-watchdog
