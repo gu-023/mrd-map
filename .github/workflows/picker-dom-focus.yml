@@ -80,19 +80,24 @@ jobs:
               )
 
           def require_css_declarations(selector, expected):
-              match = re.search(re.escape(selector) + r"\s*\{([^}]*)\}", css, re.S)
-              if not match:
+              matches = list(re.finditer(re.escape(selector) + r"\s*\{([^}]*)\}", css, re.S))
+              if not matches:
                   raise SystemExit(f"missing picker CSS rule: {selector}")
-              body = match.group(1)
-              missing_declarations = []
-              for prop, value in expected.items():
-                  pattern = rf"(?<![-\w]){re.escape(prop)}\s*:\s*{re.escape(value)}\s*;"
-                  if not re.search(pattern, body):
-                      missing_declarations.append(f"{prop}: {value}")
-              if missing_declarations:
+
+              def body_has_expected(body):
+                  return all(
+                      re.search(
+                          rf"(?<![-\w]){re.escape(prop)}\s*:\s*{re.escape(value)}\s*;",
+                          body,
+                      )
+                      for prop, value in expected.items()
+                  )
+
+              if not any(body_has_expected(match.group(1)) for match in matches):
+                  required = ", ".join(f"{prop}: {value}" for prop, value in expected.items())
                   raise SystemExit(
                       f"{selector} no longer preserves the picker visual/target contract: "
-                      + ", ".join(missing_declarations)
+                      + required
                   )
 
           require_css_declarations("#picker", {
