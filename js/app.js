@@ -2089,6 +2089,8 @@
 
   function renderFocus() {
     focusables.forEach((el, i) => el.classList.toggle("focused", i === focusIdx));
+    const focusedControl = focusables[focusIdx];
+    if (focusedControl && document.activeElement !== focusedControl) focusedControl.focus();
   }
 
   function moveFocus(delta) {
