@@ -1,0 +1,150 @@
+name: One-shot IME compositionend recovery
+
+on:
+  push:
+    branches:
+      - chatgpt/resume-ime-compositionend
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-verify:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: chatgpt/resume-ime-compositionend
+          fetch-depth: 0
+
+      - name: Apply IME compositionend recovery
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("js/app.js")
+          text = path.read_text()
+
+          replacements = [
+              (
+                  "  let predictionTimeoutId = null;\n"
+                  "  let placeDetailsTimeoutId = null;\n",
+                  "  let predictionTimeoutId = null;\n"
+                  "  let placeDetailsTimeoutId = null;\n"
+                  "  let compositionRefreshTimeoutId = null;\n"
+                  "  let searchInputWasComposing = false;\n",
+              ),
+              (
+                  "    if (predictionTimeoutId !== null) clearTimeout(predictionTimeoutId);\n"
+                  "    if (placeDetailsTimeoutId !== null) clearTimeout(placeDetailsTimeoutId);\n"
+                  "    predictionTimeoutId = null;\n"
+                  "    placeDetailsTimeoutId = null;\n",
+                  "    if (predictionTimeoutId !== null) clearTimeout(predictionTimeoutId);\n"
+                  "    if (placeDetailsTimeoutId !== null) clearTimeout(placeDetailsTimeoutId);\n"
+                  "    if (compositionRefreshTimeoutId !== null) clearTimeout(compositionRefreshTimeoutId);\n"
+                  "    predictionTimeoutId = null;\n"
+                  "    placeDetailsTimeoutId = null;\n"
+                  "    compositionRefreshTimeoutId = null;\n"
+                  "    searchInputWasComposing = false;\n",
+              ),
+              (
+                  "  els.searchQuery.addEventListener(\"input\", (event) => {\n"
+                  "    if (!searchOpen) return;\n"
+                  "    placeDetailsLoading = false;\n",
+                  "  els.searchQuery.addEventListener(\"input\", (event) => {\n"
+                  "    if (!searchOpen) return;\n"
+                  "    if (compositionRefreshTimeoutId !== null) {\n"
+                  "      clearTimeout(compositionRefreshTimeoutId);\n"
+                  "      compositionRefreshTimeoutId = null;\n"
+                  "    }\n"
+                  "    searchInputWasComposing = event.isComposing;\n"
+                  "    placeDetailsLoading = false;\n",
+              ),
+              (
+                  "    refreshPredictions();\n"
+                  "    renderSearch();\n"
+                  "  });\n"
+                  "  function pressKey(k) {\n",
+                  "    refreshPredictions();\n"
+                  "    renderSearch();\n"
+                  "  });\n\n"
+                  "  els.searchQuery.addEventListener(\"compositionend\", () => {\n"
+                  "    if (!searchOpen || !searchInputWasComposing) return;\n"
+                  "    searchInputWasComposing = false;\n"
+                  "    if (compositionRefreshTimeoutId !== null) clearTimeout(compositionRefreshTimeoutId);\n"
+                  "    compositionRefreshTimeoutId = setTimeout(() => {\n"
+                  "      compositionRefreshTimeoutId = null;\n"
+                  "      if (!searchOpen) return;\n"
+                  "      searchQuery = els.searchQuery.value;\n"
+                  "      searchZone = \"input\";\n"
+                  "      refreshPredictions();\n"
+                  "      renderSearch();\n"
+                  "    }, 0);\n"
+                  "  });\n"
+                  "  function pressKey(k) {\n",
+              ),
+          ]
+
+          for old, new in replacements:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"patch anchor count={count}: {old[:80]!r}")
+              text = text.replace(old, new, 1)
+
+          path.write_text(text)
+          PY
+
+      - name: Verify change
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check js/app.js
+          git diff --check
+          python3 - <<'PY'
+          from pathlib import Path
+
+          text = Path("js/app.js").read_text()
+          required = [
+              "let compositionRefreshTimeoutId = null;",
+              "let searchInputWasComposing = false;",
+              "searchInputWasComposing = event.isComposing;",
+              'els.searchQuery.addEventListener("compositionend", () => {',
+              "if (!searchOpen || !searchInputWasComposing) return;",
+              "compositionRefreshTimeoutId = setTimeout(() => {",
+              "if (compositionRefreshTimeoutId !== null) clearTimeout(compositionRefreshTimeoutId);",
+          ]
+          missing = [token for token in required if token not in text]
+          if missing:
+              raise SystemExit("missing IME composition recovery tokens: " + ", ".join(missing))
+
+          input_start = text.index('  els.searchQuery.addEventListener("input", (event) => {')
+          composition_start = text.index('  els.searchQuery.addEventListener("compositionend", () => {')
+          press_key = text.index("  function pressKey(k) {", composition_start)
+          if not input_start < composition_start < press_key:
+              raise SystemExit("IME composition recovery listener order changed unexpectedly")
+          PY
+
+          if git diff -- js/app.js | grep -E 'AIza[0-9A-Za-z_-]{20,}' >/dev/null; then
+            echo "::error::possible Google API key in diff"
+            exit 1
+          fi
+
+          changed="$(git diff --name-only)"
+          if [ "$changed" != "js/app.js" ]; then
+            echo "::error::unexpected product files changed before helper cleanup: $changed"
+            exit 1
+          fi
+
+      - name: Commit product change and remove helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "ChatGPT Codex Connector"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/one-shot-ime-compositionend.yml
+          git add js/app.js
+          git commit -m "Resume Places search after IME composition"
+          git push origin HEAD:chatgpt/resume-ime-compositionend
