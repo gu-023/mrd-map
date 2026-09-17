@@ -10,6 +10,7 @@ permissions:
 
 jobs:
   apply-and-verify:
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -17,7 +18,7 @@ jobs:
           ref: chatgpt/sync-main-control-dom-focus
           fetch-depth: 0
 
-      - name: Sync visual D-pad focus to DOM focus
+      - name: Apply main control DOM focus sync
         shell: bash
         run: |
           set -euo pipefail
@@ -26,22 +27,25 @@ jobs:
 
           path = Path("js/app.js")
           text = path.read_text()
-          old = '''  function renderFocus() {
-    focusables.forEach((el, i) => el.classList.toggle("focused", i === focusIdx));
-  }
-'''
-          new = '''  function renderFocus() {
-    focusables.forEach((el, i) => el.classList.toggle("focused", i === focusIdx));
-    const focusedControl = focusables[focusIdx];
-    if (focusedControl && document.activeElement !== focusedControl) focusedControl.focus();
-  }
-'''
-          if text.count(old) != 1:
-              raise SystemExit("renderFocus anchor must appear exactly once")
+          old = (
+              '  function renderFocus() {\n'
+              '    focusables.forEach((el, i) => el.classList.toggle("focused", i === focusIdx));\n'
+              '  }\n'
+          )
+          new = (
+              '  function renderFocus() {\n'
+              '    focusables.forEach((el, i) => el.classList.toggle("focused", i === focusIdx));\n'
+              '    const focusedControl = focusables[focusIdx];\n'
+              '    if (focusedControl && document.activeElement !== focusedControl) focusedControl.focus();\n'
+              '  }\n'
+          )
+          count = text.count(old)
+          if count != 1:
+              raise SystemExit(f"renderFocus anchor count={count}")
           path.write_text(text.replace(old, new, 1))
           PY
 
-      - name: Static and focused checks
+      - name: Verify change
         shell: bash
         run: |
           set -euo pipefail
@@ -57,10 +61,17 @@ jobs:
           ]
           missing = [token for token in required if token not in text]
           if missing:
-              raise SystemExit("DOM focus sync missing: " + ", ".join(missing))
+              raise SystemExit("missing DOM focus sync tokens: " + ", ".join(missing))
           PY
-          if git diff -- js/app.js | grep -E 'AIza[0-9A-Za-z_-]{30,}' >/dev/null; then
-            echo '::error::Google API key-like value detected in diff'
+
+          if git diff -- js/app.js | grep -E 'AIza[0-9A-Za-z_-]{20,}' >/dev/null; then
+            echo "::error::possible Google API key in diff"
+            exit 1
+          fi
+
+          changed="$(git diff --name-only)"
+          if [ "$changed" != "js/app.js" ]; then
+            echo "::error::unexpected product files changed before helper cleanup: $changed"
             exit 1
           fi
 
@@ -68,10 +79,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          rm .github/workflows/chatgpt-sync-main-control-dom-focus-once.yml
           git config user.name "ChatGPT Codex Connector"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
-          git diff --cached --check
+          git rm .github/workflows/chatgpt-sync-main-control-dom-focus-once.yml
+          git add js/app.js
           git commit -m "Sync main control DOM focus with D-pad"
           git push origin HEAD:chatgpt/sync-main-control-dom-focus
