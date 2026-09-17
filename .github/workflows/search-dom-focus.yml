@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - index.html
+      - css/style.css
       - js/app.js
       - js/search-focus-bridge.js
       - .github/workflows/search-dom-focus.yml
@@ -11,6 +12,7 @@ on:
     branches: [main]
     paths:
       - index.html
+      - css/style.css
       - js/app.js
       - js/search-focus-bridge.js
       - .github/workflows/search-dom-focus.yml
@@ -32,9 +34,11 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
+          import re
 
           app = Path("js/app.js").read_text()
           bridge = Path("js/search-focus-bridge.js").read_text()
+          css = Path("css/style.css").read_text()
           html = Path("index.html").read_text()
 
           bridge_required = (
@@ -42,6 +46,8 @@ jobs:
               'element.tabIndex = element === selected ? 0 : -1;',
               'const selectedKey = searchKeyboard.querySelector(".key.focused");',
               'const selectedPrediction = searchPreds.querySelector(".pred.focused");',
+              'if (selectedKey && typeof selectedKey.scrollIntoView === "function") {',
+              'selectedKey.scrollIntoView({ block: "nearest", inline: "nearest" });',
               'if (searchQuery.classList.contains("focused")) return;',
               'focusWithoutScroll(selectedKey || selectedPrediction);',
               'if (active && search.contains(active) && typeof active.blur === "function") {',
@@ -66,6 +72,45 @@ jobs:
                   "app search renderer no longer exposes bridge selection state: "
                   + ", ".join(missing)
               )
+
+          def require_css_declarations(selector, expected):
+              matches = list(re.finditer(re.escape(selector) + r"\s*\{([^}]*)\}", css, re.S))
+              if not matches:
+                  raise SystemExit(f"missing search CSS rule: {selector}")
+
+              def body_has_expected(body):
+                  return all(
+                      re.search(
+                          rf"(?<![-\w]){re.escape(prop)}\s*:\s*{re.escape(value)}\s*;",
+                          body,
+                      )
+                      for prop, value in expected.items()
+                  )
+
+              if not any(body_has_expected(match.group(1)) for match in matches):
+                  required = ", ".join(f"{prop}: {value}" for prop, value in expected.items())
+                  raise SystemExit(
+                      f"{selector} no longer preserves the 88dp search/layout contract: "
+                      + required
+                  )
+
+          require_css_declarations("#search-query", {
+              "min-height": "88px",
+          })
+          require_css_declarations("#search-keyboard", {
+              "flex": "0 0 180px",
+              "overflow-y": "auto",
+          })
+          require_css_declarations("#search-keyboard .key", {
+              "height": "88px",
+          })
+          require_css_declarations("#search-preds", {
+              "min-height": "0",
+              "overflow-y": "auto",
+          })
+          require_css_declarations("#search-preds .pred", {
+              "min-height": "88px",
+          })
 
           app_script = '<script src="js/app.js"></script>'
           bridge_script = '<script src="js/search-focus-bridge.js"></script>'
