@@ -225,7 +225,7 @@ html, body {
   z-index: 16;
 }
 #search-query {
-  width: 100%; min-height: 42px; padding: 4px 8px; margin-bottom: 8px;
+  width: 100%; min-height: 88px; padding: 4px 8px; margin-bottom: 8px;
   font: inherit; font-size: 26px; font-weight: 700; color: var(--accent);
   background: transparent; outline: none;
   border: 2px solid rgba(255, 255, 255, 0.2); border-radius: 10px;
