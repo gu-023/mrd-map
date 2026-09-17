@@ -216,7 +216,7 @@ html, body {
 /* ---- 場所検索 ---- */
 #search {
   position: absolute; inset: 0;
-  background: rgba(0, 0, 0, 0.94);
+  background: #0a0a0f;
   display: flex; flex-direction: column;
   padding: 12px 14px;
   z-index: 16;
