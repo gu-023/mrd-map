@@ -1,0 +1,104 @@
+name: IME composition refresh guard
+
+on:
+  pull_request:
+    paths:
+      - js/app.js
+      - .github/workflows/ime-composition-refresh.yml
+  push:
+    branches: [main]
+    paths:
+      - js/app.js
+      - .github/workflows/ime-composition-refresh.yml
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check IME composition refresh lifecycle
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+
+          text = Path("js/app.js").read_text()
+
+          input_marker = '  els.searchQuery.addEventListener("input", (event) => {'
+          composition_marker = '  els.searchQuery.addEventListener("compositionend", () => {'
+          press_key_marker = '  function pressKey(k) {'
+          close_marker = '  function closeSearch() {'
+          reopen_marker = '  function reopenSearchResults() {'
+
+          for marker in (input_marker, composition_marker, press_key_marker, close_marker, reopen_marker):
+              if text.count(marker) != 1:
+                  raise SystemExit(f"expected exactly one lifecycle marker: {marker}")
+
+          input_start = text.index(input_marker)
+          composition_start = text.index(composition_marker, input_start)
+          press_key_start = text.index(press_key_marker, composition_start)
+          input_handler = text[input_start:composition_start]
+          composition_handler = text[composition_start:press_key_start]
+
+          close_start = text.index(close_marker)
+          reopen_start = text.index(reopen_marker, close_start)
+          close_handler = text[close_start:reopen_start]
+
+          input_cancel_pattern = re.compile(
+              r'addEventListener\("input", \(event\) => \{\s*'
+              r'if \(!searchOpen\) return;\s*'
+              r'if \(compositionRefreshTimeoutId !== null\) \{\s*'
+              r'clearTimeout\(compositionRefreshTimeoutId\);\s*'
+              r'compositionRefreshTimeoutId = null;\s*'
+              r'\}\s*'
+              r'searchInputWasComposing = event\.isComposing;'
+          )
+          composing_suppression_pattern = re.compile(
+              r'if \(event\.isComposing\) \{[\s\S]*?'
+              r'predictionRequestId\+\+;[\s\S]*?'
+              r'searchLoading = false;[\s\S]*?'
+              r'renderSearch\(\);\s*return;\s*\}\s*'
+              r'refreshPredictions\(\);\s*renderSearch\(\);'
+          )
+          composition_refresh_pattern = re.compile(
+              r'addEventListener\("compositionend", \(\) => \{\s*'
+              r'if \(!searchOpen \|\| !searchInputWasComposing\) return;\s*'
+              r'searchInputWasComposing = false;\s*'
+              r'if \(compositionRefreshTimeoutId !== null\) clearTimeout\(compositionRefreshTimeoutId\);\s*'
+              r'compositionRefreshTimeoutId = setTimeout\(\(\) => \{\s*'
+              r'compositionRefreshTimeoutId = null;\s*'
+              r'if \(!searchOpen\) return;\s*'
+              r'searchQuery = els\.searchQuery\.value;\s*'
+              r'searchZone = "input";\s*'
+              r'refreshPredictions\(\);\s*'
+              r'renderSearch\(\);\s*'
+              r'\}, 0\);\s*\}\);'
+          )
+          close_cleanup_pattern = re.compile(
+              r'if \(compositionRefreshTimeoutId !== null\) clearTimeout\(compositionRefreshTimeoutId\);[\s\S]*?'
+              r'compositionRefreshTimeoutId = null;\s*'
+              r'searchInputWasComposing = false;'
+          )
+
+          if not input_cancel_pattern.search(input_handler):
+              raise SystemExit(
+                  "normal input must cancel/null the deferred composition refresh before recording composition state"
+              )
+          if not composing_suppression_pattern.search(input_handler):
+              raise SystemExit(
+                  "composing input must suppress Autocomplete and non-composing input must resume it"
+              )
+          if not composition_refresh_pattern.search(composition_handler):
+              raise SystemExit(
+                  "compositionend must schedule one zero-delay fallback refresh guarded by search lifecycle state"
+              )
+          if not close_cleanup_pattern.search(close_handler):
+              raise SystemExit(
+                  "closeSearch must cancel deferred composition refresh state"
+              )
+          PY
