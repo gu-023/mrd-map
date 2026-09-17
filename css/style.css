@@ -254,6 +254,8 @@ html, body {
 }
 #search-preds { list-style: none; flex: 1; min-height: 0; overflow-y: auto; margin-top: 8px; }
 #search-preds .pred {
+  min-height: 88px;
+  line-height: 68px;
   font-size: 22px; padding: 8px 10px;
   border: 2px solid transparent; border-radius: 8px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
