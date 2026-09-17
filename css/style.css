@@ -178,7 +178,7 @@ html, body {
   display: flex; align-items: center; justify-content: center;
   flex-direction: column; gap: 16px;
   padding: 40px; text-align: center;
-  background: #000;
+  background: #0a0a0f;
   font-size: 24px; line-height: 1.5;
   z-index: 20;
 }
