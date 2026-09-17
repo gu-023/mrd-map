@@ -1,0 +1,92 @@
+name: Main control DOM focus guard
+
+on:
+  pull_request:
+    paths:
+      - index.html
+      - js/app.js
+      - .github/workflows/main-control-dom-focus.yml
+  push:
+    branches: [main]
+    paths:
+      - index.html
+      - js/app.js
+      - .github/workflows/main-control-dom-focus.yml
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check main-control DOM focus contract
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from html.parser import HTMLParser
+          from pathlib import Path
+
+          app = Path("js/app.js").read_text()
+          html = Path("index.html").read_text()
+
+          render_marker = "  function renderFocus() {"
+          move_marker = "  function moveFocus(delta) {"
+          if app.count(render_marker) != 1 or app.count(move_marker) != 1:
+              raise SystemExit("expected exactly one renderFocus/moveFocus pair")
+
+          render_start = app.index(render_marker)
+          move_start = app.index(move_marker, render_start)
+          render_focus = app[render_start:move_start]
+
+          required = (
+              'focusables.forEach((el, i) => el.classList.toggle("focused", i === focusIdx));',
+              "const focusedControl = focusables[focusIdx];",
+              "document.activeElement !== focusedControl",
+              "focusedControl.focus();",
+          )
+          missing = [needle for needle in required if needle not in render_focus]
+          if missing:
+              raise SystemExit(
+                  "renderFocus no longer preserves visual + DOM focus synchronization: "
+                  + ", ".join(missing)
+              )
+
+          class ControlParser(HTMLParser):
+              def __init__(self):
+                  super().__init__()
+                  self.in_controls = False
+                  self.controls_depth = 0
+                  self.focusable_tags = []
+
+              def handle_starttag(self, tag, attrs):
+                  attrs = dict(attrs)
+                  if tag == "nav" and attrs.get("id") == "controls":
+                      self.in_controls = True
+                      self.controls_depth = 1
+                  elif self.in_controls:
+                      self.controls_depth += 1
+
+                  if self.in_controls:
+                      classes = attrs.get("class", "").split()
+                      if "focusable" in classes:
+                          self.focusable_tags.append(tag)
+
+              def handle_endtag(self, tag):
+                  if not self.in_controls:
+                      return
+                  self.controls_depth -= 1
+                  if self.controls_depth == 0:
+                      self.in_controls = False
+
+          parser = ControlParser()
+          parser.feed(html)
+          if not parser.focusable_tags:
+              raise SystemExit("main control rail has no .focusable controls")
+          if any(tag != "button" for tag in parser.focusable_tags):
+              raise SystemExit(
+                  "main .focusable controls must remain native buttons for host activation"
+              )
+          PY
