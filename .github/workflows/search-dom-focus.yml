@@ -1,0 +1,80 @@
+name: Search DOM focus guard
+
+on:
+  pull_request:
+    paths:
+      - index.html
+      - js/app.js
+      - js/search-focus-bridge.js
+      - .github/workflows/search-dom-focus.yml
+  push:
+    branches: [main]
+    paths:
+      - index.html
+      - js/app.js
+      - js/search-focus-bridge.js
+      - .github/workflows/search-dom-focus.yml
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check search focus bridge syntax
+        run: node --check js/search-focus-bridge.js
+
+      - name: Check search DOM focus contract
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          app = Path("js/app.js").read_text()
+          bridge = Path("js/search-focus-bridge.js").read_text()
+          html = Path("index.html").read_text()
+
+          bridge_required = (
+              'element.setAttribute("role", "button");',
+              'element.tabIndex = element === selected ? 0 : -1;',
+              'const selectedKey = searchKeyboard.querySelector(".key.focused");',
+              'const selectedPrediction = searchPreds.querySelector(".pred.focused");',
+              'if (searchQuery.classList.contains("focused")) return;',
+              'focusWithoutScroll(selectedKey || selectedPrediction);',
+              'if (active && search.contains(active) && typeof active.blur === "function") {',
+              'if (!menu.classList.contains("hidden") || !picker.classList.contains("hidden")) return;',
+              'focusWithoutScroll(controls.querySelector(".focusable.focused"));',
+          )
+          missing = [needle for needle in bridge_required if needle not in bridge]
+          if missing:
+              raise SystemExit(
+                  "search focus bridge no longer preserves host-focus contract: "
+                  + ", ".join(missing)
+              )
+
+          app_required = (
+              'els.searchQuery.classList.toggle("focused", searchZone === "input");',
+              'd.className = "key" + (searchZone === "keys" && i === keyIdx ? " focused" : "");',
+              'li.className = "pred" + (searchZone === "preds" && i === predIdx ? " focused" : "");',
+          )
+          missing = [needle for needle in app_required if needle not in app]
+          if missing:
+              raise SystemExit(
+                  "app search renderer no longer exposes bridge selection state: "
+                  + ", ".join(missing)
+              )
+
+          app_script = '<script src="js/app.js"></script>'
+          bridge_script = '<script src="js/search-focus-bridge.js"></script>'
+          if html.count(app_script) != 1 or html.count(bridge_script) != 1:
+              raise SystemExit("expected exactly one app and search-focus bridge script")
+          if html.index(bridge_script) < html.index(app_script):
+              raise SystemExit("search focus bridge must load after js/app.js")
+
+          for element_id in ("search", "search-query", "search-keyboard", "search-preds"):
+              if f'id="{element_id}"' not in html:
+                  raise SystemExit(f"missing search focus bridge target #{element_id}")
+          PY
