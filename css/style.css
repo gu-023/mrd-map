@@ -91,8 +91,8 @@ html, body {
   position: absolute;
   top: 50%;
   left: 50%;
-  width: 44px;
-  height: 44px;
+  width: 88px;
+  height: 88px;
   transform: translate(-50%, -50%);
   pointer-events: none;
   z-index: 4;
@@ -104,8 +104,8 @@ html, body {
   background: var(--warn);
   box-shadow: 0 0 6px var(--warn);
 }
-#picker::before { left: 50%; top: 0; width: 2px; height: 100%; transform: translateX(-50%); }
-#picker::after { top: 50%; left: 0; height: 2px; width: 100%; transform: translateY(-50%); }
+#picker::before { left: 50%; top: 22px; width: 2px; height: 44px; transform: translateX(-50%); }
+#picker::after { top: 50%; left: 22px; height: 2px; width: 44px; transform: translateY(-50%); }
 
 /* ナビ案内バナー（上部） */
 #nav-banner {
