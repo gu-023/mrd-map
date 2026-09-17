@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - index.html
+      - css/style.css
       - js/app.js
       - js/menu-focus-bridge.js
       - .github/workflows/menu-dom-focus.yml
@@ -11,6 +12,7 @@ on:
     branches: [main]
     paths:
       - index.html
+      - css/style.css
       - js/app.js
       - js/menu-focus-bridge.js
       - .github/workflows/menu-dom-focus.yml
@@ -32,9 +34,11 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
+          import re
 
           app = Path("js/app.js").read_text()
           bridge = Path("js/menu-focus-bridge.js").read_text()
+          css = Path("css/style.css").read_text()
           html = Path("index.html").read_text()
 
           bridge_required = (
@@ -64,6 +68,80 @@ jobs:
                   + ", ".join(missing)
               )
 
+          def require_css_declarations(selector, expected):
+              matches = list(re.finditer(re.escape(selector) + r"\s*\{([^}]*)\}", css, re.S))
+              if not matches:
+                  raise SystemExit(f"missing menu CSS rule: {selector}")
+
+              def body_has_expected(body):
+                  return all(
+                      re.search(
+                          rf"(?<![-\w]){re.escape(prop)}\s*:\s*{re.escape(value)}\s*;",
+                          body,
+                      )
+                      for prop, value in expected.items()
+                  )
+
+              if not any(body_has_expected(match.group(1)) for match in matches):
+                  required = ", ".join(f"{prop}: {value}" for prop, value in expected.items())
+                  raise SystemExit(
+                      f"{selector} no longer preserves the menu scroll/scrim contract: "
+                      + required
+                  )
+
+          require_css_declarations("#menu-scroll", {
+              "position": "relative",
+              "flex": "1",
+              "min-height": "0",
+          })
+          require_css_declarations("#menu-list", {
+              "height": "100%",
+              "min-height": "0",
+              "overflow-y": "auto",
+          })
+          require_css_declarations(".menu-row", {
+              "min-height": "88px",
+          })
+
+          shared_scrim = re.search(
+              r"#menu-scroll::before\s*,\s*#menu-scroll::after\s*\{([^}]*)\}",
+              css,
+              re.S,
+          )
+          if not shared_scrim:
+              raise SystemExit("missing menu top/bottom scrim rule")
+          shared_body = shared_scrim.group(1)
+          for prop, value in {
+              "position": "absolute",
+              "left": "-24px",
+              "right": "-24px",
+              "height": "64px",
+              "pointer-events": "none",
+          }.items():
+              if not re.search(
+                  rf"(?<![-\w]){re.escape(prop)}\s*:\s*{re.escape(value)}\s*;",
+                  shared_body,
+              ):
+                  raise SystemExit(f"menu scrims no longer preserve {prop}: {value}")
+
+          require_css_declarations("#menu-scroll::before", {
+              "top": "0",
+              "background": "linear-gradient(to bottom, #0a0a0f 0%, transparent 100%)",
+          })
+          require_css_declarations("#menu-scroll::after", {
+              "bottom": "0",
+              "background": "linear-gradient(to top, #0a0a0f 0%, transparent 100%)",
+          })
+
+          if '<div id="menu-scroll">' not in html:
+              raise SystemExit("missing destination-menu scrim wrapper #menu-scroll")
+          if not re.search(
+              r'<div id="menu-scroll">\s*<ul id="menu-list"></ul>\s*</div>',
+              html,
+              re.S,
+          ):
+              raise SystemExit("#menu-list must remain inside #menu-scroll")
+
           app_script = '<script src="js/app.js"></script>'
           bridge_script = '<script src="js/menu-focus-bridge.js"></script>'
           if html.count(app_script) != 1 or html.count(bridge_script) != 1:
@@ -71,7 +149,7 @@ jobs:
           if html.index(bridge_script) < html.index(app_script):
               raise SystemExit("menu focus bridge must load after js/app.js")
 
-          for element_id in ("menu", "menu-list", "controls", "search", "picker"):
+          for element_id in ("menu", "menu-scroll", "menu-list", "controls", "search", "picker"):
               if f'id="{element_id}"' not in html:
                   raise SystemExit(f"missing menu focus bridge target #{element_id}")
           PY
