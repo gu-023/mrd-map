@@ -46,6 +46,11 @@
 
     if (search.classList.contains("hidden")) return;
 
+    // Keep the active fallback key inside the compact scrollable keyboard zone.
+    if (selectedKey && typeof selectedKey.scrollIntoView === "function") {
+      selectedKey.scrollIntoView({ block: "nearest", inline: "nearest" });
+    }
+
     // The app explicitly owns focus for the real input/native composer path.
     if (searchQuery.classList.contains("focused")) return;
 
