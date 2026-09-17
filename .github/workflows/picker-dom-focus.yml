@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - index.html
+      - css/style.css
       - js/app.js
       - js/picker-focus-bridge.js
       - .github/workflows/picker-dom-focus.yml
@@ -11,6 +12,7 @@ on:
     branches: [main]
     paths:
       - index.html
+      - css/style.css
       - js/app.js
       - js/picker-focus-bridge.js
       - .github/workflows/picker-dom-focus.yml
@@ -32,9 +34,11 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
+          import re
 
           app = Path("js/app.js").read_text()
           bridge = Path("js/picker-focus-bridge.js").read_text()
+          css = Path("css/style.css").read_text()
           html = Path("index.html").read_text()
 
           bridge_required = (
@@ -74,6 +78,41 @@ jobs:
                   "app picker flow no longer exposes the expected Enter confirmation path: "
                   + ", ".join(missing)
               )
+
+          def require_css_declarations(selector, expected):
+              match = re.search(re.escape(selector) + r"\s*\{([^}]*)\}", css, re.S)
+              if not match:
+                  raise SystemExit(f"missing picker CSS rule: {selector}")
+              body = match.group(1)
+              missing_declarations = []
+              for prop, value in expected.items():
+                  pattern = rf"(?<![-\w]){re.escape(prop)}\s*:\s*{re.escape(value)}\s*;"
+                  if not re.search(pattern, body):
+                      missing_declarations.append(f"{prop}: {value}")
+              if missing_declarations:
+                  raise SystemExit(
+                      f"{selector} no longer preserves the picker visual/target contract: "
+                      + ", ".join(missing_declarations)
+                  )
+
+          require_css_declarations("#picker", {
+              "width": "88px",
+              "height": "88px",
+          })
+          require_css_declarations("#picker::before", {
+              "left": "50%",
+              "top": "22px",
+              "width": "2px",
+              "height": "44px",
+              "transform": "translateX(-50%)",
+          })
+          require_css_declarations("#picker::after", {
+              "top": "50%",
+              "left": "22px",
+              "height": "2px",
+              "width": "44px",
+              "transform": "translateY(-50%)",
+          })
 
           app_script = '<script src="js/app.js"></script>'
           bridge_script = '<script src="js/picker-focus-bridge.js"></script>'
