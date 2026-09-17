@@ -113,6 +113,8 @@
   let placeDetailsRequestId = 0; // 古い Place Details callback を無視するための世代番号
   let predictionTimeoutId = null;
   let placeDetailsTimeoutId = null;
+  let compositionRefreshTimeoutId = null;
+  let searchInputWasComposing = false;
   const PLACES_REQUEST_TIMEOUT_MS = 10000;
   const SEARCH_COLS = 9;
   const SEARCH_KEYS = "abcdefghijklmnopqrstuvwxyz0123456789".split("").concat(["␣", "⌫", "✕"]);
@@ -982,8 +984,11 @@
   function closeSearch() {
     if (predictionTimeoutId !== null) clearTimeout(predictionTimeoutId);
     if (placeDetailsTimeoutId !== null) clearTimeout(placeDetailsTimeoutId);
+    if (compositionRefreshTimeoutId !== null) clearTimeout(compositionRefreshTimeoutId);
     predictionTimeoutId = null;
     placeDetailsTimeoutId = null;
+    compositionRefreshTimeoutId = null;
+    searchInputWasComposing = false;
     predictionRequestId++; // 閉じた検索の callback が後から UI を更新しないよう無効化
     placeDetailsRequestId++; // 閉じた検索の Place Details callback も無効化
     clearError("places"); // 明示的に検索を閉じたら Places 由来の stale error も解除
@@ -1059,6 +1064,11 @@
 
   els.searchQuery.addEventListener("input", (event) => {
     if (!searchOpen) return;
+    if (compositionRefreshTimeoutId !== null) {
+      clearTimeout(compositionRefreshTimeoutId);
+      compositionRefreshTimeoutId = null;
+    }
+    searchInputWasComposing = event.isComposing;
     placeDetailsLoading = false;
     placeDetailsRequestId++;
     if (placeDetailsTimeoutId !== null) clearTimeout(placeDetailsTimeoutId);
@@ -1079,6 +1089,20 @@
     }
     refreshPredictions();
     renderSearch();
+  });
+
+  els.searchQuery.addEventListener("compositionend", () => {
+    if (!searchOpen || !searchInputWasComposing) return;
+    searchInputWasComposing = false;
+    if (compositionRefreshTimeoutId !== null) clearTimeout(compositionRefreshTimeoutId);
+    compositionRefreshTimeoutId = setTimeout(() => {
+      compositionRefreshTimeoutId = null;
+      if (!searchOpen) return;
+      searchQuery = els.searchQuery.value;
+      searchZone = "input";
+      refreshPredictions();
+      renderSearch();
+    }, 0);
   });
   function pressKey(k) {
     if (k === "✕") { closeSearch(); return; }
