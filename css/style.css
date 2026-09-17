@@ -238,10 +238,13 @@ html, body {
   background: rgba(77, 214, 160, 0.10);
 }
 #search-keyboard {
+  flex: 0 0 180px;
   display: flex; flex-wrap: wrap; gap: 4px; justify-content: center;
+  align-content: flex-start;
+  overflow-y: auto;
 }
 #search-keyboard .key {
-  width: 56px; height: 46px;
+  width: 56px; height: 88px;
   display: flex; align-items: center; justify-content: center;
   font-size: 24px; font-weight: 700;
   background: rgba(255, 255, 255, 0.06);
