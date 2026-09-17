@@ -1,0 +1,77 @@
+name: Menu DOM focus guard
+
+on:
+  pull_request:
+    paths:
+      - index.html
+      - js/app.js
+      - js/menu-focus-bridge.js
+      - .github/workflows/menu-dom-focus.yml
+  push:
+    branches: [main]
+    paths:
+      - index.html
+      - js/app.js
+      - js/menu-focus-bridge.js
+      - .github/workflows/menu-dom-focus.yml
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check menu focus bridge syntax
+        run: node --check js/menu-focus-bridge.js
+
+      - name: Check menu DOM focus contract
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          app = Path("js/app.js").read_text()
+          bridge = Path("js/menu-focus-bridge.js").read_text()
+          html = Path("index.html").read_text()
+
+          bridge_required = (
+              'const selected = menuList.querySelector(".menu-row.focused");',
+              'row.setAttribute("role", "button");',
+              'row.tabIndex = row === selected ? 0 : -1;',
+              'if (!menu.classList.contains("hidden")) focusWithoutScroll(selected);',
+              'if (active && menuList.contains(active) && typeof active.blur === "function") {',
+              'if (!search.classList.contains("hidden") || !picker.classList.contains("hidden")) return;',
+              'focusWithoutScroll(controls.querySelector(".focusable.focused"));',
+          )
+          missing = [needle for needle in bridge_required if needle not in bridge]
+          if missing:
+              raise SystemExit(
+                  "menu focus bridge no longer preserves host-focus contract: "
+                  + ", ".join(missing)
+              )
+
+          app_required = (
+              'li.className = "menu-row" + (i === menuIdx ? " focused" : "");',
+              'li.addEventListener("click", () => { menuIdx = i; renderMenu(); it.action(); });',
+          )
+          missing = [needle for needle in app_required if needle not in app]
+          if missing:
+              raise SystemExit(
+                  "app menu renderer no longer exposes bridge selection/activation state: "
+                  + ", ".join(missing)
+              )
+
+          app_script = '<script src="js/app.js"></script>'
+          bridge_script = '<script src="js/menu-focus-bridge.js"></script>'
+          if html.count(app_script) != 1 or html.count(bridge_script) != 1:
+              raise SystemExit("expected exactly one app and menu-focus bridge script")
+          if html.index(bridge_script) < html.index(app_script):
+              raise SystemExit("menu focus bridge must load after js/app.js")
+
+          for element_id in ("menu", "menu-list", "controls", "search", "picker"):
+              if f'id="{element_id}"' not in html:
+                  raise SystemExit(f"missing menu focus bridge target #{element_id}")
+          PY
