@@ -1,0 +1,86 @@
+name: Picker DOM focus guard
+
+on:
+  pull_request:
+    paths:
+      - index.html
+      - js/app.js
+      - js/picker-focus-bridge.js
+      - .github/workflows/picker-dom-focus.yml
+  push:
+    branches: [main]
+    paths:
+      - index.html
+      - js/app.js
+      - js/picker-focus-bridge.js
+      - .github/workflows/picker-dom-focus.yml
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check picker focus bridge syntax
+        run: node --check js/picker-focus-bridge.js
+
+      - name: Check picker DOM focus contract
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          app = Path("js/app.js").read_text()
+          bridge = Path("js/picker-focus-bridge.js").read_text()
+          html = Path("index.html").read_text()
+
+          bridge_required = (
+              'const picker = document.querySelector("#picker");',
+              'picker.setAttribute("role", "button");',
+              'picker.setAttribute("aria-label", "地図中央を目的地に確定");',
+              'picker.tabIndex = open ? 0 : -1;',
+              'focusWithoutScroll(picker);',
+              'if (document.activeElement === picker && typeof picker.blur === "function") picker.blur();',
+              'if (!menu.classList.contains("hidden") || !search.classList.contains("hidden")) return;',
+              'focusWithoutScroll(controls.querySelector(".focusable.focused"));',
+              'picker.addEventListener("click", () => {',
+              'if (picker.classList.contains("hidden")) return;',
+              'picker.dispatchEvent(new KeyboardEvent("keydown", {',
+              'key: "Enter",',
+              'code: "Enter",',
+              'bubbles: true,',
+              'const observer = new MutationObserver(syncPickerFocus);',
+              'attributeFilter: ["class"],',
+          )
+          missing = [needle for needle in bridge_required if needle not in bridge]
+          if missing:
+              raise SystemExit(
+                  "picker focus bridge no longer preserves host-focus contract: "
+                  + ", ".join(missing)
+              )
+
+          app_required = (
+              'els.picker.classList.remove("hidden");',
+              'els.picker.classList.add("hidden");',
+              'if (pickMode) {',
+              'case "Enter": case " ": confirmDestination(); break;',
+          )
+          missing = [needle for needle in app_required if needle not in app]
+          if missing:
+              raise SystemExit(
+                  "app picker flow no longer exposes the expected Enter confirmation path: "
+                  + ", ".join(missing)
+              )
+
+          app_script = '<script src="js/app.js"></script>'
+          bridge_script = '<script src="js/picker-focus-bridge.js"></script>'
+          if html.count(app_script) != 1 or html.count(bridge_script) != 1:
+              raise SystemExit("expected exactly one app and picker-focus bridge script")
+          if html.index(bridge_script) < html.index(app_script):
+              raise SystemExit("picker focus bridge must load after js/app.js")
+          if 'id="picker"' not in html:
+              raise SystemExit("missing picker focus bridge target #picker")
+          PY
