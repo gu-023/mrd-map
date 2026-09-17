@@ -112,7 +112,7 @@ html, body {
   position: absolute;
   top: 0; left: 0; right: 0;
   padding: 10px 16px;
-  background: rgba(0, 0, 0, 0.78);
+  background: #0a0a0f;
   color: var(--accent);
   text-align: center;
   font-size: 22px;
