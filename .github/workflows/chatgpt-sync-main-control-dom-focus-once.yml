@@ -1,0 +1,77 @@
+name: One-shot main control DOM focus sync
+
+on:
+  push:
+    branches:
+      - chatgpt/sync-main-control-dom-focus
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: chatgpt/sync-main-control-dom-focus
+          fetch-depth: 0
+
+      - name: Sync visual D-pad focus to DOM focus
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("js/app.js")
+          text = path.read_text()
+          old = '''  function renderFocus() {
+    focusables.forEach((el, i) => el.classList.toggle("focused", i === focusIdx));
+  }
+'''
+          new = '''  function renderFocus() {
+    focusables.forEach((el, i) => el.classList.toggle("focused", i === focusIdx));
+    const focusedControl = focusables[focusIdx];
+    if (focusedControl && document.activeElement !== focusedControl) focusedControl.focus();
+  }
+'''
+          if text.count(old) != 1:
+              raise SystemExit("renderFocus anchor must appear exactly once")
+          path.write_text(text.replace(old, new, 1))
+          PY
+
+      - name: Static and focused checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check js/app.js
+          git diff --check
+          python3 - <<'PY'
+          from pathlib import Path
+
+          text = Path("js/app.js").read_text()
+          required = [
+              'const focusedControl = focusables[focusIdx];',
+              'if (focusedControl && document.activeElement !== focusedControl) focusedControl.focus();',
+          ]
+          missing = [token for token in required if token not in text]
+          if missing:
+              raise SystemExit("DOM focus sync missing: " + ", ".join(missing))
+          PY
+          if git diff -- js/app.js | grep -E 'AIza[0-9A-Za-z_-]{30,}' >/dev/null; then
+            echo '::error::Google API key-like value detected in diff'
+            exit 1
+          fi
+
+      - name: Commit product change and remove helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/chatgpt-sync-main-control-dom-focus-once.yml
+          git config user.name "ChatGPT Codex Connector"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "Sync main control DOM focus with D-pad"
+          git push origin HEAD:chatgpt/sync-main-control-dom-focus
