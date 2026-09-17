@@ -195,7 +195,20 @@ html, body {
   z-index: 15;
 }
 #menu-title { font-size: 26px; font-weight: 700; color: var(--accent); margin-bottom: 12px; }
-#menu-list { list-style: none; flex: 1; min-height: 0; overflow-y: auto; }
+#menu-scroll { position: relative; flex: 1; min-height: 0; }
+#menu-list { list-style: none; height: 100%; min-height: 0; overflow-y: auto; }
+#menu-scroll::before,
+#menu-scroll::after {
+  content: "";
+  position: absolute;
+  left: -24px;
+  right: -24px;
+  height: 64px;
+  pointer-events: none;
+  z-index: 1;
+}
+#menu-scroll::before { top: 0; background: linear-gradient(to bottom, #0a0a0f 0%, transparent 100%); }
+#menu-scroll::after { bottom: 0; background: linear-gradient(to top, #0a0a0f 0%, transparent 100%); }
 .menu-row {
   min-height: 88px;
   display: flex;
