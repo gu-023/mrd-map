@@ -1,14 +1,16 @@
-name: Display host metadata guard
+name: Display host contract guard
 
 on:
   pull_request:
     paths:
       - index.html
+      - css/style.css
       - .github/workflows/display-host-contract.yml
   push:
     branches: [main]
     paths:
       - index.html
+      - css/style.css
       - .github/workflows/display-host-contract.yml
 
 permissions:
@@ -20,12 +22,13 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Check Ray-Ban Display host metadata
+      - name: Check Ray-Ban Display host and additive-surface contract
         shell: bash
         run: |
           python3 - <<'PY'
           from html.parser import HTMLParser
           from pathlib import Path
+          import re
 
           class HeadMetaParser(HTMLParser):
               def __init__(self):
@@ -81,5 +84,29 @@ jobs:
                   f"content={capable!r} (expected 'yes')"
               )
 
-          print("Ray-Ban Display host metadata contract OK")
+          css = Path("css/style.css").read_text(encoding="utf-8")
+
+          def require_background(selector, expected):
+              matches = list(re.finditer(re.escape(selector) + r"\s*\{([^}]*)\}", css, re.S))
+              if not matches:
+                  raise SystemExit(f"Missing additive-display CSS rule: {selector}")
+              pattern = re.compile(
+                  rf"(?<![-\w])background\s*:\s*{re.escape(expected)}\s*;",
+                  re.I,
+              )
+              if not any(pattern.search(match.group(1)) for match in matches):
+                  raise SystemExit(
+                      f"{selector} background changed; expected {expected} for the additive-display contract"
+                  )
+
+          # Pure black is intentionally transparent on the additive display.
+          for selector in ("html, body", "#map"):
+              require_background(selector, "#000")
+
+          # User-facing overlays need a non-black backing surface so text remains legible
+          # over the real world/map instead of becoming fully transparent.
+          for selector in ("#nav-banner", "#error-overlay", "#menu", "#search"):
+              require_background(selector, "#0a0a0f")
+
+          print("Ray-Ban Display host + additive-surface contract OK")
           PY
