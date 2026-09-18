@@ -112,6 +112,12 @@ jobs:
           require_css_declarations(".menu-row", {
               "min-height": "88px",
           })
+          require_css_declarations(".menu-row.focused", {
+              "border-color": "var(--focus)",
+              "color": "var(--focus)",
+              "background": "rgba(77, 214, 160, 0.12)",
+              "box-shadow": "0 0 14px var(--focus)",
+          })
 
           shared_scrim = re.search(
               r"#menu-scroll::before\s*,\s*#menu-scroll::after\s*\{([^}]*)\}",
