@@ -13,12 +13,13 @@
   const searchQuery = document.querySelector("#search-query");
   const searchKeyboardScroll = document.querySelector("#search-keyboard-scroll");
   const searchKeyboard = document.querySelector("#search-keyboard");
+  const searchPredsScroll = document.querySelector("#search-preds-scroll");
   const searchPreds = document.querySelector("#search-preds");
   const menu = document.querySelector("#menu");
   const picker = document.querySelector("#picker");
   const controls = document.querySelector("#controls");
 
-  if (!search || !searchQuery || !searchKeyboardScroll || !searchKeyboard || !searchPreds || !menu || !picker || !controls) return;
+  if (!search || !searchQuery || !searchKeyboardScroll || !searchKeyboard || !searchPredsScroll || !searchPreds || !menu || !picker || !controls) return;
 
   function focusWithoutScroll(element) {
     if (!element || document.activeElement === element) return;
@@ -45,6 +46,15 @@
     searchKeyboardScroll.classList.toggle("at-bottom", atBottom);
   }
 
+  function updatePredictionScrims() {
+    const maxScrollTop = Math.max(0, searchPreds.scrollHeight - searchPreds.clientHeight);
+    const atTop = searchPreds.scrollTop <= 1;
+    const atBottom = maxScrollTop <= 1 || searchPreds.scrollTop >= maxScrollTop - 1;
+
+    searchPredsScroll.classList.toggle("at-top", atTop);
+    searchPredsScroll.classList.toggle("at-bottom", atBottom);
+  }
+
   function syncSearchControls() {
     const keys = Array.from(searchKeyboard.querySelectorAll(".key"));
     const predictions = Array.from(searchPreds.querySelectorAll(".pred"));
@@ -61,6 +71,7 @@
       selectedKey.scrollIntoView({ block: "nearest", inline: "nearest" });
     }
     requestAnimationFrame(updateKeyboardScrims);
+    requestAnimationFrame(updatePredictionScrims);
 
     // The app explicitly owns focus for the real input/native composer path.
     if (searchQuery.classList.contains("focused")) return;
@@ -109,8 +120,10 @@
   });
 
   searchKeyboard.addEventListener("scroll", updateKeyboardScrims, { passive: true });
+  searchPreds.addEventListener("scroll", updatePredictionScrims, { passive: true });
 
   syncSearchControls();
   updateKeyboardScrims();
+  updatePredictionScrims();
   restoreFocusAfterSearchClose();
 })();
