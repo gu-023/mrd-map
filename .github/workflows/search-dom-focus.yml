@@ -115,6 +115,11 @@ jobs:
           require_css_declarations("#search-query", {
               "min-height": "88px",
           })
+          require_css_declarations("#search-query.focused", {
+              "border-color": "var(--focus)",
+              "box-shadow": "0 0 12px var(--focus)",
+              "background": "rgba(77, 214, 160, 0.10)",
+          })
           require_css_declarations("#search-keyboard-scroll", {
               "position": "relative",
               "flex": "0 0 180px",
