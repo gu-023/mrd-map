@@ -104,13 +104,59 @@ jobs:
           require_css_declarations("#search-keyboard .key", {
               "height": "88px",
           })
+          require_css_declarations("#search-preds-scroll", {
+              "position": "relative",
+              "flex": "1",
+              "min-height": "0",
+              "margin-top": "8px",
+          })
           require_css_declarations("#search-preds", {
+              "height": "100%",
               "min-height": "0",
               "overflow-y": "auto",
           })
           require_css_declarations("#search-preds .pred", {
               "min-height": "88px",
           })
+
+          shared_scrim = re.search(
+              r"#search-preds-scroll::before\s*,\s*#search-preds-scroll::after\s*\{([^}]*)\}",
+              css,
+              re.S,
+          )
+          if not shared_scrim:
+              raise SystemExit("missing search prediction top/bottom scrim rule")
+          shared_body = shared_scrim.group(1)
+          for prop, value in {
+              "position": "absolute",
+              "left": "-14px",
+              "right": "-14px",
+              "height": "64px",
+              "pointer-events": "none",
+          }.items():
+              if not re.search(
+                  rf"(?<![-\w]){re.escape(prop)}\s*:\s*{re.escape(value)}\s*;",
+                  shared_body,
+              ):
+                  raise SystemExit(f"search prediction scrims no longer preserve {prop}: {value}")
+
+          require_css_declarations("#search-preds-scroll::before", {
+              "top": "0",
+              "background": "linear-gradient(to bottom, #0a0a0f 0%, transparent 100%)",
+          })
+          require_css_declarations("#search-preds-scroll::after", {
+              "bottom": "0",
+              "background": "linear-gradient(to top, #0a0a0f 0%, transparent 100%)",
+          })
+
+          if '<div id="search-preds-scroll">' not in html:
+              raise SystemExit("missing search prediction scrim wrapper #search-preds-scroll")
+          if not re.search(
+              r'<div id="search-preds-scroll">\s*<ul id="search-preds"></ul>\s*</div>',
+              html,
+              re.S,
+          ):
+              raise SystemExit("#search-preds must remain inside #search-preds-scroll")
 
           app_script = '<script src="js/app.js"></script>'
           bridge_script = '<script src="js/search-focus-bridge.js"></script>'
@@ -119,7 +165,7 @@ jobs:
           if html.index(bridge_script) < html.index(app_script):
               raise SystemExit("search focus bridge must load after js/app.js")
 
-          for element_id in ("search", "search-query", "search-keyboard", "search-preds"):
+          for element_id in ("search", "search-query", "search-keyboard", "search-preds-scroll", "search-preds"):
               if f'id="{element_id}"' not in html:
                   raise SystemExit(f"missing search focus bridge target #{element_id}")
           PY
