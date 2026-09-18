@@ -119,6 +119,26 @@ jobs:
               "transform": "translateY(-50%)",
           })
 
+          crosshair = re.search(
+              r"#picker::before\s*,\s*#picker::after\s*\{([^}]*)\}",
+              css,
+              re.S,
+          )
+          if not crosshair:
+              raise SystemExit("missing shared picker crosshair CSS rule")
+          for prop, value in {
+              "background": "var(--warn)",
+              "box-shadow": "0 0 6px var(--warn)",
+          }.items():
+              if not re.search(
+                  rf"(?<![-\w]){re.escape(prop)}\s*:\s*{re.escape(value)}\s*;",
+                  crosshair.group(1),
+              ):
+                  raise SystemExit(
+                      "picker crosshair no longer preserves warning visibility: "
+                      f"{prop}: {value}"
+                  )
+
           app_script = '<script src="js/app.js"></script>'
           bridge_script = '<script src="js/picker-focus-bridge.js"></script>'
           if html.count(app_script) != 1 or html.count(bridge_script) != 1:
