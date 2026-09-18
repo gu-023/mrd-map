@@ -1,0 +1,85 @@
+name: Display host metadata guard
+
+on:
+  pull_request:
+    paths:
+      - index.html
+      - .github/workflows/display-host-contract.yml
+  push:
+    branches: [main]
+    paths:
+      - index.html
+      - .github/workflows/display-host-contract.yml
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check Ray-Ban Display host metadata
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from html.parser import HTMLParser
+          from pathlib import Path
+
+          class HeadMetaParser(HTMLParser):
+              def __init__(self):
+                  super().__init__()
+                  self.metas = []
+
+              def handle_starttag(self, tag, attrs):
+                  if tag.lower() == "meta":
+                      self.metas.append({key.lower(): value for key, value in attrs})
+
+          parser = HeadMetaParser()
+          parser.feed(Path("index.html").read_text(encoding="utf-8"))
+
+          def meta_content(name):
+              values = [
+                  meta.get("content", "")
+                  for meta in parser.metas
+                  if (meta.get("name") or "").lower() == name
+              ]
+              if len(values) != 1:
+                  raise SystemExit(f"Expected exactly one <meta name={name!r}>, found {len(values)}")
+              return values[0]
+
+          viewport = {}
+          for item in meta_content("viewport").split(","):
+              key, sep, value = item.strip().partition("=")
+              if not sep:
+                  raise SystemExit(f"Malformed viewport directive: {item!r}")
+              viewport[key.strip().lower()] = value.strip().lower()
+
+          expected_viewport = {
+              "width": "600",
+              "height": "600",
+              "initial-scale": "1",
+              "user-scalable": "no",
+          }
+          mismatched = {
+              key: (viewport.get(key), expected)
+              for key, expected in expected_viewport.items()
+              if viewport.get(key) != expected
+          }
+          if mismatched:
+              details = ", ".join(
+                  f"{key}={actual!r} (expected {expected!r})"
+                  for key, (actual, expected) in mismatched.items()
+              )
+              raise SystemExit("Ray-Ban Display viewport contract changed: " + details)
+
+          capable = meta_content("mrbd-web-app-capable").strip().lower()
+          if capable != "yes":
+              raise SystemExit(
+                  "Ray-Ban Display host capability metadata changed: "
+                  f"content={capable!r} (expected 'yes')"
+              )
+
+          print("Ray-Ban Display host metadata contract OK")
+          PY
