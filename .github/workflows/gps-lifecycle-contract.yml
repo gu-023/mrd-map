@@ -1,0 +1,54 @@
+name: GPS lifecycle contract guard
+
+on:
+  pull_request:
+    paths:
+      - js/app.js
+      - .github/workflows/gps-lifecycle-contract.yml
+  push:
+    branches: [main]
+    paths:
+      - js/app.js
+      - .github/workflows/gps-lifecycle-contract.yml
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check stale GPS lifecycle recovery contract
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          app = Path("js/app.js").read_text(encoding="utf-8")
+
+          required = (
+              'function handleDisplayLifecycle(hidden) {',
+              'if (hidden || geoWatchId === null || lastPositionTimestamp === null) return;',
+              'if (Date.now() - lastPositionTimestamp > LIVE_POSITION_MAX_AGE_MS) {',
+              'hasUnknownGeoWatchOwnership() ? "GPS監視異常・↻再読込" : "GPS更新停止・◎で再取得"',
+          )
+          for snippet in required:
+              if snippet not in app:
+                  raise SystemExit(f"GPS lifecycle contract changed; missing: {snippet}")
+
+          start = app.index('function handleDisplayLifecycle(hidden) {')
+          end = app.index('document.addEventListener("visibilitychange"', start)
+          lifecycle_body = app[start:end]
+
+          if 'handleCompassLifecycle(hidden);' not in lifecycle_body:
+              raise SystemExit("Display lifecycle no longer forwards to compass lifecycle recovery")
+
+          # Resume should only surface stale state. It must not issue a new geolocation
+          # request outside the explicit ◎ user gesture, which some hosts require for permission.
+          if 'navigator.geolocation' in lifecycle_body or 'acquireLocation(' in lifecycle_body:
+              raise SystemExit("Display lifecycle must not auto-request geolocation on resume")
+
+          print("GPS stale lifecycle recovery contract OK")
+          PY
