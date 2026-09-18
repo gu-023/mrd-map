@@ -163,5 +163,34 @@ jobs:
               r'if\s*\(\s*!compassOn\s*\|\|\s*!headingInitialized\s*\)\s*return\s*;\s*els\.canvas\.style\.transform\s*=\s*`translate\(-50%, -50%\) rotate\(\$\{-curHeading\}deg\)`\s*;',
           )
 
+          # Suspending the display must pause compass watchdogs so host sleep does not
+          # look like a sensor failure. Returning visible must restart the appropriate
+          # watchdog without requesting permission again or carrying stale heading timing.
+          require_source(
+              "compass lifecycle must pause and resume the correct watchdog",
+              r'function\s+handleCompassLifecycle\s*\(\s*hidden\s*\)\s*\{.*?'
+              r'if\s*\(\s*compassPermissionPending\s*\)\s*\{\s*'
+              r'if\s*\(\s*hidden\s*\)\s*clearCompassPermissionWatchdog\(\)\s*;\s*'
+              r'else\s*armCompassPermissionWatchdog\(\)\s*;\s*return\s*;\s*\}.*?'
+              r'if\s*\(\s*!compassOn\s*\)\s*return\s*;.*?'
+              r'if\s*\(\s*hidden\s*\)\s*\{.*?'
+              r'clearTimeout\(compassStreamSilenceTimer\).*?compassStreamSilenceTimer\s*=\s*null\s*;.*?'
+              r'clearTimeout\(compassFirstReadingTimer\).*?compassFirstReadingTimer\s*=\s*null\s*;.*?'
+              r'return\s*;\s*\}.*?'
+              r'if\s*\(\s*headingInitialized\s*\)\s*\{\s*'
+              r'lastCompassHeadingAt\s*=\s*null\s*;.*?lastAbsoluteOrientationAt\s*=\s*null\s*;.*?'
+              r'armCompassStreamWatchdog\(\)\s*;\s*\}\s*else\s*\{\s*'
+              r'armCompassFirstReadingWatchdog\(\)\s*;\s*\}',
+          )
+          require_source(
+              "display lifecycle events must flow through compass lifecycle recovery",
+              r'function\s+handleDisplayLifecycle\s*\(\s*hidden\s*\)\s*\{\s*handleCompassLifecycle\(hidden\)\s*;.*?\}\s*'
+              r'document\.addEventListener\("visibilitychange".*?handleDisplayLifecycle\(document\.visibilityState\s*===\s*"hidden"\).*?\);\s*'
+              r'document\.addEventListener\("freeze".*?handleDisplayLifecycle\(true\).*?\);\s*'
+              r'document\.addEventListener\("resume".*?handleDisplayLifecycle\(document\.visibilityState\s*===\s*"hidden"\).*?\);\s*'
+              r'window\.addEventListener\("pagehide".*?handleDisplayLifecycle\(true\).*?\);\s*'
+              r'window\.addEventListener\("pageshow".*?handleDisplayLifecycle\(document\.visibilityState\s*===\s*"hidden"\).*?\);',
+          )
+
           print("Ray-Ban Display host + additive-surface contract OK")
           PY
