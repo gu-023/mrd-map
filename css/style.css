@@ -209,6 +209,8 @@ html, body {
 }
 #menu-scroll::before { top: 0; background: linear-gradient(to bottom, #0a0a0f 0%, transparent 100%); }
 #menu-scroll::after { bottom: 0; background: linear-gradient(to top, #0a0a0f 0%, transparent 100%); }
+#menu-scroll.at-top::before { opacity: 0; }
+#menu-scroll.at-bottom::after { opacity: 0; }
 .menu-row {
   min-height: 88px;
   display: flex;
