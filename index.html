@@ -53,7 +53,9 @@
     <!-- 場所検索（ネイティブcomposer＋オンスクリーンキーボードfallback＋Autocomplete候補） -->
     <div id="search" class="hidden">
       <input id="search-query" type="search" autocomplete="off" enterkeyhint="search" aria-label="場所を検索" placeholder="🎙 音声/手書き入力" />
-      <div id="search-keyboard"></div>
+      <div id="search-keyboard-scroll">
+        <div id="search-keyboard"></div>
+      </div>
       <div id="search-preds-scroll">
         <ul id="search-preds"></ul>
       </div>

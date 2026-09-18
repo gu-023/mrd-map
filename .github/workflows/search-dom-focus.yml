@@ -97,13 +97,49 @@ jobs:
           require_css_declarations("#search-query", {
               "min-height": "88px",
           })
-          require_css_declarations("#search-keyboard", {
+          require_css_declarations("#search-keyboard-scroll", {
+              "position": "relative",
               "flex": "0 0 180px",
+              "min-height": "0",
+          })
+          require_css_declarations("#search-keyboard", {
+              "height": "100%",
               "overflow-y": "auto",
           })
           require_css_declarations("#search-keyboard .key", {
               "height": "88px",
           })
+
+          keyboard_scrim = re.search(
+              r"#search-keyboard-scroll::before\s*,\s*#search-keyboard-scroll::after\s*\{([^}]*)\}",
+              css,
+              re.S,
+          )
+          if not keyboard_scrim:
+              raise SystemExit("missing fallback keyboard top/bottom scrim rule")
+          keyboard_scrim_body = keyboard_scrim.group(1)
+          for prop, value in {
+              "position": "absolute",
+              "left": "-14px",
+              "right": "-14px",
+              "height": "64px",
+              "pointer-events": "none",
+          }.items():
+              if not re.search(
+                  rf"(?<![-\w]){re.escape(prop)}\s*:\s*{re.escape(value)}\s*;",
+                  keyboard_scrim_body,
+              ):
+                  raise SystemExit(f"fallback keyboard scrims no longer preserve {prop}: {value}")
+
+          require_css_declarations("#search-keyboard-scroll::before", {
+              "top": "0",
+              "background": "linear-gradient(to bottom, #0a0a0f 0%, transparent 100%)",
+          })
+          require_css_declarations("#search-keyboard-scroll::after", {
+              "bottom": "0",
+              "background": "linear-gradient(to top, #0a0a0f 0%, transparent 100%)",
+          })
+
           require_css_declarations("#search-preds-scroll", {
               "position": "relative",
               "flex": "1",
@@ -149,6 +185,15 @@ jobs:
               "background": "linear-gradient(to top, #0a0a0f 0%, transparent 100%)",
           })
 
+          if '<div id="search-keyboard-scroll">' not in html:
+              raise SystemExit("missing fallback keyboard scrim wrapper #search-keyboard-scroll")
+          if not re.search(
+              r'<div id="search-keyboard-scroll">\s*<div id="search-keyboard"></div>\s*</div>',
+              html,
+              re.S,
+          ):
+              raise SystemExit("#search-keyboard must remain inside #search-keyboard-scroll")
+
           if '<div id="search-preds-scroll">' not in html:
               raise SystemExit("missing search prediction scrim wrapper #search-preds-scroll")
           if not re.search(
@@ -165,7 +210,7 @@ jobs:
           if html.index(bridge_script) < html.index(app_script):
               raise SystemExit("search focus bridge must load after js/app.js")
 
-          for element_id in ("search", "search-query", "search-keyboard", "search-preds-scroll", "search-preds"):
+          for element_id in ("search", "search-query", "search-keyboard-scroll", "search-keyboard", "search-preds-scroll", "search-preds"):
               if f'id="{element_id}"' not in html:
                   raise SystemExit(f"missing search focus bridge target #{element_id}")
           PY
