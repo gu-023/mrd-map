@@ -184,6 +184,12 @@ jobs:
           require_css_declarations("#search-preds .pred", {
               "min-height": "88px",
           })
+          require_css_declarations("#search-preds .pred.focused", {
+              "border-color": "var(--focus)",
+              "color": "var(--focus)",
+              "background": "rgba(77, 214, 160, 0.12)",
+              "box-shadow": "0 0 12px var(--focus)",
+          })
 
           shared_scrim = re.search(
               r"#search-preds-scroll::before\s*,\s*#search-preds-scroll::after\s*\{([^}]*)\}",
