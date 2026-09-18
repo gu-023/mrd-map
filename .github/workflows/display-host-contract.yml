@@ -99,6 +99,27 @@ jobs:
                       f"{selector} background changed; expected {expected} for the additive-display contract"
                   )
 
+          def require_declarations(selector, expected):
+              matches = list(re.finditer(re.escape(selector) + r"\s*\{([^}]*)\}", css, re.S))
+              if not matches:
+                  raise SystemExit(f"Missing additive-display CSS rule: {selector}")
+
+              def body_has_expected(body):
+                  return all(
+                      re.search(
+                          rf"(?<![-\w]){re.escape(prop)}\s*:\s*{re.escape(value)}\s*;",
+                          body,
+                          re.I,
+                      )
+                      for prop, value in expected.items()
+                  )
+
+              if not any(body_has_expected(match.group(1)) for match in matches):
+                  required = ", ".join(f"{prop}: {value}" for prop, value in expected.items())
+                  raise SystemExit(
+                      f"{selector} visual contract changed; expected " + required
+                  )
+
           # Pure black is intentionally transparent on the additive display.
           for selector in ("html, body", "#map"):
               require_background(selector, "#000")
@@ -107,6 +128,17 @@ jobs:
           # over the real world/map instead of becoming fully transparent.
           for selector in ("#nav-banner", "#error-overlay", "#menu", "#search"):
               require_background(selector, "#0a0a0f")
+
+          # Compass mode depends on a bright, centered triangular heading marker. Keep
+          # the geometry and accent glow visible on the additive display.
+          require_declarations("#heading-arrow", {
+              "top": "50%",
+              "left": "50%",
+              "border-left": "16px solid transparent",
+              "border-right": "16px solid transparent",
+              "border-bottom": "28px solid var(--accent)",
+              "filter": "drop-shadow(0 0 6px var(--accent))",
+          })
 
           print("Ray-Ban Display host + additive-surface contract OK")
           PY
