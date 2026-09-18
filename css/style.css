@@ -301,6 +301,8 @@ html, body {
 }
 #search-preds-scroll::before { top: 0; background: linear-gradient(to bottom, #0a0a0f 0%, transparent 100%); }
 #search-preds-scroll::after { bottom: 0; background: linear-gradient(to top, #0a0a0f 0%, transparent 100%); }
+#search-preds-scroll.at-top::before { opacity: 0; }
+#search-preds-scroll.at-bottom::after { opacity: 0; }
 #search-preds .pred {
   min-height: 88px;
   line-height: 68px;
