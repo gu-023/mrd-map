@@ -127,6 +127,12 @@ jobs:
           require_css_declarations("#search-keyboard .key", {
               "height": "88px",
           })
+          require_css_declarations("#search-keyboard .key.focused", {
+              "border-color": "var(--focus)",
+              "color": "var(--focus)",
+              "background": "rgba(77, 214, 160, 0.15)",
+              "box-shadow": "0 0 12px var(--focus)",
+          })
 
           keyboard_scrim = re.search(
               r"#search-keyboard-scroll::before\s*,\s*#search-keyboard-scroll::after\s*\{([^}]*)\}",
