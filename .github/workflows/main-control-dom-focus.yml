@@ -4,12 +4,14 @@ on:
   pull_request:
     paths:
       - index.html
+      - css/style.css
       - js/app.js
       - .github/workflows/main-control-dom-focus.yml
   push:
     branches: [main]
     paths:
       - index.html
+      - css/style.css
       - js/app.js
       - .github/workflows/main-control-dom-focus.yml
 
@@ -28,8 +30,10 @@ jobs:
           python3 - <<'PY'
           from html.parser import HTMLParser
           from pathlib import Path
+          import re
 
           app = Path("js/app.js").read_text()
+          css = Path("css/style.css").read_text()
           html = Path("index.html").read_text()
 
           render_marker = "  function renderFocus() {"
@@ -89,4 +93,52 @@ jobs:
               raise SystemExit(
                   "main .focusable controls must remain native buttons for host activation"
               )
+          if len(parser.focusable_tags) != 7:
+              raise SystemExit(
+                  "main control rail must remain seven buttons unless its 600px fit contract is reviewed"
+              )
+
+          def require_css_declarations(selector, expected):
+              matches = list(re.finditer(re.escape(selector) + r"\s*\{([^}]*)\}", css, re.S))
+              if not matches:
+                  raise SystemExit(f"missing main-control CSS rule: {selector}")
+
+              def body_has_expected(body):
+                  return all(
+                      re.search(
+                          rf"(?<![-\w]){re.escape(prop)}\s*:\s*{re.escape(value)}\s*;",
+                          body,
+                      )
+                      for prop, value in expected.items()
+                  )
+
+              if not any(body_has_expected(match.group(1)) for match in matches):
+                  required = ", ".join(f"{prop}: {value}" for prop, value in expected.items())
+                  raise SystemExit(
+                      f"{selector} no longer preserves the 600px/88dp main-control contract: "
+                      + required
+                  )
+
+          require_css_declarations("html, body", {
+              "width": "600px",
+              "height": "600px",
+              "overflow": "hidden",
+          })
+          require_css_declarations("#app", {
+              "width": "600px",
+              "height": "600px",
+              "grid-template-rows": "56px 1fr 96px 40px",
+          })
+          require_css_declarations("#controls", {
+              "gap": "10px",
+              "align-items": "center",
+          })
+          require_css_declarations(".focusable", {
+              "width": "72px",
+              "height": "88px",
+          })
+
+          rail_width = 7 * 72 + 6 * 10
+          if rail_width > 600:
+              raise SystemExit(f"main control rail exceeds 600px: {rail_width}px")
           PY
