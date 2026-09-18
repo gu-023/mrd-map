@@ -1,0 +1,63 @@
+name: Scroll surface contract guard
+
+on:
+  pull_request:
+    paths:
+      - css/style.css
+      - .github/workflows/scroll-surface-contract.yml
+  push:
+    branches: [main]
+    paths:
+      - css/style.css
+      - .github/workflows/scroll-surface-contract.yml
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check scroll-surface inventory
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+
+          css = Path("css/style.css").read_text()
+          css = re.sub(r"/\*.*?\*/", "", css, flags=re.S)
+
+          scrollable = set()
+          for selectors, body in re.findall(r"([^{}]+)\{([^{}]*)\}", css):
+              declarations = re.findall(
+                  r"(?:^|;)\s*(overflow(?:-[xy])?)\s*:\s*([^;]+)",
+                  body,
+                  flags=re.M,
+              )
+              if not any(
+                  value.strip().replace("!important", "").strip() in {"auto", "scroll"}
+                  for _, value in declarations
+              ):
+                  continue
+              for selector in selectors.split(","):
+                  normalized = " ".join(selector.split())
+                  if normalized:
+                      scrollable.add(normalized)
+
+          expected = {"#menu-list", "#search-keyboard", "#search-preds"}
+          if scrollable != expected:
+              missing = sorted(expected - scrollable)
+              unexpected = sorted(scrollable - expected)
+              details = []
+              if missing:
+                  details.append("missing known surfaces: " + ", ".join(missing))
+              if unexpected:
+                  details.append(
+                      "new scroll surfaces require an explicit scrim/D-pad contract review: "
+                      + ", ".join(unexpected)
+                  )
+              raise SystemExit("; ".join(details))
+          PY
