@@ -268,7 +268,20 @@ html, body {
   border-color: var(--focus); color: var(--focus);
   background: rgba(77, 214, 160, 0.15); box-shadow: 0 0 12px var(--focus);
 }
-#search-preds { list-style: none; flex: 1; min-height: 0; overflow-y: auto; margin-top: 8px; }
+#search-preds-scroll { position: relative; flex: 1; min-height: 0; margin-top: 8px; }
+#search-preds { list-style: none; height: 100%; min-height: 0; overflow-y: auto; }
+#search-preds-scroll::before,
+#search-preds-scroll::after {
+  content: "";
+  position: absolute;
+  left: -14px;
+  right: -14px;
+  height: 64px;
+  pointer-events: none;
+  z-index: 1;
+}
+#search-preds-scroll::before { top: 0; background: linear-gradient(to bottom, #0a0a0f 0%, transparent 100%); }
+#search-preds-scroll::after { bottom: 0; background: linear-gradient(to top, #0a0a0f 0%, transparent 100%); }
 #search-preds .pred {
   min-height: 88px;
   line-height: 68px;
