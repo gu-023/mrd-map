@@ -9,12 +9,13 @@
   "use strict";
 
   const menu = document.querySelector("#menu");
+  const menuScroll = document.querySelector("#menu-scroll");
   const menuList = document.querySelector("#menu-list");
   const controls = document.querySelector("#controls");
   const search = document.querySelector("#search");
   const picker = document.querySelector("#picker");
 
-  if (!menu || !menuList || !controls || !search || !picker) return;
+  if (!menu || !menuScroll || !menuList || !controls || !search || !picker) return;
 
   function focusWithoutScroll(element) {
     if (!element || document.activeElement === element) return;
@@ -23,6 +24,15 @@
     } catch (error) {
       element.focus();
     }
+  }
+
+  function updateMenuScrims() {
+    const maxScrollTop = Math.max(0, menuList.scrollHeight - menuList.clientHeight);
+    const atTop = menuList.scrollTop <= 1;
+    const atBottom = maxScrollTop <= 1 || menuList.scrollTop >= maxScrollTop - 1;
+
+    menuScroll.classList.toggle("at-top", atTop);
+    menuScroll.classList.toggle("at-bottom", atBottom);
   }
 
   function syncMenuRows() {
@@ -35,6 +45,7 @@
     });
 
     if (!menu.classList.contains("hidden")) focusWithoutScroll(selected);
+    requestAnimationFrame(updateMenuScrims);
   }
 
   function restoreFocusAfterMenuClose() {
@@ -67,6 +78,9 @@
     attributeFilter: ["class"],
   });
 
+  menuList.addEventListener("scroll", updateMenuScrims, { passive: true });
+
   syncMenuRows();
+  updateMenuScrims();
   restoreFocusAfterMenuClose();
 })();
