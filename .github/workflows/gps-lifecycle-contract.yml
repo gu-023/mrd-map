@@ -85,5 +85,41 @@ jobs:
           if 'return;' not in catch_body:
               raise SystemExit("clearWatch failure must return without registering a duplicate watch")
 
-          print("GPS stale lifecycle and explicit recenter recovery contracts OK")
+          if 'let geoWatchGeneration = 0;' not in app:
+              raise SystemExit("GPS watch generation state is missing")
+
+          acquire_start = app.index('function acquireLocation() {')
+          acquire_end = app.index('function onWatchError(err) {', acquire_start)
+          acquire_body = app[acquire_start:acquire_end]
+          generation_pos = acquire_body.find('const watchGeneration = ++geoWatchGeneration;')
+          watch_pos = acquire_body.find('navigator.geolocation.watchPosition(')
+          if generation_pos < 0 or watch_pos < 0 or generation_pos > watch_pos:
+              raise SystemExit("GPS watch generation must advance before registering a replacement watch")
+          if acquire_body.count('if (watchGeneration !== geoWatchGeneration) return;') != 2:
+              raise SystemExit("GPS watch success/error callbacks must both reject stale generations")
+
+          zero_start = acquire_body.find('if (watchId === 0) {', watch_pos)
+          zero_end = acquire_body.find('if (!Number.isInteger(watchId) || watchId < 0) {', zero_start)
+          if zero_start < 0 or zero_end < 0:
+              raise SystemExit("GPS watch zero-ID failure branch is missing")
+          zero_body = acquire_body[zero_start:zero_end]
+          invalidate_pos = zero_body.find('geoWatchGeneration += 1;')
+          release_zero_pos = zero_body.find('geoWatchId = null;')
+          if invalidate_pos < 0 or release_zero_pos < 0 or invalidate_pos > release_zero_pos:
+              raise SystemExit("GPS zero-ID failure must invalidate callbacks before releasing watch ownership")
+
+          watch_error_start = app.index('function onWatchError(err) {')
+          watch_error_end = app.index('/* ---------- コンパス', watch_error_start)
+          watch_error_body = app[watch_error_start:watch_error_end]
+          denied_start = watch_error_body.find('if (code === 1) {')
+          denied_end = watch_error_body.find('setGps(', denied_start)
+          if denied_start < 0 or denied_end < 0:
+              raise SystemExit("GPS permission-denied watch recovery branch is missing")
+          denied_body = watch_error_body[denied_start:denied_end]
+          invalidate_denied_pos = denied_body.find('geoWatchGeneration += 1;')
+          release_denied_pos = denied_body.find('geoWatchId = null;')
+          if invalidate_denied_pos < 0 or release_denied_pos < 0 or invalidate_denied_pos > release_denied_pos:
+              raise SystemExit("GPS permission denial must invalidate callbacks before releasing watch ownership")
+
+          print("GPS stale lifecycle, explicit recenter, and watch-generation contracts OK")
           PY
