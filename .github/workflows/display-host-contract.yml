@@ -5,12 +5,14 @@ on:
     paths:
       - index.html
       - css/style.css
+      - js/app.js
       - .github/workflows/display-host-contract.yml
   push:
     branches: [main]
     paths:
       - index.html
       - css/style.css
+      - js/app.js
       - .github/workflows/display-host-contract.yml
 
 permissions:
@@ -85,6 +87,7 @@ jobs:
               )
 
           css = Path("css/style.css").read_text(encoding="utf-8")
+          app_js = Path("js/app.js").read_text(encoding="utf-8")
 
           def require_background(selector, expected):
               matches = list(re.finditer(re.escape(selector) + r"\s*\{([^}]*)\}", css, re.S))
@@ -120,6 +123,10 @@ jobs:
                       f"{selector} visual contract changed; expected " + required
                   )
 
+          def require_source(label, pattern):
+              if not re.search(pattern, app_js, re.S):
+                  raise SystemExit(f"Compass runtime contract changed: {label}")
+
           # Pure black is intentionally transparent on the additive display.
           for selector in ("html, body", "#map"):
               require_background(selector, "#000")
@@ -139,6 +146,22 @@ jobs:
               "border-bottom": "28px solid var(--accent)",
               "filter": "drop-shadow(0 0 6px var(--accent))",
           })
+
+          # Keep the runtime state and display state coupled: enabling compass reveals
+          # the fixed heading marker, disabling it hides the marker and restores a
+          # north-up canvas, and active render frames rotate only while initialized.
+          require_source(
+              "enabling compass must reveal the heading marker",
+              r'compassOn\s*=\s*true\s*;\s*els\.headingArrow\.classList\.remove\("hidden"\)\s*;',
+          )
+          require_source(
+              "disabling compass must hide the marker and restore north-up",
+              r'els\.headingArrow\.classList\.add\("hidden"\)\s*;\s*curHeading\s*=\s*0\s*;\s*headingInitialized\s*=\s*false\s*;\s*lastCompassHeadingAt\s*=\s*null\s*;\s*lastAbsoluteOrientationAt\s*=\s*null\s*;\s*els\.canvas\.style\.transform\s*=\s*"translate\(-50%, -50%\) rotate\(0deg\)"\s*;',
+          )
+          require_source(
+              "compass render must stay gated and rotate opposite the heading",
+              r'if\s*\(\s*!compassOn\s*\|\|\s*!headingInitialized\s*\)\s*return\s*;\s*els\.canvas\.style\.transform\s*=\s*`translate\(-50%, -50%\) rotate\(\$\{-curHeading\}deg\)`\s*;',
+          )
 
           print("Ray-Ban Display host + additive-surface contract OK")
           PY
