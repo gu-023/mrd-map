@@ -250,12 +250,29 @@ html, body {
   box-shadow: 0 0 12px var(--focus);
   background: rgba(77, 214, 160, 0.10);
 }
-#search-keyboard {
+#search-keyboard-scroll {
+  position: relative;
   flex: 0 0 180px;
+  min-height: 0;
+}
+#search-keyboard {
+  height: 100%;
   display: flex; flex-wrap: wrap; gap: 4px; justify-content: center;
   align-content: flex-start;
   overflow-y: auto;
 }
+#search-keyboard-scroll::before,
+#search-keyboard-scroll::after {
+  content: "";
+  position: absolute;
+  left: -14px;
+  right: -14px;
+  height: 64px;
+  pointer-events: none;
+  z-index: 1;
+}
+#search-keyboard-scroll::before { top: 0; background: linear-gradient(to bottom, #0a0a0f 0%, transparent 100%); }
+#search-keyboard-scroll::after { bottom: 0; background: linear-gradient(to top, #0a0a0f 0%, transparent 100%); }
 #search-keyboard .key {
   width: 56px; height: 88px;
   display: flex; align-items: center; justify-content: center;
