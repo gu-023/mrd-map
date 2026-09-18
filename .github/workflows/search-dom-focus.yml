@@ -48,6 +48,15 @@ jobs:
               'const selectedPrediction = searchPreds.querySelector(".pred.focused");',
               'if (selectedKey && typeof selectedKey.scrollIntoView === "function") {',
               'selectedKey.scrollIntoView({ block: "nearest", inline: "nearest" });',
+              'function updatePredictionScrims() {',
+              'const maxScrollTop = Math.max(0, searchPreds.scrollHeight - searchPreds.clientHeight);',
+              'const atTop = searchPreds.scrollTop <= 1;',
+              'const atBottom = maxScrollTop <= 1 || searchPreds.scrollTop >= maxScrollTop - 1;',
+              'searchPredsScroll.classList.toggle("at-top", atTop);',
+              'searchPredsScroll.classList.toggle("at-bottom", atBottom);',
+              'requestAnimationFrame(updatePredictionScrims);',
+              'searchPreds.addEventListener("scroll", updatePredictionScrims, { passive: true });',
+              'updatePredictionScrims();',
               'if (searchQuery.classList.contains("focused")) return;',
               'focusWithoutScroll(selectedKey || selectedPrediction);',
               'if (active && search.contains(active) && typeof active.blur === "function") {',
@@ -183,6 +192,12 @@ jobs:
           require_css_declarations("#search-preds-scroll::after", {
               "bottom": "0",
               "background": "linear-gradient(to top, #0a0a0f 0%, transparent 100%)",
+          })
+          require_css_declarations("#search-preds-scroll.at-top::before", {
+              "opacity": "0",
+          })
+          require_css_declarations("#search-preds-scroll.at-bottom::after", {
+              "opacity": "0",
           })
 
           if '<div id="search-keyboard-scroll">' not in html:
