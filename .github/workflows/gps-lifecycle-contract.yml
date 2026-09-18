@@ -50,5 +50,40 @@ jobs:
           if 'navigator.geolocation' in lifecycle_body or 'acquireLocation(' in lifecycle_body:
               raise SystemExit("Display lifecycle must not auto-request geolocation on resume")
 
-          print("GPS stale lifecycle recovery contract OK")
+          action_start = app.index('function doAction(action) {')
+          recenter_start = app.index('case "recenter": {', action_start)
+          recenter_end = app.index('case "toggle-pan":', recenter_start)
+          recenter_body = app[recenter_start:recenter_end]
+
+          recenter_required = (
+              'const watchIsStale = geoWatchId !== null &&',
+              'lastPositionTimestamp !== null &&',
+              'Date.now() - lastPositionTimestamp > LIVE_POSITION_MAX_AGE_MS;',
+              'if (hasUnknownGeoWatchOwnership()) {',
+              'navigator.geolocation.clearWatch(geoWatchId);',
+              'geoWatchId = null;',
+              'if (!currentPosition || errorSource === "geolocation" || geoWatchId === null) {',
+              'clearError("geolocation");',
+              'acquireLocation();',
+          )
+          for snippet in recenter_required:
+              if snippet not in recenter_body:
+                  raise SystemExit(f"GPS recenter recovery contract changed; missing: {snippet}")
+
+          clear_pos = recenter_body.index('navigator.geolocation.clearWatch(geoWatchId);')
+          release_pos = recenter_body.index('geoWatchId = null;', clear_pos)
+          reacquire_pos = recenter_body.index('acquireLocation();', release_pos)
+          if not clear_pos < release_pos < reacquire_pos:
+              raise SystemExit("Stale GPS watch must be cleared before ownership is released and reacquisition starts")
+
+          clear_try = recenter_body.rfind('try {', 0, clear_pos)
+          clear_catch = recenter_body.find('catch (_)', clear_pos)
+          next_reacquire = recenter_body.find('acquireLocation();', clear_pos)
+          if clear_try < 0 or clear_catch < 0 or clear_catch > next_reacquire:
+              raise SystemExit("Stale clearWatch must remain fail-closed before reacquisition")
+          catch_body = recenter_body[clear_catch:next_reacquire]
+          if 'return;' not in catch_body:
+              raise SystemExit("clearWatch failure must return without registering a duplicate watch")
+
+          print("GPS stale lifecycle and explicit recenter recovery contracts OK")
           PY
