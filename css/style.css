@@ -273,6 +273,8 @@ html, body {
 }
 #search-keyboard-scroll::before { top: 0; background: linear-gradient(to bottom, #0a0a0f 0%, transparent 100%); }
 #search-keyboard-scroll::after { bottom: 0; background: linear-gradient(to top, #0a0a0f 0%, transparent 100%); }
+#search-keyboard-scroll.at-top::before { opacity: 0; }
+#search-keyboard-scroll.at-bottom::after { opacity: 0; }
 #search-keyboard .key {
   width: 56px; height: 88px;
   display: flex; align-items: center; justify-content: center;

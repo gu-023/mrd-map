@@ -11,13 +11,14 @@
 
   const search = document.querySelector("#search");
   const searchQuery = document.querySelector("#search-query");
+  const searchKeyboardScroll = document.querySelector("#search-keyboard-scroll");
   const searchKeyboard = document.querySelector("#search-keyboard");
   const searchPreds = document.querySelector("#search-preds");
   const menu = document.querySelector("#menu");
   const picker = document.querySelector("#picker");
   const controls = document.querySelector("#controls");
 
-  if (!search || !searchQuery || !searchKeyboard || !searchPreds || !menu || !picker || !controls) return;
+  if (!search || !searchQuery || !searchKeyboardScroll || !searchKeyboard || !searchPreds || !menu || !picker || !controls) return;
 
   function focusWithoutScroll(element) {
     if (!element || document.activeElement === element) return;
@@ -35,6 +36,15 @@
     });
   }
 
+  function updateKeyboardScrims() {
+    const maxScrollTop = Math.max(0, searchKeyboard.scrollHeight - searchKeyboard.clientHeight);
+    const atTop = searchKeyboard.scrollTop <= 1;
+    const atBottom = maxScrollTop <= 1 || searchKeyboard.scrollTop >= maxScrollTop - 1;
+
+    searchKeyboardScroll.classList.toggle("at-top", atTop);
+    searchKeyboardScroll.classList.toggle("at-bottom", atBottom);
+  }
+
   function syncSearchControls() {
     const keys = Array.from(searchKeyboard.querySelectorAll(".key"));
     const predictions = Array.from(searchPreds.querySelectorAll(".pred"));
@@ -50,6 +60,7 @@
     if (selectedKey && typeof selectedKey.scrollIntoView === "function") {
       selectedKey.scrollIntoView({ block: "nearest", inline: "nearest" });
     }
+    requestAnimationFrame(updateKeyboardScrims);
 
     // The app explicitly owns focus for the real input/native composer path.
     if (searchQuery.classList.contains("focused")) return;
@@ -97,6 +108,9 @@
     attributeFilter: ["class"],
   });
 
+  searchKeyboard.addEventListener("scroll", updateKeyboardScrims, { passive: true });
+
   syncSearchControls();
+  updateKeyboardScrims();
   restoreFocusAfterSearchClose();
 })();
