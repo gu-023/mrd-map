@@ -1,0 +1,82 @@
+name: Apply compass GPS start failure hint
+
+on:
+  push:
+    branches:
+      - chatgpt/fix-compass-gps-start-failure-hint
+    paths:
+      - .github/workflows/_chatgpt_apply_compass_gps_start_failure_hint.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: chatgpt/fix-compass-gps-start-failure-hint
+
+      - name: Apply focused GPS compass recovery change
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          app_path = Path("js/app.js")
+          app = app_path.read_text(encoding="utf-8")
+          old = '''          : gpsStatusText === "GPS再取得失敗"
+            ? "GPS失敗・◎再試行"
+'''
+          new = '''          : gpsStatusText === "GPS開始失敗" || gpsStatusText === "GPS再取得失敗"
+            ? "GPS失敗・◎再試行"
+'''
+          if app.count(old) != 1:
+              raise SystemExit(f"Expected one app GPS recovery anchor, found {app.count(old)}")
+          app_path.write_text(app.replace(old, new, 1), encoding="utf-8")
+
+          guard_path = Path(".github/workflows/gps-compass-recovery-hint-contract.yml")
+          guard = guard_path.read_text(encoding="utf-8")
+          old_required = '''              ': gpsStatusText === "GPS再取得失敗"',
+              '? "GPS失敗・◎再試行"',
+'''
+          new_required = '''              ': gpsStatusText === "GPS開始失敗" || gpsStatusText === "GPS再取得失敗"',
+              '? "GPS失敗・◎再試行"',
+'''
+          if guard.count(old_required) != 1:
+              raise SystemExit(f"Expected one guard required-token anchor, found {guard.count(old_required)}")
+          guard = guard.replace(old_required, new_required, 1)
+
+          old_priority = '''          unknown = body.find('hasUnknownGeoWatchOwnership()')
+          reacquire_failed = body.find('gpsStatusText === "GPS再取得失敗"')
+          no_watch_retry = body.find('geoWatchId === null && lastPositionTimestamp !== null')
+          if unknown > reacquire_failed or unknown > no_watch_retry:
+'''
+          new_priority = '''          unknown = body.find('hasUnknownGeoWatchOwnership()')
+          start_failed = body.find('gpsStatusText === "GPS開始失敗"')
+          reacquire_failed = body.find('gpsStatusText === "GPS再取得失敗"')
+          no_watch_retry = body.find('geoWatchId === null && lastPositionTimestamp !== null')
+          if unknown > start_failed or unknown > reacquire_failed or unknown > no_watch_retry:
+'''
+          if guard.count(old_priority) != 1:
+              raise SystemExit(f"Expected one guard priority anchor, found {guard.count(old_priority)}")
+          guard_path.write_text(guard.replace(old_priority, new_priority, 1), encoding="utf-8")
+          PY
+
+          node --check js/app.js
+          git diff --check
+          changed="$(git diff --name-only)"
+          test "$changed" = $'.github/workflows/gps-compass-recovery-hint-contract.yml\njs/app.js' || {
+            printf 'Unexpected changed files:\n%s\n' "$changed"
+            exit 1
+          }
+
+      - name: Commit focused change
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add js/app.js .github/workflows/gps-compass-recovery-hint-contract.yml
+          git commit -m "Keep GPS start retry visible in compass mode"
+          git push origin HEAD:chatgpt/fix-compass-gps-start-failure-hint
