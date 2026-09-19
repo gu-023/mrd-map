@@ -328,6 +328,7 @@
       setGps(false, "GPS非対応");
       return;
     }
+    clearGeoWatchRecoveryTimer();
     setGps(false, "GPS取得中…");
     // 高精度は指定しない（公式サンプル準拠）。受理可能な30秒以内のキャッシュだけ許容して即表示。
     const requestId = ++geoOneShotRequestId;
