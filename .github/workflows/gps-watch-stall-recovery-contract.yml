@@ -1,0 +1,127 @@
+name: GPS watch stall recovery contract guard
+
+on:
+  pull_request:
+    paths:
+      - js/app.js
+      - .github/workflows/gps-watch-stall-recovery-contract.yml
+  push:
+    branches: [main]
+    paths:
+      - js/app.js
+      - .github/workflows/gps-watch-stall-recovery-contract.yml
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check foreground GPS watch stall recovery contract
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          app = Path("js/app.js").read_text(encoding="utf-8")
+
+          if 'let geoWatchRecoveryTimer = null;' not in app:
+              raise SystemExit("GPS watch recovery timer state is missing")
+
+          clear_start = app.find('function clearGeoWatchRecoveryTimer() {')
+          arm_start = app.find('function armGeoWatchRecoveryTimer() {', clear_start)
+          arm_end = app.find('function updateAccuracyCircleVisibility() {', arm_start)
+          if min(clear_start, arm_start, arm_end) < 0:
+              raise SystemExit("Could not isolate GPS watch stall recovery helpers")
+
+          clear_body = app[clear_start:arm_start]
+          if 'clearTimeout(geoWatchRecoveryTimer);' not in clear_body or 'geoWatchRecoveryTimer = null;' not in clear_body:
+              raise SystemExit("GPS watch recovery timer must be cancellable and release its handle")
+
+          arm_body = app[arm_start:arm_end]
+          required_in_order = [
+              'clearGeoWatchRecoveryTimer();',
+              'document.visibilityState === "hidden"',
+              'gpsStatusText !== "GPS更新待ち…"',
+              'geoWatchId === null',
+              'hasUnknownGeoWatchOwnership()',
+              'lastPositionTimestamp === null',
+              'const watchGeneration = geoWatchGeneration;',
+              'LIVE_POSITION_MAX_AGE_MS - (Date.now() - lastPositionTimestamp)',
+              'geoWatchRecoveryTimer = setTimeout(() => {',
+              'geoWatchRecoveryTimer = null;',
+              'document.visibilityState === "hidden"',
+              'watchGeneration !== geoWatchGeneration',
+              'gpsStatusText !== "GPS更新待ち…"',
+              'geoWatchId === null',
+              'hasUnknownGeoWatchOwnership()',
+              'lastPositionTimestamp === null',
+              'if (Date.now() - lastPositionTimestamp <= LIVE_POSITION_MAX_AGE_MS) {',
+              'armGeoWatchRecoveryTimer();',
+              'setGps(false, "GPS更新停止・◎で再取得");',
+              '}, remainingMs + 1);',
+          ]
+          cursor = 0
+          for token in required_in_order:
+              pos = arm_body.find(token, cursor)
+              if pos < 0:
+                  raise SystemExit(
+                      "GPS watch stall recovery contract changed; missing/out-of-order token: "
+                      + token
+                  )
+              cursor = pos + len(token)
+
+          # Recovery is foreground-only and advisory: it must never start or replace a
+          # geolocation request from the timer callback itself.
+          if 'navigator.geolocation' in arm_body or 'acquireLocation(' in arm_body or 'setInterval(' in arm_body:
+              raise SystemExit("GPS stall timer must not auto-request/restart geolocation or poll")
+
+          watch_error_start = app.find('function onWatchError(err) {')
+          watch_error_end = app.find('/* ---------- コンパス', watch_error_start)
+          if min(watch_error_start, watch_error_end) < 0:
+              raise SystemExit("Could not isolate onWatchError()")
+          watch_error_body = app[watch_error_start:watch_error_end]
+
+          denied_start = watch_error_body.find('if (code === 1) {')
+          denied_end = watch_error_body.find('setGps(', denied_start)
+          if min(denied_start, denied_end) < 0:
+              raise SystemExit("GPS permission-denied branch is missing")
+          denied_body = watch_error_body[denied_start:denied_end]
+          clear_denied = denied_body.find('clearGeoWatchRecoveryTimer();')
+          invalidate_denied = denied_body.find('geoWatchGeneration += 1;')
+          release_denied = denied_body.find('geoWatchId = null;')
+          if min(clear_denied, invalidate_denied, release_denied) < 0 or not clear_denied < invalidate_denied < release_denied:
+              raise SystemExit("Permission denial must cancel stall recovery before invalidating/releasing the watch")
+
+          waiting_status = watch_error_body.find('hasUnknownGeoWatchOwnership() ? "GPS監視異常・↻再読込" : "GPS更新待ち…"')
+          arm_after_error = watch_error_body.find('armGeoWatchRecoveryTimer();', waiting_status)
+          if waiting_status < 0 or arm_after_error < 0:
+              raise SystemExit("Recoverable watch errors must arm the foreground stall timer after entering waiting state")
+
+          lifecycle_start = app.find('function handleDisplayLifecycle(hidden) {')
+          lifecycle_end = app.find('document.addEventListener("visibilitychange"', lifecycle_start)
+          if min(lifecycle_start, lifecycle_end) < 0:
+              raise SystemExit("Could not isolate display lifecycle handler")
+          lifecycle_body = app[lifecycle_start:lifecycle_end]
+          pause_pos = lifecycle_body.find('if (hidden) clearGeoWatchRecoveryTimer();')
+          resume_pos = lifecycle_body.find('else if (gpsStatusText === "GPS更新待ち…") armGeoWatchRecoveryTimer();', pause_pos)
+          stale_check_pos = lifecycle_body.find('if (hidden || geoWatchId === null || lastPositionTimestamp === null) return;', resume_pos)
+          if min(pause_pos, resume_pos, stale_check_pos) < 0 or not pause_pos < resume_pos < stale_check_pos:
+              raise SystemExit("Display lifecycle must pause hidden timers and re-arm waiting recovery on foreground return")
+
+          on_position_start = app.find('function onPosition(pos) {')
+          on_position_end = app.find('function onGeoError(err) {', on_position_start)
+          if min(on_position_start, on_position_end) < 0:
+              raise SystemExit("Could not isolate onPosition()")
+          on_position_body = app[on_position_start:on_position_end]
+          invalid_fix_return = on_position_body.find('return false;')
+          clear_fix = on_position_body.find('clearGeoWatchRecoveryTimer();', invalid_fix_return)
+          accept_fix = on_position_body.find('acceptedGeoFixGeneration += 1;', clear_fix)
+          if min(invalid_fix_return, clear_fix, accept_fix) < 0 or not invalid_fix_return < clear_fix < accept_fix:
+              raise SystemExit("Only an accepted GPS fix may cancel the stall timer, before advancing accepted-fix generation")
+
+          print("Foreground GPS watch stall recovery contract OK")
+          PY
