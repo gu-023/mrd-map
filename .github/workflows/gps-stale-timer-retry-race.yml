@@ -1,0 +1,156 @@
+name: GPS stale timer retry race guard
+
+on:
+  pull_request:
+    paths:
+      - js/app.js
+      - .github/workflows/gps-stale-timer-retry-race.yml
+  push:
+    branches: [main]
+    paths:
+      - js/app.js
+      - .github/workflows/gps-stale-timer-retry-race.yml
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Exercise stale GPS timer versus explicit retry
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+
+          function extractFunction(source, name) {
+            const signature = `function ${name}(`;
+            const start = source.indexOf(signature);
+            if (start < 0) throw new Error(`Missing ${name}()`);
+            const bodyStart = source.indexOf('{', start);
+            if (bodyStart < 0) throw new Error(`Missing body for ${name}()`);
+            let depth = 0;
+            for (let i = bodyStart; i < source.length; i += 1) {
+              if (source[i] === '{') depth += 1;
+              else if (source[i] === '}') {
+                depth -= 1;
+                if (depth === 0) return source.slice(start, i + 1);
+              }
+            }
+            throw new Error(`Unterminated ${name}()`);
+          }
+
+          const app = fs.readFileSync('js/app.js', 'utf8');
+          const unknownFn = extractFunction(app, 'hasUnknownGeoWatchOwnership');
+          const clearFn = extractFunction(app, 'clearGeoWatchRecoveryTimer');
+          const armFn = extractFunction(app, 'armGeoWatchRecoveryTimer');
+
+          function makeHarness(initial) {
+            let scheduled = null;
+            let nextTimerId = 1;
+            const gpsCalls = [];
+            const fakeSetTimeout = (callback, delay) => {
+              const id = nextTimerId++;
+              scheduled = { id, callback, delay };
+              return id;
+            };
+            const fakeClearTimeout = () => {};
+            const document = { visibilityState: 'visible' };
+            let nowMs = initial.nowMs;
+            const DateMock = { now: () => nowMs };
+
+            const build = new Function(
+              'setTimeout', 'clearTimeout', 'document', 'Date', 'gpsCalls',
+              `
+                const LIVE_POSITION_MAX_AGE_MS = 30000;
+                let geoWatchId = ${JSON.stringify(initial.geoWatchId)};
+                let geoWatchGeneration = ${initial.geoWatchGeneration};
+                let gpsStatusText = ${JSON.stringify(initial.gpsStatusText)};
+                let lastPositionTimestamp = ${initial.lastPositionTimestamp};
+                let geoWatchRecoveryTimer = null;
+                function setGps(on, text) { gpsStatusText = text; gpsCalls.push({ on, text }); }
+                ${unknownFn}
+                ${clearFn}
+                ${armFn}
+                return {
+                  arm: armGeoWatchRecoveryTimer,
+                  setState(next) {
+                    if (Object.prototype.hasOwnProperty.call(next, 'geoWatchId')) geoWatchId = next.geoWatchId;
+                    if (Object.prototype.hasOwnProperty.call(next, 'geoWatchGeneration')) geoWatchGeneration = next.geoWatchGeneration;
+                    if (Object.prototype.hasOwnProperty.call(next, 'gpsStatusText')) gpsStatusText = next.gpsStatusText;
+                    if (Object.prototype.hasOwnProperty.call(next, 'lastPositionTimestamp')) lastPositionTimestamp = next.lastPositionTimestamp;
+                  },
+                  getState() {
+                    return { geoWatchId, geoWatchGeneration, gpsStatusText, lastPositionTimestamp, geoWatchRecoveryTimer };
+                  },
+                };
+              `
+            );
+            const api = build(fakeSetTimeout, fakeClearTimeout, document, DateMock, gpsCalls);
+            return {
+              api,
+              gpsCalls,
+              getScheduled: () => scheduled,
+              setNow: (value) => { nowMs = value; },
+            };
+          }
+
+          const base = {
+            nowMs: 100000,
+            geoWatchId: 7,
+            geoWatchGeneration: 4,
+            gpsStatusText: 'GPS更新待ち…',
+            lastPositionTimestamp: 69999,
+          };
+
+          // D-pad retry starts a new watch generation and replaces the visible status.
+          // The old timer callback must not demote the new attempt back to stale-retry UI.
+          {
+            const h = makeHarness(base);
+            h.api.arm();
+            const timer = h.getScheduled();
+            if (!timer || timer.delay !== 1) {
+              throw new Error(`Expected 1ms stale timer, got ${timer && timer.delay}`);
+            }
+            h.api.setState({
+              gpsStatusText: 'GPS取得中…',
+              geoWatchGeneration: 5,
+              geoWatchId: 8,
+            });
+            timer.callback();
+            if (h.gpsCalls.length !== 0) {
+              throw new Error('Old stall timer overwrote a newer GPS retry state');
+            }
+            if (h.api.getState().gpsStatusText !== 'GPS取得中…') {
+              throw new Error('New GPS retry status was not preserved');
+            }
+          }
+
+          // Generation replacement alone is sufficient to invalidate an old timer.
+          {
+            const h = makeHarness(base);
+            h.api.arm();
+            const timer = h.getScheduled();
+            h.api.setState({ geoWatchGeneration: 5 });
+            timer.callback();
+            if (h.gpsCalls.length !== 0) {
+              throw new Error('Old stall timer ignored watch generation replacement');
+            }
+          }
+
+          // Control: if nothing changed, an actually stale watch must still be promoted.
+          {
+            const h = makeHarness(base);
+            h.api.arm();
+            const timer = h.getScheduled();
+            timer.callback();
+            if (h.gpsCalls.length !== 1 || h.gpsCalls[0].text !== 'GPS更新停止・◎で再取得') {
+              throw new Error('Control case did not promote an unchanged stale watch to explicit retry');
+            }
+          }
+
+          console.log('GPS stale timer retry race harness OK');
+          NODE
