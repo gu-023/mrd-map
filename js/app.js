@@ -252,9 +252,44 @@
   let acceptedGeoFixGeneration = 0; // 遅延した one-shot error が後着の有効fixを上書きしないための世代番号
   let geoOneShotRequestId = 0; // 明示的な再取得後に古い one-shot error を反映しないための要求世代
   let geoWatchGeneration = 0; // 置換済み watch の遅延 callback を無視するための世代番号
+  let geoWatchRecoveryTimer = null; // recoverable watch error が長引いたら明示再取得へ案内する
 
   function hasUnknownGeoWatchOwnership() {
     return geoWatchId !== null && (!Number.isInteger(geoWatchId) || geoWatchId <= 0);
+  }
+
+  function clearGeoWatchRecoveryTimer() {
+    if (geoWatchRecoveryTimer === null) return;
+    clearTimeout(geoWatchRecoveryTimer);
+    geoWatchRecoveryTimer = null;
+  }
+
+  function armGeoWatchRecoveryTimer() {
+    clearGeoWatchRecoveryTimer();
+    if (document.visibilityState === "hidden" ||
+        gpsStatusText !== "GPS更新待ち…" ||
+        geoWatchId === null ||
+        hasUnknownGeoWatchOwnership() ||
+        lastPositionTimestamp === null) return;
+    const watchGeneration = geoWatchGeneration;
+    const remainingMs = Math.max(
+      0,
+      LIVE_POSITION_MAX_AGE_MS - (Date.now() - lastPositionTimestamp)
+    );
+    geoWatchRecoveryTimer = setTimeout(() => {
+      geoWatchRecoveryTimer = null;
+      if (document.visibilityState === "hidden" ||
+          watchGeneration !== geoWatchGeneration ||
+          gpsStatusText !== "GPS更新待ち…" ||
+          geoWatchId === null ||
+          hasUnknownGeoWatchOwnership() ||
+          lastPositionTimestamp === null) return;
+      if (Date.now() - lastPositionTimestamp <= LIVE_POSITION_MAX_AGE_MS) {
+        armGeoWatchRecoveryTimer();
+        return;
+      }
+      setGps(false, "GPS更新停止・◎で再取得");
+    }, remainingMs + 1);
   }
 
   function updateAccuracyCircleVisibility() {
@@ -369,6 +404,7 @@
   function onWatchError(err) {
     const code = err && err.code;
     if (code === 1) {
+      clearGeoWatchRecoveryTimer();
       geoWatchGeneration += 1;
       geoWatchId = null;
       onGeoError(err);
@@ -378,6 +414,7 @@
       false,
       hasUnknownGeoWatchOwnership() ? "GPS監視異常・↻再読込" : "GPS更新待ち…"
     );
+    armGeoWatchRecoveryTimer();
     // permission denial 以外は未知の code も含め watch を維持し、次の成功 callback で GPS 表示を復帰する。
   }
 
@@ -524,7 +561,12 @@
 
   function handleDisplayLifecycle(hidden) {
     handleCompassLifecycle(hidden);
-    if (hidden || geoWatchId === null || lastPositionTimestamp === null) return;
+    if (hidden) {
+      clearGeoWatchRecoveryTimer();
+      return;
+    }
+    if (gpsStatusText === "GPS更新待ち…") armGeoWatchRecoveryTimer();
+    if (geoWatchId === null || lastPositionTimestamp === null) return;
     if (Date.now() - lastPositionTimestamp > LIVE_POSITION_MAX_AGE_MS) {
       setGps(
         false,
@@ -1983,6 +2025,7 @@
         !Number.isFinite(longitude) || longitude < -180 || longitude > 180) {
       return false;
     }
+    clearGeoWatchRecoveryTimer();
     acceptedGeoFixGeneration += 1;
     clearError("geolocation"); // 有効な fix を受理できたら位置情報エラーだけを消す
     const p = { lat: latitude, lng: longitude };
