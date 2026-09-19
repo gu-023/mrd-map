@@ -254,6 +254,7 @@
    * そのため自動取得はせず、◎ボタン押下の中で getCurrentPosition を直接呼ぶ。
    */
   const ROUTE_ORIGIN_MAX_AGE_MS = 30000; // watchPosition の cache 上限より古い fix では経路を開始しない
+  const DIRECTIONS_REQUEST_TIMEOUT_MS = 20000; // callback が返らない経路要求を有限待ちにする
   const LIVE_POSITION_MAX_AGE_MS = 30000; // 初回表示後は suspend 等で遅延した古い fix を状態更新に使わない
   const OFF_ROUTE_EVIDENCE_MAX_GAP_MS = 30000; // 長い曖昧区間をまたぐ off-route 証拠は連続扱いしない
   const NAV_POSITION_CONTINUITY_MAX_GAP_MS = 30000; // 長い更新停止を直線移動区間として補完しない
@@ -1408,10 +1409,29 @@
         : null;
     }
     setNavBanner(isReroute ? "ルートを再計算中…" : "経路を計算中…");
+    const routeTimeoutId = setTimeout(() => {
+      if (requestId !== routeRequestId) return;
+      routeRequestId++; // 遅れて届く Directions callback を無効化
+      const previousNavBanner = routePreviousNavBanner;
+      routePreviousNavBanner = null;
+      navRerouting = false;
+      if (resumeFollowOnFailure) {
+        followMode = true;
+        const currentPosition = userMarker && userMarker.getPosition();
+        if (currentPosition) map.panTo(currentPosition);
+      }
+      showError(
+        "経路の取得がタイムアウトしました",
+        "通信状態を確認して、もう一度お試しください。",
+        "directions"
+      );
+      setNavBanner(previousNavBanner);
+    }, DIRECTIONS_REQUEST_TIMEOUT_MS);
     directionsService.route(
       { origin, destination: routeDestination, travelMode: google.maps.TravelMode[routeTravelMode] },
       (res, status) => {
         if (requestId !== routeRequestId) return;
+        clearTimeout(routeTimeoutId);
         const previousNavBanner = routePreviousNavBanner;
         routePreviousNavBanner = null;
         navRerouting = false;
