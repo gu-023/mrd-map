@@ -19,9 +19,21 @@ jobs:
       - name: Apply and validate runtime patch
         shell: bash
         run: |
-          python3 -c 'from pathlib import Path; p=Path("js/app.js"); s=p.read_text(encoding="utf-8"); old="        const watchIsStale = geoWatchId !== null &&\n          lastPositionTimestamp !== null &&\n          Date.now() - lastPositionTimestamp > LIVE_POSITION_MAX_AGE_MS;\n        if (watchIsStale) {"; new="        const watchNeedsRestart = geoWatchId !== null &&\n          (errorSource === \\"geolocation\\" ||\n           (lastPositionTimestamp !== null &&\n            Date.now() - lastPositionTimestamp > LIVE_POSITION_MAX_AGE_MS));\n        if (watchNeedsRestart) {"; n=s.count(old); assert n == 1, f"expected one target, found {n}"; p.write_text(s.replace(old,new,1), encoding="utf-8")'
-          grep -F 'errorSource === "geolocation" ||' js/app.js
-          grep -F 'navigator.geolocation.clearWatch(geoWatchId);' js/app.js
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path("js/app.js")
+          app = path.read_text(encoding="utf-8")
+          old = '        if (watchIsStale) {'
+          new = '''        const watchNeedsRestart = watchIsStale ||
+            (geoWatchId !== null && errorSource === "geolocation");
+          if (watchNeedsRestart) {'''
+          count = app.count(old)
+          if count != 1:
+              raise SystemExit(f"expected one recenter stale-watch condition, found {count}")
+          path.write_text(app.replace(old, new, 1), encoding="utf-8")
+          PY
+          grep -F 'const watchNeedsRestart = watchIsStale ||' js/app.js
+          grep -F '(geoWatchId !== null && errorSource === "geolocation");' js/app.js
           node --check js/app.js
           git diff --check
       - name: Commit runtime fix
