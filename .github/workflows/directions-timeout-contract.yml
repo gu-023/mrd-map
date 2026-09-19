@@ -1,0 +1,88 @@
+name: Guard Directions timeout recovery
+
+on:
+  pull_request:
+    paths:
+      - js/app.js
+      - .github/workflows/directions-timeout-contract.yml
+  push:
+    branches: [main]
+    paths:
+      - js/app.js
+      - .github/workflows/directions-timeout-contract.yml
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check Directions timeout recovery contract
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+
+          text = Path("js/app.js").read_text()
+
+          timeout_match = re.search(
+              r"const DIRECTIONS_REQUEST_TIMEOUT_MS\s*=\s*(\d+)\s*;",
+              text,
+          )
+          if not timeout_match:
+              raise SystemExit("Directions timeout constant is missing")
+          timeout_ms = int(timeout_match.group(1))
+          if not 1000 <= timeout_ms <= 30000:
+              raise SystemExit(
+                  f"Directions timeout must stay finite and display-friendly (1-30s), got {timeout_ms}ms"
+              )
+
+          start = text.find("  function computeRoute(")
+          end = text.find("\n  function clearRoute()", start)
+          if start < 0 or end < 0:
+              raise SystemExit("computeRoute() block could not be located")
+          block = text[start:end]
+
+          timeout_start = block.find("const routeTimeoutId = setTimeout(() => {")
+          route_call = block.find("directionsService.route(")
+          if timeout_start < 0 or route_call < 0 or timeout_start > route_call:
+              raise SystemExit("Directions watchdog must be armed before DirectionsService.route()")
+
+          timeout_body = block[timeout_start:route_call]
+          required_timeout_fragments = {
+              "current-request guard": "if (requestId !== routeRequestId) return;",
+              "late callback invalidation": "routeRequestId++;",
+              "saved banner ownership reset": "routePreviousNavBanner = null;",
+              "reroute pending-state release": "navRerouting = false;",
+              "visible timeout feedback": '"経路の取得がタイムアウトしました"',
+              "Directions error ownership": '"directions"',
+              "previous banner restore": "setNavBanner(previousNavBanner);",
+              "bounded timeout constant": "}, DIRECTIONS_REQUEST_TIMEOUT_MS);",
+          }
+          missing = [
+              name for name, fragment in required_timeout_fragments.items()
+              if fragment not in timeout_body
+          ]
+          if missing:
+              raise SystemExit(
+                  "Directions timeout recovery contract is incomplete: " + ", ".join(missing)
+              )
+
+          if "computeRoute(" in timeout_body or "directionsService.route(" in timeout_body:
+              raise SystemExit("Directions timeout must not introduce automatic route retries")
+
+          callback_start = block.find("(res, status) => {", route_call)
+          if callback_start < 0:
+              raise SystemExit("Directions callback could not be located")
+          callback = block[callback_start:]
+          callback_guard = callback.find("if (requestId !== routeRequestId) return;")
+          callback_clear = callback.find("clearTimeout(routeTimeoutId);")
+          if callback_guard < 0 or callback_clear < 0 or callback_guard > callback_clear:
+              raise SystemExit(
+                  "Current Directions callback must reject stale generations before clearing its watchdog"
+              )
+          PY
