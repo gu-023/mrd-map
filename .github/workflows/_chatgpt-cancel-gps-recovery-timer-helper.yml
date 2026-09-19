@@ -22,21 +22,8 @@ jobs:
           from pathlib import Path
           path = Path('js/app.js')
           text = path.read_text()
-          old = '''  function acquireLocation() {
-    if (!("geolocation" in navigator)) {
-      setGps(false, "GPS非対応");
-      return;
-    }
-    setGps(false, "GPS取得中…");
-'''
-          new = '''  function acquireLocation() {
-    if (!("geolocation" in navigator)) {
-      setGps(false, "GPS非対応");
-      return;
-    }
-    clearGeoWatchRecoveryTimer();
-    setGps(false, "GPS取得中…");
-'''
+          old = '  function acquireLocation() {\n    if (!("geolocation" in navigator)) {\n      setGps(false, "GPS非対応");\n      return;\n    }\n    setGps(false, "GPS取得中…");\n'
+          new = '  function acquireLocation() {\n    if (!("geolocation" in navigator)) {\n      setGps(false, "GPS非対応");\n      return;\n    }\n    clearGeoWatchRecoveryTimer();\n    setGps(false, "GPS取得中…");\n'
           if new in text:
               raise SystemExit(0)
           if text.count(old) != 1:
