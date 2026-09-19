@@ -82,6 +82,7 @@
   let lastOffRouteEvidenceTimestamp = null; // 最後の確実な off-route fix の時刻
   let navRerouting = false;
   let routeRequestId = 0; // 古い Directions callback を無視するための世代番号
+  let routeRequestTimeoutId = null; // 進行中 Directions request の watchdog（takeover/cancel/new request で解除）
   let routePreviousNavBanner = null; // 経路要求前の案内（キャンセル/失敗時の復元用）
   let navBounds = null; // ルート全体の範囲（プレビュー用）
   let zoomedForTurn = false; // 曲がり角ズーム中か
@@ -1349,6 +1350,7 @@
     }
     if (navRerouting) {
       routeRequestId++; // picker が D-pad を引き継いだら進行中の Directions callback を無効化
+      clearDirectionsRequestTimeout();
       navRerouting = false;
       clearError("directions");
     }
@@ -1369,6 +1371,13 @@
     const dest = map.getCenter();
     exitPickMode();
     computeRoute(dest, false, undefined, undefined, true);
+  }
+
+  function clearDirectionsRequestTimeout() {
+    if (routeRequestTimeoutId !== null) {
+      clearTimeout(routeRequestTimeoutId);
+      routeRequestTimeoutId = null;
+    }
   }
 
   function computeRoute(dest, isReroute, name, requestedTravelMode, resumeFollowOnFailure) {
@@ -1400,6 +1409,7 @@
     }
     const originAccuracy = lastPositionAccuracy !== null ? lastPositionAccuracy : 0;
     clearError("directions"); // 再試行中は古い Directions error だけ解除
+    clearDirectionsRequestTimeout(); // 置き換える旧 request の watchdog 自体も解除
     const requestId = ++routeRequestId;
     const routeTravelMode = requestedTravelMode || travelMode;
     navRerouting = true; // 経路要求中は既存ルートからの自動リルートを抑止
@@ -1409,8 +1419,9 @@
         : null;
     }
     setNavBanner(isReroute ? "ルートを再計算中…" : "経路を計算中…");
-    const routeTimeoutId = setTimeout(() => {
+    routeRequestTimeoutId = setTimeout(() => {
       if (requestId !== routeRequestId) return;
+      routeRequestTimeoutId = null;
       routeRequestId++; // 遅れて届く Directions callback を無効化
       const previousNavBanner = routePreviousNavBanner;
       routePreviousNavBanner = null;
@@ -1431,7 +1442,7 @@
       { origin, destination: routeDestination, travelMode: google.maps.TravelMode[routeTravelMode] },
       (res, status) => {
         if (requestId !== routeRequestId) return;
-        clearTimeout(routeTimeoutId);
+        clearDirectionsRequestTimeout();
         const previousNavBanner = routePreviousNavBanner;
         routePreviousNavBanner = null;
         navRerouting = false;
@@ -1526,6 +1537,7 @@
 
   function cancelNav() {
     routeRequestId++; // 未完了の Directions callback でナビが復活しないよう無効化
+    clearDirectionsRequestTimeout();
     signalRequestId++; // 未完了の Overpass callback で信号が復活しないよう無効化
     navRerouting = false;
     navMode = false;
