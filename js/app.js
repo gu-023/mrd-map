@@ -2090,7 +2090,9 @@
         const watchIsStale = geoWatchId !== null &&
           lastPositionTimestamp !== null &&
           Date.now() - lastPositionTimestamp > LIVE_POSITION_MAX_AGE_MS;
-        if (watchIsStale) {
+        const watchNeedsRestart = watchIsStale ||
+  (geoWatchId !== null && errorSource === "geolocation");
+if (watchNeedsRestart) {
           if (hasUnknownGeoWatchOwnership()) {
             setGps(false, "GPS再取得失敗");
             showError("位置情報の監視を確認できません", "アプリを再読み込みしてください。", "geolocation");
