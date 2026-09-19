@@ -25,22 +25,24 @@ jobs:
           from pathlib import Path
 
           path = Path("js/app.js")
-          text = path.read_text(encoding="utf-8")
-          old = '''            : gpsStatusText === "GPS更新停止・◎で再取得"
-              ? "GPS停止・◎再取得"
-              : geoWatchId === null && lastPositionTimestamp !== null
-                ? "GPS◎再試行"
-                : null;'''
-          new = '''            : gpsStatusText === "GPS更新停止・◎で再取得"
-              ? "GPS停止・◎再取得"
-              : gpsStatusText === "GPS取得中…" || gpsStatusText === "GPS更新待ち…"
-                ? gpsStatusText
-                : geoWatchId === null && lastPositionTimestamp !== null
-                  ? "GPS◎再試行"
-                  : null;'''
-          if text.count(old) != 1:
-              raise SystemExit(f"expected one compass GPS status anchor, found {text.count(old)}")
-          path.write_text(text.replace(old, new, 1), encoding="utf-8")
+          lines = path.read_text(encoding="utf-8").splitlines()
+          target = ': geoWatchId === null && lastPositionTimestamp !== null'
+          matches = [i for i, line in enumerate(lines) if line.strip() == target]
+          if len(matches) != 1:
+              raise SystemExit(f"expected one compass GPS status anchor, found {len(matches)}")
+          i = matches[0]
+          if i < 1 or lines[i - 1].strip() != '? "GPS停止・◎再取得"':
+              raise SystemExit("compass GPS anchor context changed")
+          if lines[i + 1].strip() != '? "GPS◎再試行"' or lines[i + 2].strip() != ': null;':
+              raise SystemExit("compass GPS retry tail changed")
+          lines[i:i + 3] = [
+              '              : gpsStatusText === "GPS取得中…" || gpsStatusText === "GPS更新待ち…"',
+              '                ? gpsStatusText',
+              '                : geoWatchId === null && lastPositionTimestamp !== null',
+              '                  ? "GPS◎再試行"',
+              '                  : null;',
+          ]
+          path.write_text("\n".join(lines) + "\n", encoding="utf-8")
           PY
 
           node --check js/app.js
