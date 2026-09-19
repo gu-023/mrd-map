@@ -38,10 +38,15 @@ jobs:
           body = app[start:end]
 
           # When compass is active, heading text must not hide actionable GPS recovery
-          # state. Unknown watcher ownership requires reload; no active watcher after a
-          # received fix requires an explicit D-pad recenter retry hint.
+          # state or the fact that GPS is currently unavailable. Preserve a usable last-fix
+          # indication when available, then fail closed for unknown watcher ownership before
+          # exposing ordinary D-pad retry paths.
           required_in_order = [
               'const headingText = `🧭 ${Math.round(curHeading)}° ${cardinal(curHeading)}`;',
+              'gpsStatusText === "GPS不可・最終位置"',
+              '? "GPS最終位置"',
+              ': gpsStatusText === "GPS不可"',
+              '? "GPS不可"',
               'hasUnknownGeoWatchOwnership()',
               '? "GPS↻再読込"',
               ': gpsStatusText === "GPS更新停止・◎で再取得"',
