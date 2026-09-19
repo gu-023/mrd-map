@@ -38,9 +38,9 @@ jobs:
           body = app[start:end]
 
           # When compass is active, heading text must not hide actionable GPS recovery
-          # state or the fact that GPS is currently unavailable. Preserve a usable last-fix
-          # indication when available, then fail closed for unknown watcher ownership before
-          # exposing ordinary D-pad retry paths.
+          # state, GPS availability, or explicit in-progress/waiting feedback. Preserve a
+          # usable last-fix indication when available, then fail closed for unknown watcher
+          # ownership before exposing ordinary D-pad retry paths and transient GPS state.
           required_in_order = [
               'const headingText = `🧭 ${Math.round(curHeading)}° ${cardinal(curHeading)}`;',
               'gpsStatusText === "GPS不可・最終位置"',
@@ -53,6 +53,8 @@ jobs:
               '? "GPS失敗・◎再試行"',
               ': gpsStatusText === "GPS更新停止・◎で再取得"',
               '? "GPS停止・◎再取得"',
+              ': gpsStatusText === "GPS取得中…" || gpsStatusText === "GPS更新待ち…"',
+              '? gpsStatusText',
               ': geoWatchId === null && lastPositionTimestamp !== null',
               '? "GPS◎再試行"',
               'els.gpsText.textContent = gpsRecoveryHint',
@@ -70,15 +72,18 @@ jobs:
                   )
               cursor = pos + len(token)
 
-          # Unknown ownership is fail-closed and must win over retry states so a host
+          # Unknown ownership is fail-closed and must win over retry/progress states so a host
           # that may still own a watcher never encourages creating a duplicate watcher.
           unknown = body.find('hasUnknownGeoWatchOwnership()')
           start_failed = body.find('gpsStatusText === "GPS開始失敗"')
           reacquire_failed = body.find('gpsStatusText === "GPS再取得失敗"')
+          acquiring = body.find('gpsStatusText === "GPS取得中…"')
+          waiting = body.find('gpsStatusText === "GPS更新待ち…"')
           no_watch_retry = body.find('geoWatchId === null && lastPositionTimestamp !== null')
-          if unknown > start_failed or unknown > reacquire_failed or unknown > no_watch_retry:
+          if (unknown > start_failed or unknown > reacquire_failed or unknown > acquiring or
+                  unknown > waiting or unknown > no_watch_retry):
               raise SystemExit(
-                  "Compass GPS recovery-hint priority changed: reload must precede retry"
+                  "Compass GPS recovery-hint priority changed: reload must precede retry/progress"
               )
 
           print("Compass GPS recovery hints contract OK")

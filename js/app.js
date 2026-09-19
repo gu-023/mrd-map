@@ -630,9 +630,11 @@
             ? "GPS失敗・◎再試行"
             : gpsStatusText === "GPS更新停止・◎で再取得"
               ? "GPS停止・◎再取得"
-              : geoWatchId === null && lastPositionTimestamp !== null
-                ? "GPS◎再試行"
-                : null;
+              : gpsStatusText === "GPS取得中…" || gpsStatusText === "GPS更新待ち…"
+                ? gpsStatusText
+                : geoWatchId === null && lastPositionTimestamp !== null
+                  ? "GPS◎再試行"
+                  : null;
     els.gpsText.textContent = gpsRecoveryHint
       ? `${headingText} ・ ${gpsRecoveryHint}`
       : headingText;
