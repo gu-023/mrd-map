@@ -1,0 +1,98 @@
+name: ChatGPT GPS watch recovery helper
+
+on:
+  push:
+    branches:
+      - chatgpt/promote-stalled-gps-watch-retry
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: chatgpt/promote-stalled-gps-watch-retry
+          fetch-depth: 0
+
+      - name: Patch foreground GPS watch recovery
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("js/app.js")
+          text = path.read_text(encoding="utf-8")
+
+          if "let geoWatchRecoveryTimer = null;" not in text:
+              text = text.replace(
+                  "  let geoWatchGeneration = 0; // 置換済み watch の遅延 callback を無視するための世代番号\n",
+                  "  let geoWatchGeneration = 0; // 置換済み watch の遅延 callback を無視するための世代番号\n"
+                  "  let geoWatchRecoveryTimer = null; // recoverable watch error が長引いたら明示再取得へ案内する\n",
+                  1,
+              )
+
+              anchor = '''  function hasUnknownGeoWatchOwnership() {\n    return geoWatchId !== null && (!Number.isInteger(geoWatchId) || geoWatchId <= 0);\n  }\n'''
+              replacement = anchor + '''\n  function clearGeoWatchRecoveryTimer() {\n    if (geoWatchRecoveryTimer === null) return;\n    clearTimeout(geoWatchRecoveryTimer);\n    geoWatchRecoveryTimer = null;\n  }\n\n  function armGeoWatchRecoveryTimer() {\n    clearGeoWatchRecoveryTimer();\n    if (document.visibilityState === "hidden" ||\n        gpsStatusText !== "GPS更新待ち…" ||\n        geoWatchId === null ||\n        hasUnknownGeoWatchOwnership() ||\n        lastPositionTimestamp === null) return;\n    const watchGeneration = geoWatchGeneration;\n    const remainingMs = Math.max(\n      0,\n      LIVE_POSITION_MAX_AGE_MS - (Date.now() - lastPositionTimestamp)\n    );\n    geoWatchRecoveryTimer = setTimeout(() => {\n      geoWatchRecoveryTimer = null;\n      if (document.visibilityState === "hidden" ||\n          watchGeneration !== geoWatchGeneration ||\n          gpsStatusText !== "GPS更新待ち…" ||\n          geoWatchId === null ||\n          hasUnknownGeoWatchOwnership() ||\n          lastPositionTimestamp === null) return;\n      if (Date.now() - lastPositionTimestamp <= LIVE_POSITION_MAX_AGE_MS) {\n        armGeoWatchRecoveryTimer();\n        return;\n      }\n      setGps(false, "GPS更新停止・◎で再取得");\n    }, remainingMs + 1);\n  }\n'''
+              if anchor not in text:
+                  raise SystemExit("missing geo ownership anchor")
+              text = text.replace(anchor, replacement, 1)
+
+              old_lifecycle = '''  function handleDisplayLifecycle(hidden) {\n    handleCompassLifecycle(hidden);\n    if (hidden || geoWatchId === null || lastPositionTimestamp === null) return;\n'''
+              new_lifecycle = '''  function handleDisplayLifecycle(hidden) {\n    handleCompassLifecycle(hidden);\n    if (hidden) {\n      clearGeoWatchRecoveryTimer();\n      return;\n    }\n    if (gpsStatusText === "GPS更新待ち…") armGeoWatchRecoveryTimer();\n    if (geoWatchId === null || lastPositionTimestamp === null) return;\n'''
+              if old_lifecycle not in text:
+                  raise SystemExit("missing display lifecycle anchor")
+              text = text.replace(old_lifecycle, new_lifecycle, 1)
+
+              old_denied = '''    if (code === 1) {\n      geoWatchGeneration += 1;\n'''
+              new_denied = '''    if (code === 1) {\n      clearGeoWatchRecoveryTimer();\n      geoWatchGeneration += 1;\n'''
+              if old_denied not in text:
+                  raise SystemExit("missing watch permission anchor")
+              text = text.replace(old_denied, new_denied, 1)
+
+              old_wait = '''    setGps(\n      false,\n      hasUnknownGeoWatchOwnership() ? "GPS監視異常・↻再読込" : "GPS更新待ち…"\n    );\n    // permission denial 以外は未知の code も含め watch を維持し、次の成功 callback で GPS 表示を復帰する。\n'''
+              new_wait = '''    setGps(\n      false,\n      hasUnknownGeoWatchOwnership() ? "GPS監視異常・↻再読込" : "GPS更新待ち…"\n    );\n    armGeoWatchRecoveryTimer();\n    // permission denial 以外は未知の code も含め watch を維持し、次の成功 callback で GPS 表示を復帰する。\n'''
+              if old_wait not in text:
+                  raise SystemExit("missing recoverable watch error anchor")
+              text = text.replace(old_wait, new_wait, 1)
+
+              old_accept = '''    acceptedGeoFixGeneration += 1;\n    clearError("geolocation"); // 有効な fix を受理できたら位置情報エラーだけを消す\n'''
+              new_accept = '''    clearGeoWatchRecoveryTimer();\n    acceptedGeoFixGeneration += 1;\n    clearError("geolocation"); // 有効な fix を受理できたら位置情報エラーだけを消す\n'''
+              if old_accept not in text:
+                  raise SystemExit("missing accepted fix anchor")
+              text = text.replace(old_accept, new_accept, 1)
+
+              path.write_text(text, encoding="utf-8")
+
+          required = (
+              "let geoWatchRecoveryTimer = null;",
+              "function armGeoWatchRecoveryTimer() {",
+              'gpsStatusText !== "GPS更新待ち…"',
+              'setGps(false, "GPS更新停止・◎で再取得");',
+              'if (gpsStatusText === "GPS更新待ち…") armGeoWatchRecoveryTimer();',
+              "clearGeoWatchRecoveryTimer();\n      geoWatchGeneration += 1;",
+              "armGeoWatchRecoveryTimer();\n    // permission denial",
+              "clearGeoWatchRecoveryTimer();\n    acceptedGeoFixGeneration += 1;",
+          )
+          for snippet in required:
+              if snippet not in text:
+                  raise SystemExit(f"missing expected recovery contract: {snippet}")
+          PY
+
+          node --check js/app.js
+          git diff --check
+
+      - name: Commit product change
+        shell: bash
+        run: |
+          if git diff --quiet -- js/app.js; then
+            echo "Product patch already present."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add js/app.js
+          git commit -m "Promote stalled GPS watch to retry state"
+          git push origin HEAD:chatgpt/promote-stalled-gps-watch-retry
