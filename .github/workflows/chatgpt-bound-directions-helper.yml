@@ -39,38 +39,32 @@ jobs:
           banner_anchor = '    setNavBanner(isReroute ? "ルートを再計算中…" : "経路を計算中…");\n'
           if text.count(banner_anchor) != 1:
               raise SystemExit(f"route banner anchor count={text.count(banner_anchor)}")
-          timeout_block = '''    const routeTimeoutId = setTimeout(() => {
-      if (requestId !== routeRequestId) return;
-      routeRequestId++; // 遅れて届く Directions callback を無効化
-      const previousNavBanner = routePreviousNavBanner;
-      routePreviousNavBanner = null;
-      navRerouting = false;
-      if (resumeFollowOnFailure) {
-        followMode = true;
-        const currentPosition = userMarker && userMarker.getPosition();
-        if (currentPosition) map.panTo(currentPosition);
-      }
-      showError(
-        "経路の取得がタイムアウトしました",
-        "通信状態を確認して、もう一度お試しください。",
-        "directions"
-      );
-      setNavBanner(previousNavBanner);
-    }, DIRECTIONS_REQUEST_TIMEOUT_MS);
-'''
+          timeout_block = "\n".join([
+              "    const routeTimeoutId = setTimeout(() => {",
+              "      if (requestId !== routeRequestId) return;",
+              "      routeRequestId++; // 遅れて届く Directions callback を無効化",
+              "      const previousNavBanner = routePreviousNavBanner;",
+              "      routePreviousNavBanner = null;",
+              "      navRerouting = false;",
+              "      if (resumeFollowOnFailure) {",
+              "        followMode = true;",
+              "        const currentPosition = userMarker && userMarker.getPosition();",
+              "        if (currentPosition) map.panTo(currentPosition);",
+              "      }",
+              "      showError(",
+              '        "経路の取得がタイムアウトしました",',
+              '        "通信状態を確認して、もう一度お試しください。",',
+              '        "directions"',
+              "      );",
+              "      setNavBanner(previousNavBanner);",
+              "    }, DIRECTIONS_REQUEST_TIMEOUT_MS);",
+          ]) + "\n"
           text = text.replace(banner_anchor, banner_anchor + timeout_block, 1)
 
-          callback_anchor = '''      (res, status) => {
-        if (requestId !== routeRequestId) return;
-        const previousNavBanner = routePreviousNavBanner;
-'''
+          callback_anchor = '      (res, status) => {\n        if (requestId !== routeRequestId) return;\n        const previousNavBanner = routePreviousNavBanner;\n'
           if text.count(callback_anchor) != 1:
               raise SystemExit(f"route callback anchor count={text.count(callback_anchor)}")
-          callback_replacement = '''      (res, status) => {
-        if (requestId !== routeRequestId) return;
-        clearTimeout(routeTimeoutId);
-        const previousNavBanner = routePreviousNavBanner;
-'''
+          callback_replacement = '      (res, status) => {\n        if (requestId !== routeRequestId) return;\n        clearTimeout(routeTimeoutId);\n        const previousNavBanner = routePreviousNavBanner;\n'
           text = text.replace(callback_anchor, callback_replacement, 1)
 
           path.write_text(text)
