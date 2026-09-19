@@ -158,16 +158,30 @@
   };
 
   /* ---------- Google Maps スクリプトを動的ロード ---------- */
+  const GOOGLE_MAPS_LOAD_TIMEOUT_MS = 30000;
+
   function loadGoogleMaps() {
     return new Promise((resolve, reject) => {
-      window.__mrdMapInit = resolve;
+      let settled = false;
+      let timeoutId = null;
+      const finish = (callback, value) => {
+        if (settled) return;
+        settled = true;
+        if (timeoutId !== null) clearTimeout(timeoutId);
+        callback(value);
+      };
+      window.__mrdMapInit = () => finish(resolve);
       const s = document.createElement("script");
       const key = encodeURIComponent(cfg.GOOGLE_MAPS_API_KEY);
       s.src =
         `https://maps.googleapis.com/maps/api/js?key=${key}` +
         `&callback=__mrdMapInit&libraries=marker,geometry,places&loading=async&language=ja&region=JP`;
       s.async = true;
-      s.onerror = () => reject(new Error("Google Maps の読み込みに失敗"));
+      s.onerror = () => finish(reject, new Error("Google Maps の読み込みに失敗"));
+      timeoutId = setTimeout(() => {
+        s.remove();
+        finish(reject, new Error("Google Maps の読み込みがタイムアウト"));
+      }, GOOGLE_MAPS_LOAD_TIMEOUT_MS);
       document.head.appendChild(s);
     });
   }
