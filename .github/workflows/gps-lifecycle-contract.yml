@@ -98,6 +98,21 @@ jobs:
           if acquire_body.count('if (watchGeneration !== geoWatchGeneration) return;') != 2:
               raise SystemExit("GPS watch success/error callbacks must both reject stale generations")
 
+          watch_sync_catch = acquire_body.find('} catch (err) {', watch_pos)
+          if watch_sync_catch < 0:
+              raise SystemExit("GPS watch startup must remain guarded against synchronous host failures")
+          watch_sync_body = acquire_body[watch_sync_catch:]
+          invalidate_watch_pos = watch_sync_body.find('geoWatchGeneration += 1;')
+          release_watch_pos = watch_sync_body.find('geoWatchId = null;')
+          report_watch_status_pos = watch_sync_body.find('setGps(false, "GPS開始失敗");')
+          report_watch_error_pos = watch_sync_body.find(
+              'showError("位置情報を開始できません", "◎ を決定で再試行してください。", "geolocation");'
+          )
+          if min(invalidate_watch_pos, release_watch_pos, report_watch_status_pos, report_watch_error_pos) < 0:
+              raise SystemExit("Synchronous watchPosition failure must leave an explicit retryable GPS error state")
+          if not invalidate_watch_pos < release_watch_pos < report_watch_status_pos < report_watch_error_pos:
+              raise SystemExit("Synchronous watchPosition failure must invalidate callbacks before releasing ownership and reporting retry state")
+
           zero_start = acquire_body.find('if (watchId === 0) {', watch_pos)
           zero_end = acquire_body.find('if (!Number.isInteger(watchId) || watchId < 0) {', zero_start)
           if zero_start < 0 or zero_end < 0:
