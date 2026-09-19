@@ -47,6 +47,19 @@ jobs:
           const unknownFn = extractFunction(app, 'hasUnknownGeoWatchOwnership');
           const clearFn = extractFunction(app, 'clearGeoWatchRecoveryTimer');
           const armFn = extractFunction(app, 'armGeoWatchRecoveryTimer');
+          const acquireFn = extractFunction(app, 'acquireLocation');
+
+          const explicitRetryCancel = acquireFn.indexOf('clearGeoWatchRecoveryTimer();');
+          const acquiringStatus = acquireFn.indexOf('setGps(false, "GPS取得中…");');
+          if (explicitRetryCancel < 0) {
+            throw new Error('acquireLocation() must cancel any pending GPS recovery timer');
+          }
+          if (acquiringStatus < 0) {
+            throw new Error('Missing explicit GPS acquisition status in acquireLocation()');
+          }
+          if (explicitRetryCancel > acquiringStatus) {
+            throw new Error('GPS recovery timer must be cancelled before explicit retry begins');
+          }
 
           function makeHarness(initial) {
             let scheduled = null;
