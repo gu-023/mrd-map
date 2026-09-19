@@ -143,6 +143,31 @@ jobs:
           if min(rejected_fix_start, rejected_fix_guard, rejected_fix_generation, rejected_fix_error) < 0 or not rejected_fix_start < rejected_fix_guard < rejected_fix_generation < rejected_fix_error:
               raise SystemExit("Rejected one-shot fixes must not report an error after a newer request or accepted GPS fix")
 
+          request_valid_pos = acquire_body.find('let requestValid = true;', fix_snapshot_pos)
+          one_shot_catch = acquire_body.find('} catch (_) {', one_shot_pos)
+          watch_block = acquire_body.rfind('if (geoWatchId === null) {', one_shot_catch, watch_pos)
+          if request_valid_pos < 0 or one_shot_catch < 0 or watch_block < 0 or not request_valid_pos < one_shot_pos < one_shot_catch < watch_block < watch_pos:
+              raise SystemExit("GPS one-shot synchronous failure must remain isolated before watch recovery starts")
+
+          sync_throw_body = acquire_body[one_shot_catch:watch_block]
+          invalidate_callback_pos = sync_throw_body.find('requestValid = false;')
+          invalidate_request_pos = sync_throw_body.find('if (requestId === geoOneShotRequestId) geoOneShotRequestId += 1;')
+          report_sync_error_pos = sync_throw_body.find('showError("位置情報を開始できません"')
+          if min(invalidate_callback_pos, invalidate_request_pos, report_sync_error_pos) < 0 or not invalidate_callback_pos < invalidate_request_pos < report_sync_error_pos:
+              raise SystemExit("Synchronous getCurrentPosition failure must invalidate callbacks/request generation before reporting the error")
+          if 'return;' in sync_throw_body:
+              raise SystemExit("Synchronous getCurrentPosition failure must still allow the same-gesture watch recovery path")
+
+          watch_success_start = acquire_body.find('(pos) => {', watch_pos)
+          watch_error_callback_start = acquire_body.find('(err) => {', watch_success_start)
+          if watch_success_start < 0 or watch_error_callback_start < 0:
+              raise SystemExit("GPS watch callbacks are missing")
+          watch_success_body = acquire_body[watch_success_start:watch_error_callback_start]
+          stale_watch_guard_pos = watch_success_body.find('if (watchGeneration !== geoWatchGeneration) return;')
+          recover_pos = watch_success_body.find('onPosition(pos);', stale_watch_guard_pos)
+          if stale_watch_guard_pos < 0 or recover_pos < 0 or stale_watch_guard_pos > recover_pos:
+              raise SystemExit("A current watch fix must flow through onPosition so it can recover a synchronous one-shot failure")
+
           on_position_start = app.index('function onPosition(pos) {')
           on_position_end = app.index('function onGeoError(err) {', on_position_start)
           on_position_body = app[on_position_start:on_position_end]
@@ -151,5 +176,5 @@ jobs:
           if accepted_fix_pos < 0 or clear_error_pos < 0 or accepted_fix_pos > clear_error_pos:
               raise SystemExit("An accepted GPS fix must invalidate delayed one-shot errors before clearing GPS error state")
 
-          print("GPS stale lifecycle, explicit recenter, watch-generation, and one-shot-generation contracts OK")
+          print("GPS stale lifecycle, explicit recenter, watch-generation, one-shot-generation, and synchronous-throw recovery contracts OK")
           PY
