@@ -78,6 +78,24 @@ jobs:
                   "Directions timeout recovery contract is incomplete: " + ", ".join(missing)
               )
 
+          stale_timeout_guard = timeout_body.find("if (requestId !== routeRequestId) return;")
+          protected_timeout_mutations = {
+              "generation invalidation": "routeRequestId++;",
+              "saved banner release": "routePreviousNavBanner = null;",
+              "reroute state release": "navRerouting = false;",
+              "follow-state recovery": "followMode = true;",
+              "timeout error UI": "showError(",
+              "previous banner restore": "setNavBanner(previousNavBanner);",
+          }
+          for name, fragment in protected_timeout_mutations.items():
+              mutation = timeout_body.find(fragment)
+              if mutation < 0:
+                  raise SystemExit(f"Directions timeout {name} mutation is missing")
+              if stale_timeout_guard < 0 or stale_timeout_guard > mutation:
+                  raise SystemExit(
+                      "Stale Directions watchdog must return before mutating " + name
+                  )
+
           if "computeRoute(" in timeout_body or "directionsService.route(" in timeout_body:
               raise SystemExit("Directions timeout must not introduce automatic route retries")
 
