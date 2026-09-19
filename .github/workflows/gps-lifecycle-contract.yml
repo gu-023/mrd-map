@@ -82,8 +82,19 @@ jobs:
           if clear_try < 0 or clear_catch < 0 or clear_catch > next_reacquire:
               raise SystemExit("Stale clearWatch must remain fail-closed before reacquisition")
           catch_body = recenter_body[clear_catch:next_reacquire]
-          if 'return;' not in catch_body:
-              raise SystemExit("clearWatch failure must return without registering a duplicate watch")
+          clear_fail_status = catch_body.find('setGps(false, "GPS再取得失敗");')
+          clear_fail_error = catch_body.find(
+              'showError("位置情報を再取得できません", "◎ を決定で再試行してください。", "geolocation");'
+          )
+          clear_fail_return = catch_body.find('return;', clear_fail_error)
+          if min(clear_fail_status, clear_fail_error, clear_fail_return) < 0:
+              raise SystemExit("clearWatch failure must surface an explicit ◎ retry state before returning")
+          if not clear_fail_status < clear_fail_error < clear_fail_return:
+              raise SystemExit("clearWatch failure must report the retryable state before returning")
+          if 'geoWatchId = null;' in catch_body or 'geoWatchGeneration += 1;' in catch_body:
+              raise SystemExit(
+                  "clearWatch failure must preserve watcher ownership/generation because the host may still own the watch"
+              )
 
           if 'let geoWatchGeneration = 0;' not in app:
               raise SystemExit("GPS watch generation state is missing")
@@ -191,5 +202,5 @@ jobs:
           if accepted_fix_pos < 0 or clear_error_pos < 0 or accepted_fix_pos > clear_error_pos:
               raise SystemExit("An accepted GPS fix must invalidate delayed one-shot errors before clearing GPS error state")
 
-          print("GPS stale lifecycle, explicit recenter, watch-generation, one-shot-generation, and synchronous-throw recovery contracts OK")
+          print("GPS stale lifecycle, explicit recenter, clearWatch-failure ownership, watch-generation, one-shot-generation, and synchronous-throw recovery contracts OK")
           PY
