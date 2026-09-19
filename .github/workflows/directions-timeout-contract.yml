@@ -52,6 +52,12 @@ jobs:
           if timeout_start < 0 or route_call < 0 or timeout_start > route_call:
               raise SystemExit("Directions watchdog must be armed before DirectionsService.route()")
 
+          request_generation = block.find("const requestId = ++routeRequestId;")
+          if request_generation < 0 or request_generation > timeout_start:
+              raise SystemExit(
+                  "Each Directions request must claim a fresh generation before arming its watchdog"
+              )
+
           timeout_body = block[timeout_start:route_call]
           required_timeout_fragments = {
               "current-request guard": "if (requestId !== routeRequestId) return;",
@@ -84,5 +90,35 @@ jobs:
           if callback_guard < 0 or callback_clear < 0 or callback_guard > callback_clear:
               raise SystemExit(
                   "Current Directions callback must reject stale generations before clearing its watchdog"
+              )
+
+          pick_start = text.find("  function enterPickMode()")
+          pick_end = text.find("\n  function exitPickMode()", pick_start)
+          if pick_start < 0 or pick_end < 0:
+              raise SystemExit("enterPickMode() block could not be located")
+          pick_block = text[pick_start:pick_end]
+          reroute_guard = pick_block.find("if (navRerouting) {")
+          pick_invalidation = pick_block.find("routeRequestId++;", reroute_guard)
+          pick_release = pick_block.find("navRerouting = false;", reroute_guard)
+          if (
+              reroute_guard < 0
+              or pick_invalidation < 0
+              or pick_release < 0
+              or pick_invalidation > pick_release
+          ):
+              raise SystemExit(
+                  "Picker takeover must invalidate the in-flight Directions generation before releasing reroute state"
+              )
+
+          cancel_start = text.find("  function cancelNav()")
+          cancel_end = text.find("\n  /* ---------- 信号機", cancel_start)
+          if cancel_start < 0 or cancel_end < 0:
+              raise SystemExit("cancelNav() block could not be located")
+          cancel_block = text[cancel_start:cancel_end]
+          cancel_invalidation = cancel_block.find("routeRequestId++;")
+          cancel_release = cancel_block.find("navRerouting = false;")
+          if cancel_invalidation < 0 or cancel_release < 0 or cancel_invalidation > cancel_release:
+              raise SystemExit(
+                  "Navigation cancellation must invalidate the in-flight Directions generation before clearing reroute state"
               )
           PY
