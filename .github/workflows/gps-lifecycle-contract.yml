@@ -121,5 +121,35 @@ jobs:
           if invalidate_denied_pos < 0 or release_denied_pos < 0 or invalidate_denied_pos > release_denied_pos:
               raise SystemExit("GPS permission denial must invalidate callbacks before releasing watch ownership")
 
-          print("GPS stale lifecycle, explicit recenter, and watch-generation contracts OK")
+          if 'let acceptedGeoFixGeneration = 0;' not in app or 'let geoOneShotRequestId = 0;' not in app:
+              raise SystemExit("GPS one-shot generation state is missing")
+
+          one_shot_request_pos = acquire_body.find('const requestId = ++geoOneShotRequestId;')
+          fix_snapshot_pos = acquire_body.find('const fixGeneration = acceptedGeoFixGeneration;', one_shot_request_pos)
+          one_shot_pos = acquire_body.find('navigator.geolocation.getCurrentPosition(', fix_snapshot_pos)
+          if one_shot_request_pos < 0 or fix_snapshot_pos < 0 or one_shot_pos < 0 or not one_shot_request_pos < fix_snapshot_pos < one_shot_pos:
+              raise SystemExit("GPS one-shot request/fix generations must be snapshotted before getCurrentPosition")
+
+          stale_error_guard = 'if (requestId !== geoOneShotRequestId || acceptedGeoFixGeneration !== fixGeneration) return;'
+          stale_error_guard_pos = acquire_body.find(stale_error_guard, one_shot_pos)
+          stale_error_report_pos = acquire_body.find('onGeoError(err);', stale_error_guard_pos)
+          if stale_error_guard_pos < 0 or stale_error_report_pos < 0 or stale_error_guard_pos > stale_error_report_pos:
+              raise SystemExit("Delayed one-shot errors must be rejected after a newer request or accepted GPS fix")
+
+          rejected_fix_start = acquire_body.find('if (!onPosition(pos) &&', one_shot_pos)
+          rejected_fix_guard = acquire_body.find('requestId === geoOneShotRequestId &&', rejected_fix_start)
+          rejected_fix_generation = acquire_body.find('acceptedGeoFixGeneration === fixGeneration', rejected_fix_guard)
+          rejected_fix_error = acquire_body.find('onGeoError({ code: 2 });', rejected_fix_generation)
+          if min(rejected_fix_start, rejected_fix_guard, rejected_fix_generation, rejected_fix_error) < 0 or not rejected_fix_start < rejected_fix_guard < rejected_fix_generation < rejected_fix_error:
+              raise SystemExit("Rejected one-shot fixes must not report an error after a newer request or accepted GPS fix")
+
+          on_position_start = app.index('function onPosition(pos) {')
+          on_position_end = app.index('function onGeoError(err) {', on_position_start)
+          on_position_body = app[on_position_start:on_position_end]
+          accepted_fix_pos = on_position_body.find('acceptedGeoFixGeneration += 1;')
+          clear_error_pos = on_position_body.find('clearError("geolocation");')
+          if accepted_fix_pos < 0 or clear_error_pos < 0 or accepted_fix_pos > clear_error_pos:
+              raise SystemExit("An accepted GPS fix must invalidate delayed one-shot errors before clearing GPS error state")
+
+          print("GPS stale lifecycle, explicit recenter, watch-generation, and one-shot-generation contracts OK")
           PY
