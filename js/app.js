@@ -561,12 +561,9 @@
 
   function handleDisplayLifecycle(hidden) {
     handleCompassLifecycle(hidden);
-    if (hidden) {
-      clearGeoWatchRecoveryTimer();
-      return;
-    }
-    if (gpsStatusText === "GPS更新待ち…") armGeoWatchRecoveryTimer();
-    if (geoWatchId === null || lastPositionTimestamp === null) return;
+    if (hidden) clearGeoWatchRecoveryTimer();
+    else if (gpsStatusText === "GPS更新待ち…") armGeoWatchRecoveryTimer();
+    if (hidden || geoWatchId === null || lastPositionTimestamp === null) return;
     if (Date.now() - lastPositionTimestamp > LIVE_POSITION_MAX_AGE_MS) {
       setGps(
         false,
