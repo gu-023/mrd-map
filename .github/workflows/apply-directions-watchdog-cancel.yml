@@ -1,0 +1,152 @@
+name: Apply Directions watchdog cancellation
+
+on:
+  push:
+    branches:
+      - chatgpt/clear-directions-watchdog-on-cancel
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Apply focused runtime and contract patch
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          app_path = Path("js/app.js")
+          text = app_path.read_text()
+
+          def replace_once(source, old, new, label):
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected exactly one match, found {count}")
+              return source.replace(old, new, 1)
+
+          text = replace_once(
+              text,
+              '  let routeRequestId = 0; // 古い Directions callback を無視するための世代番号\n  let routePreviousNavBanner = null; // 経路要求前の案内（キャンセル/失敗時の復元用）',
+              '  let routeRequestId = 0; // 古い Directions callback を無視するための世代番号\n  let routeRequestTimeoutId = null; // 進行中 Directions request の watchdog（takeover/cancel/new request で解除）\n  let routePreviousNavBanner = null; // 経路要求前の案内（キャンセル/失敗時の復元用）',
+              'route timeout owner state',
+          )
+
+          text = replace_once(
+              text,
+              '    if (navRerouting) {\n      routeRequestId++; // picker が D-pad を引き継いだら進行中の Directions callback を無効化\n      navRerouting = false;',
+              '    if (navRerouting) {\n      routeRequestId++; // picker が D-pad を引き継いだら進行中の Directions callback を無効化\n      clearDirectionsRequestTimeout();\n      navRerouting = false;',
+              'picker takeover cancellation',
+          )
+
+          text = replace_once(
+              text,
+              '  function computeRoute(dest, isReroute, name, requestedTravelMode, resumeFollowOnFailure) {',
+              '  function clearDirectionsRequestTimeout() {\n    if (routeRequestTimeoutId !== null) {\n      clearTimeout(routeRequestTimeoutId);\n      routeRequestTimeoutId = null;\n    }\n  }\n\n  function computeRoute(dest, isReroute, name, requestedTravelMode, resumeFollowOnFailure) {',
+              'timeout clear helper',
+          )
+
+          text = replace_once(
+              text,
+              '    clearError("directions"); // 再試行中は古い Directions error だけ解除\n    const requestId = ++routeRequestId;',
+              '    clearError("directions"); // 再試行中は古い Directions error だけ解除\n    clearDirectionsRequestTimeout(); // 置き換える旧 request の watchdog 自体も解除\n    const requestId = ++routeRequestId;',
+              'new request cancellation',
+          )
+
+          text = replace_once(
+              text,
+              '    const routeTimeoutId = setTimeout(() => {\n      if (requestId !== routeRequestId) return;\n      routeRequestId++; // 遅れて届く Directions callback を無効化',
+              '    routeRequestTimeoutId = setTimeout(() => {\n      if (requestId !== routeRequestId) return;\n      routeRequestTimeoutId = null;\n      routeRequestId++; // 遅れて届く Directions callback を無効化',
+              'watchdog ownership',
+          )
+
+          text = replace_once(
+              text,
+              '        if (requestId !== routeRequestId) return;\n        clearTimeout(routeTimeoutId);',
+              '        if (requestId !== routeRequestId) return;\n        clearDirectionsRequestTimeout();',
+              'callback timeout cleanup',
+          )
+
+          text = replace_once(
+              text,
+              '  function cancelNav() {\n    routeRequestId++; // 未完了の Directions callback でナビが復活しないよう無効化\n    signalRequestId++;',
+              '  function cancelNav() {\n    routeRequestId++; // 未完了の Directions callback でナビが復活しないよう無効化\n    clearDirectionsRequestTimeout();\n    signalRequestId++;',
+              'navigation cancellation',
+          )
+
+          app_path.write_text(text)
+
+          guard_path = Path(".github/workflows/directions-timeout-contract.yml")
+          guard = guard_path.read_text()
+
+          guard = replace_once(
+              guard,
+              '          timeout_start = block.find("const routeTimeoutId = setTimeout(() => {")',
+              '          timeout_start = block.find("routeRequestTimeoutId = setTimeout(() => {")',
+              'guard timeout arm lookup',
+          )
+
+          guard = replace_once(
+              guard,
+              '          request_generation = block.find("const requestId = ++routeRequestId;")\n          if request_generation < 0 or request_generation > timeout_start:\n              raise SystemExit(\n                  "Each Directions request must claim a fresh generation before arming its watchdog"\n              )',
+              '          request_clear = block.find("clearDirectionsRequestTimeout();")\n          request_generation = block.find("const requestId = ++routeRequestId;")\n          if (\n              request_clear < 0\n              or request_generation < 0\n              or request_clear > request_generation\n              or request_generation > timeout_start\n          ):\n              raise SystemExit(\n                  "Each Directions request must clear the previous watchdog before claiming a fresh generation"\n              )',
+              'guard new request cleanup order',
+          )
+
+          guard = replace_once(
+              guard,
+              '              "late callback invalidation": "routeRequestId++;",',
+              '              "watchdog ownership release": "routeRequestTimeoutId = null;",\n              "late callback invalidation": "routeRequestId++;",',
+              'guard timeout ownership fragment',
+          )
+
+          guard = replace_once(
+              guard,
+              '          callback_clear = callback.find("clearTimeout(routeTimeoutId);")',
+              '          callback_clear = callback.find("clearDirectionsRequestTimeout();")',
+              'guard callback cleanup helper',
+          )
+
+          guard = replace_once(
+              guard,
+              '          pick_invalidation = pick_block.find("routeRequestId++;", reroute_guard)\n          pick_release = pick_block.find("navRerouting = false;", reroute_guard)\n          if (\n              reroute_guard < 0\n              or pick_invalidation < 0\n              or pick_release < 0\n              or pick_invalidation > pick_release\n          ):\n              raise SystemExit(\n                  "Picker takeover must invalidate the in-flight Directions generation before releasing reroute state"\n              )',
+              '          pick_invalidation = pick_block.find("routeRequestId++;", reroute_guard)\n          pick_clear = pick_block.find("clearDirectionsRequestTimeout();", reroute_guard)\n          pick_release = pick_block.find("navRerouting = false;", reroute_guard)\n          if (\n              reroute_guard < 0\n              or pick_invalidation < 0\n              or pick_clear < 0\n              or pick_release < 0\n              or pick_invalidation > pick_clear\n              or pick_clear > pick_release\n          ):\n              raise SystemExit(\n                  "Picker takeover must invalidate the in-flight Directions generation, clear its watchdog, then release reroute state"\n              )',
+              'guard picker cleanup order',
+          )
+
+          guard = replace_once(
+              guard,
+              '          cancel_invalidation = cancel_block.find("routeRequestId++;")\n          cancel_release = cancel_block.find("navRerouting = false;")\n          if cancel_invalidation < 0 or cancel_release < 0 or cancel_invalidation > cancel_release:\n              raise SystemExit(\n                  "Navigation cancellation must invalidate the in-flight Directions generation before clearing reroute state"\n              )',
+              '          cancel_invalidation = cancel_block.find("routeRequestId++;")\n          cancel_clear = cancel_block.find("clearDirectionsRequestTimeout();")\n          cancel_release = cancel_block.find("navRerouting = false;")\n          if (\n              cancel_invalidation < 0\n              or cancel_clear < 0\n              or cancel_release < 0\n              or cancel_invalidation > cancel_clear\n              or cancel_clear > cancel_release\n          ):\n              raise SystemExit(\n                  "Navigation cancellation must invalidate the in-flight Directions generation, clear its watchdog, then release reroute state"\n              )',
+              'guard cancel cleanup order',
+          )
+
+          helper_anchor = '          text = Path("js/app.js").read_text()\n\n'
+          helper_guard = '''          helper_start = text.find("  function clearDirectionsRequestTimeout()")\n          helper_end = text.find("\\n  function computeRoute(", helper_start)\n          if helper_start < 0 or helper_end < 0:\n              raise SystemExit("Directions timeout clear helper could not be located")\n          helper_block = text[helper_start:helper_end]\n          if (\n              "clearTimeout(routeRequestTimeoutId);" not in helper_block\n              or "routeRequestTimeoutId = null;" not in helper_block\n          ):\n              raise SystemExit("Directions timeout clear helper must cancel the timer and release ownership")\n\n'''
+          guard = replace_once(
+              guard,
+              helper_anchor,
+              helper_anchor + helper_guard,
+              'guard helper contract',
+          )
+
+          guard_path.write_text(guard)
+          PY
+
+          node --check js/app.js
+          git diff --check
+          git diff -- js/app.js .github/workflows/directions-timeout-contract.yml
+
+      - name: Commit validated patch and remove helper
+        shell: bash
+        run: |
+          rm .github/workflows/apply-directions-watchdog-cancel.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add js/app.js .github/workflows/directions-timeout-contract.yml .github/workflows/apply-directions-watchdog-cancel.yml
+          git commit -m "Clear stale Directions watchdogs on takeover"
+          git push origin HEAD:chatgpt/clear-directions-watchdog-on-cancel
