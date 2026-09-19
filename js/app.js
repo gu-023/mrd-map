@@ -626,7 +626,7 @@
         ? "GPS不可"
         : hasUnknownGeoWatchOwnership()
           ? "GPS↻再読込"
-          : gpsStatusText === "GPS再取得失敗"
+          : gpsStatusText === "GPS開始失敗" || gpsStatusText === "GPS再取得失敗"
             ? "GPS失敗・◎再試行"
             : gpsStatusText === "GPS更新停止・◎で再取得"
               ? "GPS停止・◎再取得"
