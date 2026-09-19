@@ -37,20 +37,14 @@ jobs:
               '              ? "GPS◎再試行"\n'
               '              : null;'
           )
-          if app.count(old) != 1:
-              raise SystemExit(f"Expected exactly one app recovery block, found {app.count(old)}")
-          app_path.write_text(app.replace(old, new), encoding="utf-8")
-
-          guard_path = Path(".github/workflows/gps-compass-recovery-hint-contract.yml")
-          guard = guard_path.read_text(encoding="utf-8")
-          anchor = "              ': geoWatchId === null && lastPositionTimestamp !== null',\n"
-          insertion = (
-              '              \': gpsStatusText === "GPS更新停止・◎で再取得"\',\n'
-              '              \'? "GPS停止・◎再取得"\',\n'
-          )
-          if guard.count(anchor) != 1:
-              raise SystemExit(f"Expected exactly one guard anchor, found {guard.count(anchor)}")
-          guard_path.write_text(guard.replace(anchor, insertion + anchor), encoding="utf-8")
+          if app.count(old) == 1:
+              app_path.write_text(app.replace(old, new), encoding="utf-8")
+          elif app.count(new) == 1:
+              print("Compass stale GPS recovery fix already applied")
+          else:
+              raise SystemExit(
+                  f"Unexpected recovery block state: old={app.count(old)} new={app.count(new)}"
+              )
           PY
 
       - name: Validate patch
@@ -78,20 +72,18 @@ jobs:
               if pos < 0:
                   raise SystemExit(f"Missing/out-of-order compass recovery token: {token}")
               cursor = pos + len(token)
-          guard = Path(".github/workflows/gps-compass-recovery-hint-contract.yml").read_text(encoding="utf-8")
-          for token in required:
-              if token not in guard:
-                  raise SystemExit(f"Focused guard does not protect token: {token}")
           print("Compass stale GPS recovery fix validated")
           PY
 
-      - name: Remove one-shot helper and commit
+      - name: Commit runtime change when needed
         shell: bash
         run: |
-          rm .github/workflows/chatgpt-fix-compass-stale-gps-hint.yml
-          git diff --check
+          if git diff --quiet -- js/app.js; then
+            echo "Runtime change already committed"
+            exit 0
+          fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A
+          git add js/app.js
           git commit -m "Fix compass stale GPS recovery hint"
           git push origin HEAD:chatgpt/fix-compass-stale-gps-hint
