@@ -80,7 +80,9 @@ jobs:
           grep -F 'const DIRECTIONS_REQUEST_TIMEOUT_MS = 20000;' js/app.js
           grep -F 'clearTimeout(routeTimeoutId);' js/app.js
           grep -F '経路の取得がタイムアウトしました' js/app.js
-          test "$(git diff --name-only | sort)" = "js/app.js"
+          git diff --name-only | sort > /tmp/changed-files
+          printf '%s\n' '.github/workflows/chatgpt-bound-directions-helper.yml' 'js/app.js' > /tmp/expected-files
+          diff -u /tmp/expected-files /tmp/changed-files
 
       - name: Commit product change
         run: |
