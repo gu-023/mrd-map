@@ -49,6 +49,8 @@ jobs:
               '? "GPS不可"',
               'hasUnknownGeoWatchOwnership()',
               '? "GPS↻再読込"',
+              ': gpsStatusText === "GPS再取得失敗"',
+              '? "GPS失敗・◎再試行"',
               ': gpsStatusText === "GPS更新停止・◎で再取得"',
               '? "GPS停止・◎再取得"',
               ': geoWatchId === null && lastPositionTimestamp !== null',
@@ -68,12 +70,12 @@ jobs:
                   )
               cursor = pos + len(token)
 
-          # Unknown ownership is fail-closed and must win over the ordinary no-watch
-          # retry path so a host that may still own a watcher never encourages creating
-          # a duplicate watcher.
-          if body.find('hasUnknownGeoWatchOwnership()') > body.find(
-              'geoWatchId === null && lastPositionTimestamp !== null'
-          ):
+          # Unknown ownership is fail-closed and must win over retry states so a host
+          # that may still own a watcher never encourages creating a duplicate watcher.
+          unknown = body.find('hasUnknownGeoWatchOwnership()')
+          reacquire_failed = body.find('gpsStatusText === "GPS再取得失敗"')
+          no_watch_retry = body.find('geoWatchId === null && lastPositionTimestamp !== null')
+          if unknown > reacquire_failed or unknown > no_watch_retry:
               raise SystemExit(
                   "Compass GPS recovery-hint priority changed: reload must precede retry"
               )
