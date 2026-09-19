@@ -1,0 +1,77 @@
+name: ChatGPT patch GPS visible-error watch restart
+
+on:
+  push:
+    branches:
+      - chatgpt/restart-gps-watch-on-visible-error
+    paths:
+      - .github/workflows/chatgpt-patch-recenter-watch-error.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: chatgpt/restart-gps-watch-on-visible-error
+
+      - name: Restart known watcher when visible GPS error is retried
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("js/app.js")
+          app = path.read_text(encoding="utf-8")
+          old = '''        const watchIsStale = geoWatchId !== null &&
+          lastPositionTimestamp !== null &&
+          Date.now() - lastPositionTimestamp > LIVE_POSITION_MAX_AGE_MS;
+        if (watchIsStale) {'''
+          new = '''        const watchNeedsRestart = geoWatchId !== null &&
+          (errorSource === "geolocation" ||
+           (lastPositionTimestamp !== null &&
+            Date.now() - lastPositionTimestamp > LIVE_POSITION_MAX_AGE_MS));
+        if (watchNeedsRestart) {'''
+          if app.count(old) != 1:
+              raise SystemExit(f"expected one recenter stale-watch block, found {app.count(old)}")
+          app = app.replace(old, new, 1)
+          path.write_text(app, encoding="utf-8")
+
+          start = app.index('case "recenter": {')
+          end = app.index('case "toggle-pan":', start)
+          body = app[start:end]
+          required = (
+              'const watchNeedsRestart = geoWatchId !== null &&',
+              'errorSource === "geolocation" ||',
+              'Date.now() - lastPositionTimestamp > LIVE_POSITION_MAX_AGE_MS',
+              'navigator.geolocation.clearWatch(geoWatchId);',
+              'geoWatchId = null;',
+              'acquireLocation();',
+          )
+          for snippet in required:
+              if snippet not in body:
+                  raise SystemExit(f"missing recenter recovery contract: {snippet}")
+          clear_pos = body.index('navigator.geolocation.clearWatch(geoWatchId);')
+          release_pos = body.index('geoWatchId = null;', clear_pos)
+          acquire_pos = body.index('acquireLocation();', release_pos)
+          if not clear_pos < release_pos < acquire_pos:
+              raise SystemExit("known watcher must be cleared before replacement acquisition")
+          PY
+          node --check js/app.js
+          git diff --check
+
+      - name: Commit runtime fix
+        shell: bash
+        run: |
+          if git diff --quiet -- js/app.js; then
+            echo "Expected js/app.js change is missing" >&2
+            exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add js/app.js
+          git commit -m "Restart GPS watch on explicit error retry"
+          git push origin HEAD:chatgpt/restart-gps-watch-on-visible-error
