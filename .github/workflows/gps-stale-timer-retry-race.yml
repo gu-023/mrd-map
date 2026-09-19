@@ -65,12 +65,15 @@ jobs:
             let scheduled = null;
             let nextTimerId = 1;
             const gpsCalls = [];
+            const clearedTimerIds = [];
             const fakeSetTimeout = (callback, delay) => {
               const id = nextTimerId++;
               scheduled = { id, callback, delay };
               return id;
             };
-            const fakeClearTimeout = () => {};
+            const fakeClearTimeout = (id) => {
+              clearedTimerIds.push(id);
+            };
             const document = { visibilityState: 'visible' };
             let nowMs = initial.nowMs;
             const DateMock = { now: () => nowMs };
@@ -90,6 +93,7 @@ jobs:
                 ${armFn}
                 return {
                   arm: armGeoWatchRecoveryTimer,
+                  clear: clearGeoWatchRecoveryTimer,
                   setState(next) {
                     if (Object.prototype.hasOwnProperty.call(next, 'geoWatchId')) geoWatchId = next.geoWatchId;
                     if (Object.prototype.hasOwnProperty.call(next, 'geoWatchGeneration')) geoWatchGeneration = next.geoWatchGeneration;
@@ -106,6 +110,7 @@ jobs:
             return {
               api,
               gpsCalls,
+              clearedTimerIds,
               getScheduled: () => scheduled,
               setNow: (value) => { nowMs = value; },
             };
@@ -118,6 +123,24 @@ jobs:
             gpsStatusText: 'GPS更新待ち…',
             lastPositionTimestamp: 69999,
           };
+
+          // The explicit retry path calls this clear helper before entering GPS取得中….
+          // Exercise the helper to ensure it clears the actual timeout and releases timer ownership.
+          {
+            const h = makeHarness(base);
+            h.api.arm();
+            const timer = h.getScheduled();
+            if (!timer) {
+              throw new Error('Expected a pending GPS recovery timer before explicit retry');
+            }
+            h.api.clear();
+            if (h.clearedTimerIds.length !== 1 || h.clearedTimerIds[0] !== timer.id) {
+              throw new Error('Explicit GPS retry did not clear the pending recovery timeout');
+            }
+            if (h.api.getState().geoWatchRecoveryTimer !== null) {
+              throw new Error('Explicit GPS retry retained stale recovery timer ownership');
+            }
+          }
 
           // D-pad retry starts a new watch generation and replaces the visible status.
           // The old timer callback must not demote the new attempt back to stale-retry UI.
