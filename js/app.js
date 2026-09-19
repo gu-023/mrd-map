@@ -626,9 +626,11 @@
         ? "GPS不可"
         : hasUnknownGeoWatchOwnership()
           ? "GPS↻再読込"
-          : geoWatchId === null && lastPositionTimestamp !== null
-            ? "GPS◎再試行"
-            : null;
+          : gpsStatusText === "GPS更新停止・◎で再取得"
+            ? "GPS停止・◎再取得"
+            : geoWatchId === null && lastPositionTimestamp !== null
+              ? "GPS◎再試行"
+              : null;
     els.gpsText.textContent = gpsRecoveryHint
       ? `${headingText} ・ ${gpsRecoveryHint}`
       : headingText;
