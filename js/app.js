@@ -1493,7 +1493,7 @@
           : null;
         const leg = route && Array.isArray(route.legs) ? route.legs[0] : null;
         const routeSteps = leg && Array.isArray(leg.steps) ? leg.steps : null;
-        if (route && leg && routeSteps) {
+        if (route && leg && routeSteps && routeSteps.length > 0) {
           clearError("directions");
           travelMode = routeTravelMode;
           navDestination = routeDestination;
