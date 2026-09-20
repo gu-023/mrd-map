@@ -1,0 +1,277 @@
+name: Guard malformed Directions geometry
+
+on:
+  pull_request:
+    paths:
+      - js/app.js
+      - .github/workflows/directions-malformed-geometry-contract.yml
+  push:
+    branches: [main]
+    paths:
+      - js/app.js
+      - .github/workflows/directions-malformed-geometry-contract.yml
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Reject malformed successful Directions geometry
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require("fs");
+          const vm = require("vm");
+
+          const source = fs.readFileSync("js/app.js", "utf8");
+          const literalStart = source.indexOf("  function locationLiteral(location) {");
+          const literalEnd = source.indexOf("\n\n  function ", literalStart + 1);
+          const timeoutStart = source.indexOf("  function clearDirectionsRequestTimeout() {");
+          const computeStart = source.indexOf("  function computeRoute(", timeoutStart);
+          const computeEnd = source.indexOf("\n\n  function clearRoute() {", computeStart);
+
+          if (
+            literalStart < 0 || literalEnd < 0 ||
+            timeoutStart < 0 || computeStart < 0 || computeEnd < 0
+          ) {
+            throw new Error("Directions geometry runtime functions could not be located");
+          }
+
+          const locationLiteralSource = source
+            .slice(literalStart, literalEnd)
+            .replace(/^  /gm, "");
+          const timeoutSource = source
+            .slice(timeoutStart, computeStart)
+            .replace(/^  /gm, "");
+          const computeRouteSource = source
+            .slice(computeStart, computeEnd)
+            .replace(/^  /gm, "");
+
+          function runMalformedCase(name, steps) {
+            let routeCallback = null;
+            const clearedTimeouts = [];
+            const observed = {
+              errors: [],
+              banners: [],
+              renderer: 0,
+              clearRoute: 0,
+              panTo: 0,
+              setZoom: 0,
+              saveRecent: 0,
+              clearSignals: 0,
+              fetchSignals: 0,
+              updateNav: 0,
+            };
+            const watchdog = `watchdog:${name}`;
+            const origin = {
+              lat() { return 35.681236; },
+              lng() { return 139.767125; },
+            };
+
+            const context = {
+              Date,
+              setTimeout() {
+                return watchdog;
+              },
+              clearTimeout(id) {
+                clearedTimeouts.push(id);
+              },
+              els: {
+                navBanner: {
+                  innerHTML: "",
+                  classList: {
+                    contains() { return true; },
+                  },
+                },
+              },
+              clearError() {},
+              showError(title, body, owner) {
+                observed.errors.push([title, body, owner]);
+              },
+              setNavBanner(html) {
+                observed.banners.push(html);
+              },
+              userMarker: {
+                getPosition() {
+                  return origin;
+                },
+              },
+              directionsService: {
+                route(_request, callback) {
+                  routeCallback = callback;
+                },
+              },
+              google: {
+                maps: {
+                  LatLng: class {
+                    constructor(lat, lng) {
+                      this._lat = lat;
+                      this._lng = lng;
+                    }
+                    lat() { return this._lat; }
+                    lng() { return this._lng; }
+                  },
+                  TravelMode: {
+                    WALKING: "WALKING",
+                  },
+                  DirectionsRenderer: class {
+                    constructor() {
+                      observed.renderer += 1;
+                    }
+                    setDirections() {}
+                  },
+                },
+              },
+              map: {
+                panTo() { observed.panTo += 1; },
+                setZoom() { observed.setZoom += 1; },
+              },
+              clearRoute() { observed.clearRoute += 1; },
+              saveRecent() { observed.saveRecent += 1; },
+              clearSignals() { observed.clearSignals += 1; },
+              fetchSignals() { observed.fetchSignals += 1; },
+              meters() { return 0; },
+              updateNav() { observed.updateNav += 1; },
+            };
+            vm.createContext(context);
+
+            vm.runInContext(`
+              const ROUTE_ORIGIN_MAX_AGE_MS = 30000;
+              const DIRECTIONS_REQUEST_TIMEOUT_MS = 20000;
+              let lastPositionTimestamp = Date.now();
+              let lastPositionAccuracy = 5;
+              let followMode = true;
+              let navMode = false;
+              let navArrived = false;
+              let navSteps = [];
+              let navStepIdx = 0;
+              let navLastPosition = null;
+              let navLastPositionTimestamp = null;
+              let navLastPositionAccuracy = null;
+              let navStepProgressIdx = -1;
+              let navStepProgressSegment = 0;
+              let navStepProgressT = 0;
+              let navStepProgressRemaining = null;
+              let navStepProgressPosition = null;
+              let navStepProgressAccuracy = null;
+              let navDestination = null;
+              let navFullPath = [];
+              let offRouteCount = 0;
+              let lastOffRouteEvidenceTimestamp = null;
+              let navRerouting = false;
+              let routeRequestId = 0;
+              let routeRequestTimeoutId = null;
+              let routePreviousNavBanner = null;
+              let navBounds = null;
+              let zoomedForTurn = false;
+              let signalRequestId = 0;
+              let signalData = [];
+              let signalsOn = false;
+              let travelMode = "WALKING";
+              let directionsRenderer = null;
+
+              ${locationLiteralSource}
+              ${timeoutSource}
+              ${computeRouteSource}
+
+              this.__computeRoute = computeRoute;
+              this.__snapshot = () => ({
+                routeRequestId,
+                routeRequestTimeoutId,
+                routePreviousNavBanner,
+                navRerouting,
+                navMode,
+                navDestination,
+                navStepsLength: navSteps.length,
+                navFullPathLength: navFullPath.length,
+                signalRequestId,
+                directionsRendererPresent: directionsRenderer !== null,
+              });
+            `, context);
+
+            context.__computeRoute(
+              { lat: 35.6895, lng: 139.6917 },
+              false,
+              undefined,
+              undefined,
+              false,
+            );
+
+            if (!routeCallback) {
+              throw new Error(`${name}: Directions callback was not captured`);
+            }
+            const active = context.__snapshot();
+            if (
+              active.routeRequestId !== 1 ||
+              active.routeRequestTimeoutId !== watchdog ||
+              active.navRerouting !== true
+            ) {
+              throw new Error(`${name}: unexpected active request state ${JSON.stringify(active)}`);
+            }
+
+            routeCallback({ routes: [{ legs: [{ steps }], bounds: null }] }, "OK");
+
+            const settled = context.__snapshot();
+            if (
+              settled.routeRequestId !== 1 ||
+              settled.routeRequestTimeoutId !== null ||
+              settled.routePreviousNavBanner !== null ||
+              settled.navRerouting !== false ||
+              settled.navMode !== false ||
+              settled.navDestination !== null ||
+              settled.navStepsLength !== 0 ||
+              settled.navFullPathLength !== 0 ||
+              settled.signalRequestId !== 0 ||
+              settled.directionsRendererPresent !== false
+            ) {
+              throw new Error(`${name}: malformed route mutated navigation state ${JSON.stringify(settled)}`);
+            }
+
+            if (JSON.stringify(clearedTimeouts) !== JSON.stringify([watchdog])) {
+              throw new Error(`${name}: Directions watchdog ownership was not released exactly once`);
+            }
+
+            const expectedError = [
+              "経路を取得できません",
+              "経路データが不完全です。もう一度お試しください。",
+              "directions",
+            ];
+            if (
+              observed.errors.length !== 1 ||
+              JSON.stringify(observed.errors[0]) !== JSON.stringify(expectedError)
+            ) {
+              throw new Error(`${name}: incomplete-route UX was not used ${JSON.stringify(observed.errors)}`);
+            }
+
+            if (JSON.stringify(observed.banners) !== JSON.stringify(["経路を計算中…", null])) {
+              throw new Error(`${name}: route banner was not restored after rejection ${JSON.stringify(observed.banners)}`);
+            }
+
+            const forbiddenEffects = [
+              "renderer", "clearRoute", "panTo", "setZoom", "saveRecent",
+              "clearSignals", "fetchSignals", "updateNav",
+            ].filter((key) => observed[key] !== 0);
+            if (forbiddenEffects.length) {
+              throw new Error(`${name}: malformed route triggered success effects ${JSON.stringify(forbiddenEffects)}`);
+            }
+          }
+
+          const pointA = { lat: 35.681236, lng: 139.767125 };
+          const pointB = { lat: 35.682, lng: 139.768 };
+
+          runMalformedCase("one-point path", [
+            { path: [pointA], start_location: pointA, end_location: pointB },
+          ]);
+          runMalformedCase("non-finite path point", [
+            { path: [pointA, { lat: Number.NaN, lng: 139.768 }], start_location: pointA, end_location: pointB },
+          ]);
+          runMalformedCase("missing fallback endpoint", [
+            { start_location: pointA },
+          ]);
+
+          console.log("Malformed Directions geometry stays on the incomplete-route failure path");
+          NODE
