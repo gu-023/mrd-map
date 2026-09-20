@@ -24,8 +24,10 @@ jobs:
           git checkout -B chatgpt/terminal-maps-auth-failure origin/chatgpt/terminal-maps-auth-failure
 
       - name: Apply terminal auth cleanup patch
-        shell: python
+        shell: bash
         run: |
+          set -euo pipefail
+          python - <<'PY'
           from pathlib import Path
 
           path = Path("js/app.js")
@@ -149,6 +151,7 @@ jobs:
               "D-pad terminal guard",
           )
           path.write_text(text)
+          PY
 
       - name: Validate and commit target branch
         shell: bash
