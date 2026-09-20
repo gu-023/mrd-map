@@ -20,7 +20,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Accept valid start/end fallback geometry
+      - name: Accept Google LatLng start/end fallback geometry
         shell: bash
         run: |
           node <<'NODE'
@@ -229,8 +229,8 @@ jobs:
             throw new Error(`Unexpected active request state ${JSON.stringify(active)}`);
           }
 
-          const pointA = { lat: 35.681236, lng: 139.767125 };
-          const pointB = { lat: 35.682, lng: 139.768 };
+          const pointA = new context.google.maps.LatLng(35.681236, 139.767125);
+          const pointB = new context.google.maps.LatLng(35.682, 139.768);
           const response = {
             routes: [{
               legs: [{
@@ -243,7 +243,10 @@ jobs:
           routeCallback(response, "OK");
 
           const settled = context.__snapshot();
-          const expectedPath = [pointA, pointB];
+          const expectedPath = [
+            { lat: pointA.lat(), lng: pointA.lng() },
+            { lat: pointB.lat(), lng: pointB.lng() },
+          ];
           if (
             settled.routeRequestId !== 1 ||
             settled.routeRequestTimeoutId !== null ||
@@ -286,5 +289,5 @@ jobs:
             throw new Error(`Expected navigation side effects were not preserved ${JSON.stringify(observed)}`);
           }
 
-          console.log("Valid start/end fallback geometry activates navigation");
+          console.log("Google LatLng start/end fallback geometry activates navigation");
           NODE
