@@ -1,0 +1,111 @@
+name: Temporary Maps loader cleanup
+
+on:
+  push:
+    branches:
+      - chatgpt/release-maps-loader-closures
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chatgpt/release-maps-loader-closures
+          fetch-depth: 0
+
+      - name: Release settled loader closures
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("js/app.js")
+          text = path.read_text()
+          old = '''      let settled = false;
+      let timeoutId = null;
+      const finish = (callback, value) => {
+        if (settled) return;
+        settled = true;
+        if (timeoutId !== null) clearTimeout(timeoutId);
+        callback(value);
+      };
+      window.__mrdMapInit = () => finish(resolve);
+      const s = document.createElement("script");
+      const key = encodeURIComponent(cfg.GOOGLE_MAPS_API_KEY);
+'''
+          new = '''      let settled = false;
+      let timeoutId = null;
+      const s = document.createElement("script");
+      const finish = (callback, value, removeScript = false) => {
+        if (settled) return;
+        settled = true;
+        if (timeoutId !== null) {
+          clearTimeout(timeoutId);
+          timeoutId = null;
+        }
+        s.onerror = null;
+        // A removed async script can still finish in some hosts; keep a harmless callable tombstone
+        // without retaining this Promise/finish closure.
+        window.__mrdMapInit = () => {};
+        if (removeScript) s.remove();
+        callback(value);
+      };
+      window.__mrdMapInit = () => finish(resolve);
+      const key = encodeURIComponent(cfg.GOOGLE_MAPS_API_KEY);
+'''
+          if text.count(old) != 1:
+            raise SystemExit(f"expected loader block once, found {text.count(old)}")
+          text = text.replace(old, new, 1)
+
+          old_failures = '''      s.onerror = () => finish(reject, new Error("Google Maps の読み込みに失敗"));
+      timeoutId = setTimeout(() => {
+        s.remove();
+        finish(reject, new Error("Google Maps の読み込みがタイムアウト"));
+      }, GOOGLE_MAPS_LOAD_TIMEOUT_MS);
+'''
+          new_failures = '''      s.onerror = () => finish(reject, new Error("Google Maps の読み込みに失敗"), true);
+      timeoutId = setTimeout(() => {
+        finish(reject, new Error("Google Maps の読み込みがタイムアウト"), true);
+      }, GOOGLE_MAPS_LOAD_TIMEOUT_MS);
+'''
+          if text.count(old_failures) != 1:
+            raise SystemExit(f"expected loader failure block once, found {text.count(old_failures)}")
+          path.write_text(text.replace(old_failures, new_failures, 1))
+
+      - name: Validate focused change
+        run: |
+          node --check js/app.js
+          git diff --check
+          python3 - <<'PY'
+          from pathlib import Path
+          text = Path('js/app.js').read_text()
+          start = text.index('  function loadGoogleMaps() {')
+          end = text.index('\n  /* 加算ディスプレイ向け', start)
+          block = text[start:end]
+          required = [
+              'timeoutId = null;',
+              's.onerror = null;',
+              'window.__mrdMapInit = () => {};',
+              'if (removeScript) s.remove();',
+              '読み込みに失敗"), true)',
+              '読み込みがタイムアウト"), true)',
+          ]
+          missing = [needle for needle in required if needle not in block]
+          if missing:
+              raise SystemExit(f'missing cleanup contract: {missing}')
+          if block.count('window.__mrdMapInit = () => finish(resolve);') != 1:
+              raise SystemExit('bootstrap callback wiring changed unexpectedly')
+          print('Google Maps loader cleanup contract verified')
+          PY
+
+      - name: Commit product change and remove helper
+        run: |
+          rm .github/workflows/tmp-maps-loader-cleanup.yml
+          git add js/app.js .github/workflows/tmp-maps-loader-cleanup.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Release Google Maps loader closures"
+          git push origin HEAD:chatgpt/release-maps-loader-closures
