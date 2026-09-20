@@ -1,0 +1,180 @@
+name: ChatGPT terminal Maps auth one-shot runner
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  patch-target-branch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Switch to target branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin chatgpt/terminal-maps-auth-failure
+          git checkout -B chatgpt/terminal-maps-auth-failure origin/chatgpt/terminal-maps-auth-failure
+
+      - name: Apply terminal auth cleanup patch
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path("js/app.js")
+          text = path.read_text()
+
+          def replace_once(text, old, new, label):
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected exactly one anchor, found {count}")
+              return text.replace(old, new, 1)
+
+          text = replace_once(
+              text,
+              '  let errorSource = null;\n  const GOOGLE_MAPS_AUTH_ERROR_SOURCE = "google-maps-auth";',
+              '  let errorSource = null;\n  let googleMapsAuthFailed = false;\n  const GOOGLE_MAPS_AUTH_ERROR_SOURCE = "google-maps-auth";',
+              "auth terminal flag",
+          )
+          text = replace_once(
+              text,
+              '  window.gm_authFailure = function () {\n    showError(',
+              '  window.gm_authFailure = function () {\n    googleMapsAuthFailed = true;\n    stopRuntimeForGoogleMapsAuthFailure();\n    showError(',
+              "auth failure cleanup call",
+          )
+          text = replace_once(
+              text,
+              '      "PCのChromeコンソールで <code>◯◯MapError</code> を確認してください。",',
+              '      "PCのChromeコンソールで <code>◯◯MapError</code> を確認してください。<br><br>決定で再読み込みできます。",',
+              "auth reload hint",
+          )
+          text = replace_once(
+              text,
+              '  function initMap() {\n    map = new google.maps.Map(els.canvas, {',
+              '  function initMap() {\n    if (googleMapsAuthFailed) return;\n    map = new google.maps.Map(els.canvas, {',
+              "init guard",
+          )
+          text = replace_once(
+              text,
+              '''  function clearGeoWatchRecoveryTimer() {
+    if (geoWatchRecoveryTimer === null) return;
+    clearTimeout(geoWatchRecoveryTimer);
+    geoWatchRecoveryTimer = null;
+  }
+
+  function armGeoWatchRecoveryTimer() {''',
+              '''  function clearGeoWatchRecoveryTimer() {
+    if (geoWatchRecoveryTimer === null) return;
+    clearTimeout(geoWatchRecoveryTimer);
+    geoWatchRecoveryTimer = null;
+  }
+
+  function stopRuntimeForGoogleMapsAuthFailure() {
+    geoOneShotRequestId += 1;
+    clearGeoWatchRecoveryTimer();
+    geoWatchGeneration += 1;
+    if (geoWatchId !== null && !hasUnknownGeoWatchOwnership()) {
+      try { navigator.geolocation.clearWatch(geoWatchId); } catch (_) {}
+    }
+    geoWatchId = null;
+    routeRequestId += 1;
+    clearDirectionsRequestTimeout();
+    routePreviousNavBanner = null;
+    navRerouting = false;
+    signalRequestId += 1;
+    predictionRequestId += 1;
+    placeDetailsRequestId += 1;
+    if (predictionTimeoutId !== null) clearTimeout(predictionTimeoutId);
+    if (placeDetailsTimeoutId !== null) clearTimeout(placeDetailsTimeoutId);
+    if (compositionRefreshTimeoutId !== null) clearTimeout(compositionRefreshTimeoutId);
+    predictionTimeoutId = null;
+    placeDetailsTimeoutId = null;
+    compositionRefreshTimeoutId = null;
+    searchOpen = false;
+    menuOpen = false;
+    pickMode = false;
+    panMode = false;
+    els.searchQuery.blur();
+    disableCompass();
+  }
+
+  function armGeoWatchRecoveryTimer() {''',
+              "terminal runtime cleanup",
+          )
+          text = replace_once(
+              text,
+              '''        (pos) => {
+          if (!requestValid) return;
+          if (!onPosition(pos) &&
+              requestId === geoOneShotRequestId &&
+              acceptedGeoFixGeneration === fixGeneration) {''',
+              '''        (pos) => {
+          if (!requestValid || requestId !== geoOneShotRequestId) return;
+          if (!onPosition(pos) &&
+              acceptedGeoFixGeneration === fixGeneration) {''',
+              "one-shot success invalidation",
+          )
+          text = replace_once(
+              text,
+              '''  function doAction(action) {
+    if (action === "retry") { location.reload(); return; } // 地図未初期化でも効くよう先頭で処理
+    if (!map) return;''',
+              '''  function doAction(action) {
+    if (action === "retry") { location.reload(); return; } // 地図未初期化でも効くよう先頭で処理
+    if (googleMapsAuthFailed) return;
+    if (!map) return;''',
+              "action terminal guard",
+          )
+          text = replace_once(
+              text,
+              '''  document.addEventListener("keydown", (e) => {
+    // 検索画面: キーボード/候補を操作''',
+              '''  document.addEventListener("keydown", (e) => {
+    if (googleMapsAuthFailed) {
+      if (e.key === "Enter" || e.key === " ") location.reload();
+      if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "].indexOf(e.key) >= 0) {
+        e.preventDefault();
+      }
+      return;
+    }
+
+    // 検索画面: キーボード/候補を操作''',
+              "D-pad terminal guard",
+          )
+          path.write_text(text)
+
+      - name: Validate and commit target branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check js/app.js
+          git diff --check
+          python - <<'PY'
+          from pathlib import Path
+          text = Path('js/app.js').read_text()
+          required = [
+              'let googleMapsAuthFailed = false;',
+              'stopRuntimeForGoogleMapsAuthFailure();',
+              'if (!requestValid || requestId !== geoOneShotRequestId) return;',
+              'navigator.geolocation.clearWatch(geoWatchId)',
+              'if (googleMapsAuthFailed) return;',
+              'if (e.key === "Enter" || e.key === " ") location.reload();',
+          ]
+          missing = [needle for needle in required if needle not in text]
+          if missing:
+              raise SystemExit('missing guards: ' + ', '.join(missing))
+          PY
+          rm -f .github/workflows/chatgpt-terminal-maps-auth-patch.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add js/app.js .github/workflows/chatgpt-terminal-maps-auth-patch.yml
+          git diff --cached --check
+          git commit -m "Quiesce runtime after Google Maps auth failure"
+          git push origin HEAD:chatgpt/terminal-maps-auth-failure
