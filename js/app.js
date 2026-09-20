@@ -1438,7 +1438,7 @@
       );
       setNavBanner(previousNavBanner);
     }, DIRECTIONS_REQUEST_TIMEOUT_MS);
-    directionsService.route(
+    const startDirectionsRequest = () => directionsService.route(
       { origin, destination: routeDestination, travelMode: google.maps.TravelMode[routeTravelMode] },
       (res, status) => {
         if (requestId !== routeRequestId) return;
@@ -1526,6 +1526,27 @@
         }
       }
     );
+    try {
+      startDirectionsRequest();
+    } catch {
+      if (requestId !== routeRequestId) return;
+      clearDirectionsRequestTimeout();
+      routeRequestId++; // 部分的に開始された callback が後から届いても無効化
+      const previousNavBanner = routePreviousNavBanner;
+      routePreviousNavBanner = null;
+      navRerouting = false;
+      if (resumeFollowOnFailure) {
+        followMode = true;
+        const currentPosition = userMarker && userMarker.getPosition();
+        if (currentPosition) map.panTo(currentPosition);
+      }
+      showError(
+        "経路を開始できません",
+        "もう一度お試しください。続く場合は ↻ で再読み込みしてください。",
+        "directions"
+      );
+      setNavBanner(previousNavBanner);
+    }
   }
 
   function clearRoute() {
