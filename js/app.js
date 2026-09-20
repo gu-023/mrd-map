@@ -1488,7 +1488,12 @@
         const previousNavBanner = routePreviousNavBanner;
         routePreviousNavBanner = null;
         navRerouting = false;
-        if (status === "OK" && res.routes[0]) {
+        const route = status === "OK" && res && Array.isArray(res.routes)
+          ? res.routes[0]
+          : null;
+        const leg = route && Array.isArray(route.legs) ? route.legs[0] : null;
+        const routeSteps = leg && Array.isArray(leg.steps) ? leg.steps : null;
+        if (route && leg && routeSteps) {
           clearError("directions");
           travelMode = routeTravelMode;
           navDestination = routeDestination;
@@ -1500,7 +1505,7 @@
             polylineOptions: { strokeColor: "#4dd6a0", strokeOpacity: 0.9, strokeWeight: 6 },
           });
           directionsRenderer.setDirections(res);
-          navSteps = res.routes[0].legs[0].steps || [];
+          navSteps = routeSteps;
           navStepIdx = 0;
           navLastPosition = null;
           navLastPositionTimestamp = null;
@@ -1513,7 +1518,7 @@
           navStepProgressAccuracy = null;
           offRouteCount = 0;
           lastOffRouteEvidenceTimestamp = null;
-          navBounds = res.routes[0].bounds || null;
+          navBounds = route.bounds || null;
           if (isReroute && zoomedForTurn) {
             map.setZoom(routeTravelMode === "DRIVING" ? 17 : 18);
           }
@@ -1559,6 +1564,12 @@
               "経路を取得できません",
               "ステータス: <code>REQUEST_DENIED</code><br>" +
               "APIキーの「APIの制限」に <b>Directions API</b> を追加してください。",
+              "directions"
+            );
+          } else if (status === "OK") {
+            showError(
+              "経路を取得できません",
+              "経路データが不完全です。もう一度お試しください。",
               "directions"
             );
           } else {
