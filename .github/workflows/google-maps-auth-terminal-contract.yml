@@ -217,3 +217,180 @@ jobs:
 
           console.log("Google Maps auth terminal cleanup contract OK");
           NODE
+
+      - name: Reject stale GPS callbacks after terminal auth failure
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require("fs");
+          const vm = require("vm");
+
+          const source = fs.readFileSync("js/app.js", "utf8");
+          const geoHelperStart = source.indexOf(
+            "  function hasUnknownGeoWatchOwnership() {",
+          );
+          const geoHelperEnd = source.indexOf(
+            "\n\n  function armGeoWatchRecoveryTimer() {",
+            geoHelperStart,
+          );
+          const acquireStart = source.indexOf("  function acquireLocation() {");
+          const acquireEnd = source.indexOf(
+            "\n\n  function onWatchError(",
+            acquireStart,
+          );
+          const directionsCleanupStart = source.indexOf(
+            "  function clearDirectionsRequestTimeout() {",
+          );
+          const directionsCleanupEnd = source.indexOf(
+            "\n\n  function computeRoute(",
+            directionsCleanupStart,
+          );
+
+          if (
+            geoHelperStart < 0 ||
+            geoHelperEnd < 0 ||
+            acquireStart < 0 ||
+            acquireEnd < 0 ||
+            directionsCleanupStart < 0 ||
+            directionsCleanupEnd < 0
+          ) {
+            throw new Error("GPS/auth lifecycle functions could not be located");
+          }
+
+          const geoCleanupSource = source
+            .slice(geoHelperStart, geoHelperEnd)
+            .replace(/^  /gm, "");
+          const acquireSource = source
+            .slice(acquireStart, acquireEnd)
+            .replace(/^  /gm, "");
+          const directionsCleanupSource = source
+            .slice(directionsCleanupStart, directionsCleanupEnd)
+            .replace(/^  /gm, "");
+
+          let oneShotSuccess = null;
+          let oneShotError = null;
+          let watchSuccess = null;
+          let watchError = null;
+          const clearedWatches = [];
+          let positionCalls = 0;
+          let geoErrorCalls = 0;
+          let watchErrorCalls = 0;
+
+          const context = {
+            clearTimeout() {},
+            navigator: {
+              geolocation: {
+                getCurrentPosition(success, error) {
+                  oneShotSuccess = success;
+                  oneShotError = error;
+                },
+                watchPosition(success, error) {
+                  watchSuccess = success;
+                  watchError = error;
+                  return 17;
+                },
+                clearWatch(id) {
+                  clearedWatches.push(id);
+                },
+              },
+            },
+            els: {
+              searchQuery: {
+                blur() {},
+              },
+            },
+            disableCompass() {},
+            setGps() {},
+            showError() {},
+            onPosition() {
+              positionCalls += 1;
+              return true;
+            },
+            onGeoError() {
+              geoErrorCalls += 1;
+            },
+            onWatchError() {
+              watchErrorCalls += 1;
+            },
+          };
+          vm.createContext(context);
+
+          vm.runInContext(`
+            const LIVE_POSITION_MAX_AGE_MS = 30000;
+            let geoWatchId = null;
+            let lastPositionAccuracy = null;
+            let lastPositionTimestamp = null;
+            let gpsStatusText = "";
+            let acceptedGeoFixGeneration = 0;
+            let geoOneShotRequestId = 0;
+            let geoWatchGeneration = 0;
+            let geoWatchRecoveryTimer = null;
+            let routeRequestId = 0;
+            let routeRequestTimeoutId = null;
+            let routePreviousNavBanner = null;
+            let navRerouting = false;
+            let signalRequestId = 0;
+            let predictionRequestId = 0;
+            let placeDetailsRequestId = 0;
+            let predictionTimeoutId = null;
+            let placeDetailsTimeoutId = null;
+            let compositionRefreshTimeoutId = null;
+            let searchOpen = false;
+            let menuOpen = false;
+            let pickMode = false;
+            let panMode = false;
+
+            ${directionsCleanupSource}
+            ${geoCleanupSource}
+            ${acquireSource}
+
+            this.__acquireLocation = acquireLocation;
+            this.__runCleanup = stopRuntimeForGoogleMapsAuthFailure;
+            this.__snapshot = () => ({
+              geoWatchId,
+              geoOneShotRequestId,
+              geoWatchGeneration,
+            });
+          `, context);
+
+          context.__acquireLocation();
+          if (!oneShotSuccess || !oneShotError || !watchSuccess || !watchError) {
+            throw new Error("GPS callbacks were not captured from acquireLocation()");
+          }
+
+          const active = context.__snapshot();
+          if (
+            active.geoWatchId !== 17 ||
+            active.geoOneShotRequestId !== 1 ||
+            active.geoWatchGeneration !== 1
+          ) {
+            throw new Error(`unexpected active GPS ownership: ${JSON.stringify(active)}`);
+          }
+
+          context.__runCleanup();
+          const terminal = context.__snapshot();
+          if (
+            terminal.geoWatchId !== null ||
+            terminal.geoOneShotRequestId !== 2 ||
+            terminal.geoWatchGeneration !== 2
+          ) {
+            throw new Error(`terminal cleanup did not invalidate GPS callbacks: ${JSON.stringify(terminal)}`);
+          }
+          if (JSON.stringify(clearedWatches) !== JSON.stringify([17])) {
+            throw new Error("terminal cleanup did not clear the owned GPS watch exactly once");
+          }
+
+          oneShotSuccess({ coords: {} });
+          oneShotError({ code: 1 });
+          watchSuccess({ coords: {} });
+          watchError({ code: 1 });
+
+          if (positionCalls !== 0 || geoErrorCalls !== 0 || watchErrorCalls !== 0) {
+            throw new Error(
+              `stale GPS callback mutated runtime after auth failure: ` +
+              JSON.stringify({ positionCalls, geoErrorCalls, watchErrorCalls }),
+            );
+          }
+
+          console.log("Stale GPS callbacks are no-ops after Google Maps auth failure");
+          NODE
