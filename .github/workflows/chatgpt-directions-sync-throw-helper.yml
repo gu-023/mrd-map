@@ -34,31 +34,33 @@ jobs:
               text = text.replace(call_old, call_new, 1)
 
           tail_old = "    );\n  }\n\n  function clearRoute()"
-          recovery = '''    );
-    try {
-      startDirectionsRequest();
-    } catch {
-      if (requestId !== routeRequestId) return;
-      clearDirectionsRequestTimeout();
-      routeRequestId++; // 部分的に開始された callback が後から届いても無効化
-      const previousNavBanner = routePreviousNavBanner;
-      routePreviousNavBanner = null;
-      navRerouting = false;
-      if (resumeFollowOnFailure) {
-        followMode = true;
-        const currentPosition = userMarker && userMarker.getPosition();
-        if (currentPosition) map.panTo(currentPosition);
-      }
-      showError(
-        "経路を開始できません",
-        "もう一度お試しください。続く場合は ↻ で再読み込みしてください。",
-        "directions"
-      );
-      setNavBanner(previousNavBanner);
-    }
-  }
-
-  function clearRoute()'''
+          recovery = "\n".join([
+              "    );",
+              "    try {",
+              "      startDirectionsRequest();",
+              "    } catch {",
+              "      if (requestId !== routeRequestId) return;",
+              "      clearDirectionsRequestTimeout();",
+              "      routeRequestId++; // 部分的に開始された callback が後から届いても無効化",
+              "      const previousNavBanner = routePreviousNavBanner;",
+              "      routePreviousNavBanner = null;",
+              "      navRerouting = false;",
+              "      if (resumeFollowOnFailure) {",
+              "        followMode = true;",
+              "        const currentPosition = userMarker && userMarker.getPosition();",
+              "        if (currentPosition) map.panTo(currentPosition);",
+              "      }",
+              "      showError(",
+              "        \"経路を開始できません\",",
+              "        \"もう一度お試しください。続く場合は ↻ で再読み込みしてください。\",",
+              "        \"directions\"",
+              "      );",
+              "      setNavBanner(previousNavBanner);",
+              "    }",
+              "  }",
+              "",
+              "  function clearRoute()",
+          ])
           if '"経路を開始できません"' not in text:
               start = text.find("  function computeRoute(")
               if start < 0:
@@ -112,7 +114,7 @@ jobs:
               positions.append(pos)
           if positions != sorted(positions):
               raise SystemExit("sync-throw recovery ordering is unsafe")
-          if "computeRoute(" in recovery or "startDirectionsRequest();" in recovery[recovery.find("setNavBanner(previousNavBanner);") + 1:]:
+          if "computeRoute(" in recovery:
               raise SystemExit("sync-throw recovery must not auto-retry Directions")
           PY
 
