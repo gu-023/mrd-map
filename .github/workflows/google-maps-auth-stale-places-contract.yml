@@ -1,0 +1,356 @@
+name: Guard stale Places callbacks after Maps auth failure
+
+on:
+  pull_request:
+    paths:
+      - js/app.js
+      - .github/workflows/google-maps-auth-stale-places-contract.yml
+  push:
+    branches: [main]
+    paths:
+      - js/app.js
+      - .github/workflows/google-maps-auth-stale-places-contract.yml
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Reject stale Places callbacks after terminal auth failure
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require("fs");
+          const vm = require("vm");
+
+          const source = fs.readFileSync("js/app.js", "utf8");
+          const geoHelperStart = source.indexOf(
+            "  function hasUnknownGeoWatchOwnership() {",
+          );
+          const geoHelperEnd = source.indexOf(
+            "\n\n  function armGeoWatchRecoveryTimer() {",
+            geoHelperStart,
+          );
+          const directionsCleanupStart = source.indexOf(
+            "  function clearDirectionsRequestTimeout() {",
+          );
+          const directionsCleanupEnd = source.indexOf(
+            "\n\n  function computeRoute(",
+            directionsCleanupStart,
+          );
+          const placesStart = source.indexOf("  function placesErrorDetail(status) {");
+          const placesEnd = source.indexOf(
+            "\n\n  // 検索画面のキー操作",
+            placesStart,
+          );
+
+          if (
+            geoHelperStart < 0 ||
+            geoHelperEnd < 0 ||
+            directionsCleanupStart < 0 ||
+            directionsCleanupEnd < 0 ||
+            placesStart < 0 ||
+            placesEnd < 0
+          ) {
+            throw new Error("Places/auth lifecycle functions could not be located");
+          }
+
+          const geoCleanupSource = source
+            .slice(geoHelperStart, geoHelperEnd)
+            .replace(/^  /gm, "");
+          const directionsCleanupSource = source
+            .slice(directionsCleanupStart, directionsCleanupEnd)
+            .replace(/^  /gm, "");
+          const placesSource = source
+            .slice(placesStart, placesEnd)
+            .replace(/^  /gm, "");
+
+          function pendingPromise() {
+            let resolve;
+            let reject;
+            const promise = new Promise((res, rej) => {
+              resolve = res;
+              reject = rej;
+            });
+            return { promise, resolve, reject };
+          }
+
+          function createHarness() {
+            const predictionPending = pendingPromise();
+            const detailsPending = pendingPromise();
+            const calls = {
+              showError: 0,
+              clearError: 0,
+              renderSearch: 0,
+              closeSearch: 0,
+              openSearchTravelMenu: 0,
+              blur: 0,
+              disableCompass: 0,
+              clearTimeout: [],
+            };
+            let nextTimerId = 1;
+
+            const context = {
+              __placesSearchApi: {
+                getPredictions() {
+                  return predictionPending.promise;
+                },
+                getLocation() {
+                  return detailsPending.promise;
+                },
+              },
+              setTimeout() {
+                return `timer-${nextTimerId++}`;
+              },
+              clearTimeout(id) {
+                calls.clearTimeout.push(id);
+              },
+              navigator: {
+                geolocation: {
+                  clearWatch() {
+                    throw new Error("unexpected clearWatch for null ownership");
+                  },
+                },
+              },
+              els: {
+                searchQuery: {
+                  blur() {
+                    calls.blur += 1;
+                  },
+                },
+              },
+              disableCompass() {
+                calls.disableCompass += 1;
+              },
+              locationLiteral() {
+                return null;
+              },
+              escapeHtml(value) {
+                return String(value);
+              },
+              showError() {
+                calls.showError += 1;
+              },
+              clearError() {
+                calls.clearError += 1;
+              },
+              renderSearch() {
+                calls.renderSearch += 1;
+              },
+              closeSearch() {
+                calls.closeSearch += 1;
+              },
+              openSearchTravelMenu() {
+                calls.openSearchTravelMenu += 1;
+              },
+            };
+            vm.createContext(context);
+
+            vm.runInContext(`
+              const PLACES_REQUEST_TIMEOUT_MS = 10000;
+              let geoWatchId = null;
+              let geoWatchRecoveryTimer = null;
+              let geoOneShotRequestId = 0;
+              let geoWatchGeneration = 0;
+              let routeRequestId = 0;
+              let routeRequestTimeoutId = null;
+              let routePreviousNavBanner = null;
+              let navRerouting = false;
+              let signalRequestId = 0;
+              let predictionRequestId = 0;
+              let placeDetailsRequestId = 0;
+              let predictionTimeoutId = null;
+              let placeDetailsTimeoutId = null;
+              let compositionRefreshTimeoutId = null;
+              let searchOpen = true;
+              let menuOpen = true;
+              let pickMode = true;
+              let panMode = true;
+              let searchQuery = "東京";
+              let searchPredictions = [];
+              let searchLoading = false;
+              let searchEmpty = false;
+              let placeDetailsLoading = false;
+              let searchZone = "input";
+              let predIdx = 0;
+              let predictionBackZone = "input";
+              let searchReturnPrediction = null;
+              let userMarker = null;
+              let placesSearchApi = this.__placesSearchApi;
+
+              ${directionsCleanupSource}
+              ${geoCleanupSource}
+              ${placesSource}
+
+              this.__refreshPredictions = refreshPredictions;
+              this.__selectPrediction = selectPrediction;
+              this.__runCleanup = stopRuntimeForGoogleMapsAuthFailure;
+              this.__snapshot = () => ({
+                predictionRequestId,
+                placeDetailsRequestId,
+                predictionTimeoutId,
+                placeDetailsTimeoutId,
+                compositionRefreshTimeoutId,
+                searchOpen,
+                menuOpen,
+                pickMode,
+                panMode,
+                searchQuery,
+                searchPredictions: searchPredictions.map((prediction) => ({ ...prediction })),
+                searchLoading,
+                searchEmpty,
+                placeDetailsLoading,
+                searchZone,
+                predIdx,
+                predictionBackZone,
+                searchReturnPrediction: searchReturnPrediction
+                  ? { ...searchReturnPrediction }
+                  : null,
+              });
+            `, context);
+
+            return { context, predictionPending, detailsPending, calls };
+          }
+
+          function callSnapshot(calls) {
+            return {
+              showError: calls.showError,
+              clearError: calls.clearError,
+              renderSearch: calls.renderSearch,
+              closeSearch: calls.closeSearch,
+              openSearchTravelMenu: calls.openSearchTravelMenu,
+              blur: calls.blur,
+              disableCompass: calls.disableCompass,
+              clearTimeout: [...calls.clearTimeout],
+            };
+          }
+
+          function assertUnchanged(label, before, after) {
+            if (JSON.stringify(before) !== JSON.stringify(after)) {
+              throw new Error(
+                `${label} changed after stale callback: ` +
+                `${JSON.stringify(before)} -> ${JSON.stringify(after)}`,
+              );
+            }
+          }
+
+          async function settleMicrotasks() {
+            await Promise.resolve();
+            await new Promise((resolve) => setImmediate(resolve));
+          }
+
+          async function runPredictionScenario(reject) {
+            const harness = createHarness();
+            const { context, predictionPending, calls } = harness;
+            context.__refreshPredictions();
+            const active = context.__snapshot();
+            if (
+              active.predictionRequestId !== 1 ||
+              active.predictionTimeoutId === null ||
+              active.searchLoading !== true ||
+              active.searchOpen !== true
+            ) {
+              throw new Error(`prediction request was not active: ${JSON.stringify(active)}`);
+            }
+
+            context.__runCleanup();
+            const terminal = context.__snapshot();
+            if (
+              terminal.predictionRequestId !== 2 ||
+              terminal.predictionTimeoutId !== null ||
+              terminal.searchOpen !== false ||
+              terminal.menuOpen !== false ||
+              terminal.pickMode !== false ||
+              terminal.panMode !== false
+            ) {
+              throw new Error(`prediction cleanup was incomplete: ${JSON.stringify(terminal)}`);
+            }
+            const terminalCalls = callSnapshot(calls);
+
+            if (reject) {
+              predictionPending.reject(new Error("late prediction failure"));
+            } else {
+              predictionPending.resolve({
+                predictions: [{ id: "late", label: "Late result" }],
+                status: { kind: "ok", code: "OK" },
+              });
+            }
+            await settleMicrotasks();
+
+            assertUnchanged(
+              `stale prediction ${reject ? "rejection" : "success"} state`,
+              terminal,
+              context.__snapshot(),
+            );
+            assertUnchanged(
+              `stale prediction ${reject ? "rejection" : "success"} side effects`,
+              terminalCalls,
+              callSnapshot(calls),
+            );
+          }
+
+          async function runDetailsScenario(reject) {
+            const harness = createHarness();
+            const { context, detailsPending, calls } = harness;
+            context.__selectPrediction({ id: "place-1", label: "Place 1" });
+            const active = context.__snapshot();
+            if (
+              active.placeDetailsRequestId !== 1 ||
+              active.placeDetailsTimeoutId === null ||
+              active.placeDetailsLoading !== true ||
+              active.searchOpen !== true
+            ) {
+              throw new Error(`place-details request was not active: ${JSON.stringify(active)}`);
+            }
+
+            context.__runCleanup();
+            const terminal = context.__snapshot();
+            if (
+              terminal.placeDetailsRequestId !== 2 ||
+              terminal.placeDetailsTimeoutId !== null ||
+              terminal.searchOpen !== false ||
+              terminal.menuOpen !== false ||
+              terminal.pickMode !== false ||
+              terminal.panMode !== false
+            ) {
+              throw new Error(`place-details cleanup was incomplete: ${JSON.stringify(terminal)}`);
+            }
+            const terminalCalls = callSnapshot(calls);
+
+            if (reject) {
+              detailsPending.reject(new Error("late details failure"));
+            } else {
+              detailsPending.resolve({
+                location: { lat: 35.681236, lng: 139.767125 },
+                status: { kind: "ok", code: "OK" },
+              });
+            }
+            await settleMicrotasks();
+
+            assertUnchanged(
+              `stale place-details ${reject ? "rejection" : "success"} state`,
+              terminal,
+              context.__snapshot(),
+            );
+            assertUnchanged(
+              `stale place-details ${reject ? "rejection" : "success"} side effects`,
+              terminalCalls,
+              callSnapshot(calls),
+            );
+          }
+
+          (async () => {
+            await runPredictionScenario(false);
+            await runPredictionScenario(true);
+            await runDetailsScenario(false);
+            await runDetailsScenario(true);
+            console.log("Stale Places callbacks are no-ops after Google Maps auth failure");
+          })().catch((error) => {
+            console.error(error);
+            process.exitCode = 1;
+          });
+          NODE
