@@ -1,0 +1,317 @@
+name: Guard stale compass permission after Maps auth failure
+
+on:
+  pull_request:
+    paths:
+      - js/app.js
+      - .github/workflows/google-maps-auth-stale-compass-contract.yml
+  push:
+    branches: [main]
+    paths:
+      - js/app.js
+      - .github/workflows/google-maps-auth-stale-compass-contract.yml
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Reject stale compass permission completion after terminal auth failure
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require("fs");
+          const vm = require("vm");
+
+          const source = fs.readFileSync("js/app.js", "utf8");
+          const enableStart = source.indexOf("  function enableCompass() {");
+          const enableEnd = source.indexOf(
+            "\n\n  function clearCompassPermissionWatchdog() {",
+            enableStart,
+          );
+          const permissionHelperStart = source.indexOf(
+            "  function clearCompassPermissionWatchdog() {",
+          );
+          const permissionHelperEnd = source.indexOf(
+            "\n\n  function armCompassFirstReadingWatchdog() {",
+            permissionHelperStart,
+          );
+          const disableStart = source.indexOf("  function disableCompass() {");
+          const disableEnd = source.indexOf(
+            "\n\n  function headingFromEvent(",
+            disableStart,
+          );
+          const geoHelperStart = source.indexOf(
+            "  function hasUnknownGeoWatchOwnership() {",
+          );
+          const geoHelperEnd = source.indexOf(
+            "\n\n  function armGeoWatchRecoveryTimer() {",
+            geoHelperStart,
+          );
+          const directionsCleanupStart = source.indexOf(
+            "  function clearDirectionsRequestTimeout() {",
+          );
+          const directionsCleanupEnd = source.indexOf(
+            "\n\n  function computeRoute(",
+            directionsCleanupStart,
+          );
+
+          if (
+            enableStart < 0 ||
+            enableEnd < 0 ||
+            permissionHelperStart < 0 ||
+            permissionHelperEnd < 0 ||
+            disableStart < 0 ||
+            disableEnd < 0 ||
+            geoHelperStart < 0 ||
+            geoHelperEnd < 0 ||
+            directionsCleanupStart < 0 ||
+            directionsCleanupEnd < 0
+          ) {
+            throw new Error("compass/auth lifecycle functions could not be located");
+          }
+
+          const enableSource = source.slice(enableStart, enableEnd).replace(/^  /gm, "");
+          const permissionHelperSource = source
+            .slice(permissionHelperStart, permissionHelperEnd)
+            .replace(/^  /gm, "");
+          const disableSource = source.slice(disableStart, disableEnd).replace(/^  /gm, "");
+          const geoCleanupSource = source
+            .slice(geoHelperStart, geoHelperEnd)
+            .replace(/^  /gm, "");
+          const directionsCleanupSource = source
+            .slice(directionsCleanupStart, directionsCleanupEnd)
+            .replace(/^  /gm, "");
+
+          function runScenario(settle) {
+            let permissionResolve = null;
+            let permissionReject = null;
+            let addListenerCalls = 0;
+            let removeListenerCalls = 0;
+            let headingHideCalls = 0;
+            let headingShowCalls = 0;
+            let clearErrorCalls = 0;
+            let showErrorCalls = 0;
+            let blurCalls = 0;
+            let firstReadingWatchdogCalls = 0;
+            const clearedTimeouts = [];
+
+            const context = {
+              clearTimeout(id) {
+                clearedTimeouts.push(id);
+              },
+              setTimeout() {
+                return "compass-permission";
+              },
+              cancelAnimationFrame() {},
+              document: {
+                visibilityState: "visible",
+              },
+              navigator: {
+                geolocation: {
+                  clearWatch() {},
+                },
+              },
+              window: {
+                DeviceOrientationEvent: {
+                  requestPermission() {
+                    return {
+                      then(onFulfilled) {
+                        permissionResolve = onFulfilled;
+                        return {
+                          catch(onRejected) {
+                            permissionReject = onRejected;
+                          },
+                        };
+                      },
+                    };
+                  },
+                },
+                addEventListener() {
+                  addListenerCalls += 1;
+                },
+                removeEventListener() {
+                  removeListenerCalls += 1;
+                },
+              },
+              els: {
+                searchQuery: {
+                  blur() {
+                    blurCalls += 1;
+                  },
+                },
+                headingArrow: {
+                  classList: {
+                    add() {
+                      headingHideCalls += 1;
+                    },
+                    remove() {
+                      headingShowCalls += 1;
+                    },
+                  },
+                },
+                canvas: {
+                  style: {
+                    transform: "initial",
+                  },
+                },
+                gpsText: {
+                  textContent: "",
+                },
+              },
+              clearError() {
+                clearErrorCalls += 1;
+              },
+              showError() {
+                showErrorCalls += 1;
+              },
+              armCompassFirstReadingWatchdog() {
+                firstReadingWatchdogCalls += 1;
+              },
+              onOrient() {},
+            };
+            vm.createContext(context);
+
+            vm.runInContext(`
+              const COMPASS_PERMISSION_PENDING_TIMEOUT_MS = 15000;
+              let compassPermissionRequestId = 0;
+              let compassPermissionPending = false;
+              let compassPermissionTimer = null;
+              let compassFirstReadingTimer = null;
+              let compassStreamSilenceTimer = null;
+              let lastCompassStreamActivityAt = null;
+              let compassRenderFrame = null;
+              let compassOn = false;
+              let curHeading = 0;
+              let headingInitialized = false;
+              let lastCompassHeadingAt = null;
+              let lastAbsoluteOrientationAt = null;
+              let gpsStatusText = "GPS";
+
+              let geoWatchId = null;
+              let geoWatchRecoveryTimer = null;
+              let geoOneShotRequestId = 0;
+              let geoWatchGeneration = 0;
+              let routeRequestId = 0;
+              let routeRequestTimeoutId = null;
+              let routePreviousNavBanner = null;
+              let navRerouting = false;
+              let signalRequestId = 0;
+              let predictionRequestId = 0;
+              let placeDetailsRequestId = 0;
+              let predictionTimeoutId = null;
+              let placeDetailsTimeoutId = null;
+              let compositionRefreshTimeoutId = null;
+              let searchOpen = false;
+              let menuOpen = false;
+              let pickMode = false;
+              let panMode = false;
+
+              ${enableSource}
+              ${permissionHelperSource}
+              ${disableSource}
+              ${directionsCleanupSource}
+              ${geoCleanupSource}
+
+              this.__enableCompass = enableCompass;
+              this.__runCleanup = stopRuntimeForGoogleMapsAuthFailure;
+              this.__snapshot = () => ({
+                compassPermissionRequestId,
+                compassPermissionPending,
+                compassPermissionTimer,
+                compassOn,
+                curHeading,
+                headingInitialized,
+                lastCompassHeadingAt,
+                lastAbsoluteOrientationAt,
+              });
+            `, context);
+
+            context.__enableCompass();
+            if (!permissionResolve || !permissionReject) {
+              throw new Error("compass permission callbacks were not captured");
+            }
+
+            const pending = context.__snapshot();
+            if (
+              pending.compassPermissionRequestId !== 1 ||
+              !pending.compassPermissionPending ||
+              pending.compassPermissionTimer !== "compass-permission" ||
+              pending.compassOn
+            ) {
+              throw new Error(`unexpected pending compass state: ${JSON.stringify(pending)}`);
+            }
+            if (clearErrorCalls !== 1 || addListenerCalls !== 0 || showErrorCalls !== 0) {
+              throw new Error("compass permission request started with unexpected side effects");
+            }
+
+            context.__runCleanup();
+            const terminal = context.__snapshot();
+            if (
+              terminal.compassPermissionRequestId !== 2 ||
+              terminal.compassPermissionPending ||
+              terminal.compassPermissionTimer !== null ||
+              terminal.compassOn ||
+              terminal.headingInitialized ||
+              terminal.curHeading !== 0 ||
+              terminal.lastCompassHeadingAt !== null ||
+              terminal.lastAbsoluteOrientationAt !== null
+            ) {
+              throw new Error(`terminal cleanup left compass state active: ${JSON.stringify(terminal)}`);
+            }
+            if (JSON.stringify(clearedTimeouts) !== JSON.stringify(["compass-permission"])) {
+              throw new Error(`pending compass timer was not released: ${JSON.stringify(clearedTimeouts)}`);
+            }
+            if (
+              blurCalls !== 1 ||
+              removeListenerCalls !== 2 ||
+              headingHideCalls !== 1 ||
+              headingShowCalls !== 0 ||
+              firstReadingWatchdogCalls !== 0
+            ) {
+              throw new Error("terminal compass cleanup produced unexpected lifecycle side effects");
+            }
+
+            const beforeLateCompletion = {
+              state: context.__snapshot(),
+              addListenerCalls,
+              removeListenerCalls,
+              headingHideCalls,
+              headingShowCalls,
+              clearErrorCalls,
+              showErrorCalls,
+              firstReadingWatchdogCalls,
+              clearedTimeouts: [...clearedTimeouts],
+            };
+
+            if (settle === "resolve") permissionResolve("granted");
+            else permissionReject(new Error("late permission rejection"));
+
+            const afterLateCompletion = {
+              state: context.__snapshot(),
+              addListenerCalls,
+              removeListenerCalls,
+              headingHideCalls,
+              headingShowCalls,
+              clearErrorCalls,
+              showErrorCalls,
+              firstReadingWatchdogCalls,
+              clearedTimeouts: [...clearedTimeouts],
+            };
+            if (JSON.stringify(afterLateCompletion) !== JSON.stringify(beforeLateCompletion)) {
+              throw new Error(
+                `stale compass permission ${settle} mutated terminal state: ` +
+                JSON.stringify({ beforeLateCompletion, afterLateCompletion }),
+              );
+            }
+          }
+
+          runScenario("resolve");
+          runScenario("reject");
+
+          console.log("Stale compass permission completion is a no-op after Google Maps auth failure");
+          NODE
