@@ -1493,7 +1493,15 @@
           : null;
         const leg = route && Array.isArray(route.legs) ? route.legs[0] : null;
         const routeSteps = leg && Array.isArray(leg.steps) ? leg.steps : null;
-        if (route && leg && routeSteps && routeSteps.length > 0) {
+        const routeStepsHaveUsableGeometry = routeSteps && routeSteps.length > 0 && routeSteps.every((step) => {
+          if (!step) return false;
+          const path = Array.isArray(step.path) ? step.path : [];
+          if (path.length) {
+            return path.length >= 2 && path.every((point) => Boolean(locationLiteral(point)));
+          }
+          return Boolean(locationLiteral(step.start_location) && locationLiteral(step.end_location));
+        });
+        if (route && leg && routeStepsHaveUsableGeometry) {
           clearError("directions");
           travelMode = routeTravelMode;
           navDestination = routeDestination;
