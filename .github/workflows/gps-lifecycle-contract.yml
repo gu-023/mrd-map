@@ -162,12 +162,13 @@ jobs:
           if stale_error_guard_pos < 0 or stale_error_report_pos < 0 or stale_error_guard_pos > stale_error_report_pos:
               raise SystemExit("Delayed one-shot errors must be rejected after a newer request or accepted GPS fix")
 
-          rejected_fix_start = acquire_body.find('if (!onPosition(pos) &&', one_shot_pos)
-          rejected_fix_guard = acquire_body.find('requestId === geoOneShotRequestId &&', rejected_fix_start)
-          rejected_fix_generation = acquire_body.find('acceptedGeoFixGeneration === fixGeneration', rejected_fix_guard)
+          stale_success_guard = 'if (!requestValid || requestId !== geoOneShotRequestId) return;'
+          stale_success_guard_pos = acquire_body.find(stale_success_guard, one_shot_pos)
+          rejected_fix_start = acquire_body.find('if (!onPosition(pos) &&', stale_success_guard_pos)
+          rejected_fix_generation = acquire_body.find('acceptedGeoFixGeneration === fixGeneration', rejected_fix_start)
           rejected_fix_error = acquire_body.find('onGeoError({ code: 2 });', rejected_fix_generation)
-          if min(rejected_fix_start, rejected_fix_guard, rejected_fix_generation, rejected_fix_error) < 0 or not rejected_fix_start < rejected_fix_guard < rejected_fix_generation < rejected_fix_error:
-              raise SystemExit("Rejected one-shot fixes must not report an error after a newer request or accepted GPS fix")
+          if min(stale_success_guard_pos, rejected_fix_start, rejected_fix_generation, rejected_fix_error) < 0 or not stale_success_guard_pos < rejected_fix_start < rejected_fix_generation < rejected_fix_error:
+              raise SystemExit("Delayed one-shot successes must be rejected before mutating position, and rejected current fixes must not report after an accepted GPS fix")
 
           request_valid_pos = acquire_body.find('let requestValid = true;', fix_snapshot_pos)
           one_shot_catch = acquire_body.find('} catch (_) {', one_shot_pos)
