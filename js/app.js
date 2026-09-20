@@ -122,6 +122,7 @@
 
   /* ---------- 起動時チェック ---------- */
   let errorSource = null;
+  let googleMapsAuthFailed = false;
   const GOOGLE_MAPS_AUTH_ERROR_SOURCE = "google-maps-auth";
 
   function showError(titleHtml, bodyHtml, source = null) {
@@ -149,13 +150,15 @@
   // Google Maps の認証/認可エラー（キー・リファラー・API未有効化・課金）はここに来る。
   // 具体的な MapError コードはコンソールに出るが、実機向けに画面でも案内する。
   window.gm_authFailure = function () {
+    googleMapsAuthFailed = true;
+    stopRuntimeForGoogleMapsAuthFailure();
     showError(
       "Google Maps 認証エラー",
       "次のいずれかが原因です：<br>" +
       "・Maps JavaScript API が未有効化<br>" +
       "・リファラー制限の不一致<br>" +
       "・課金(Billing)未設定<br>" +
-      "PCのChromeコンソールで <code>◯◯MapError</code> を確認してください。",
+      "PCのChromeコンソールで <code>◯◯MapError</code> を確認してください。<br><br>決定で再読み込みできます。",
       GOOGLE_MAPS_AUTH_ERROR_SOURCE
     );
   };
@@ -215,6 +218,7 @@
   ];
 
   function initMap() {
+    if (googleMapsAuthFailed) return;
     map = new google.maps.Map(els.canvas, {
       center: cfg.DEFAULT_CENTER || { lat: 35.681236, lng: 139.767125 },
       zoom: cfg.DEFAULT_ZOOM || 16,
@@ -287,6 +291,35 @@
     if (geoWatchRecoveryTimer === null) return;
     clearTimeout(geoWatchRecoveryTimer);
     geoWatchRecoveryTimer = null;
+  }
+
+  function stopRuntimeForGoogleMapsAuthFailure() {
+    geoOneShotRequestId += 1;
+    clearGeoWatchRecoveryTimer();
+    geoWatchGeneration += 1;
+    if (geoWatchId !== null && !hasUnknownGeoWatchOwnership()) {
+      try { navigator.geolocation.clearWatch(geoWatchId); } catch (_) {}
+    }
+    geoWatchId = null;
+    routeRequestId += 1;
+    clearDirectionsRequestTimeout();
+    routePreviousNavBanner = null;
+    navRerouting = false;
+    signalRequestId += 1;
+    predictionRequestId += 1;
+    placeDetailsRequestId += 1;
+    if (predictionTimeoutId !== null) clearTimeout(predictionTimeoutId);
+    if (placeDetailsTimeoutId !== null) clearTimeout(placeDetailsTimeoutId);
+    if (compositionRefreshTimeoutId !== null) clearTimeout(compositionRefreshTimeoutId);
+    predictionTimeoutId = null;
+    placeDetailsTimeoutId = null;
+    compositionRefreshTimeoutId = null;
+    searchOpen = false;
+    menuOpen = false;
+    pickMode = false;
+    panMode = false;
+    els.searchQuery.blur();
+    disableCompass();
   }
 
   function armGeoWatchRecoveryTimer() {
@@ -362,9 +395,8 @@
     try {
       navigator.geolocation.getCurrentPosition(
         (pos) => {
-          if (!requestValid) return;
+          if (!requestValid || requestId !== geoOneShotRequestId) return;
           if (!onPosition(pos) &&
-              requestId === geoOneShotRequestId &&
               acceptedGeoFixGeneration === fixGeneration) {
             onGeoError({ code: 2 });
           }
@@ -2151,6 +2183,7 @@
   /* ---------- アクション ---------- */
   function doAction(action) {
     if (action === "retry") { location.reload(); return; } // 地図未初期化でも効くよう先頭で処理
+    if (googleMapsAuthFailed) return;
     if (!map) return;
     switch (action) {
       case "zoom-in":
@@ -2226,6 +2259,14 @@
   const PAN_STEP = 80; // px
 
   document.addEventListener("keydown", (e) => {
+    if (googleMapsAuthFailed) {
+      if (e.key === "Enter" || e.key === " ") location.reload();
+      if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "].indexOf(e.key) >= 0) {
+        e.preventDefault();
+      }
+      return;
+    }
+
     // 検索画面: キーボード/候補を操作
     if (searchOpen) {
       if (e.isComposing || e.keyCode === 229) return;
