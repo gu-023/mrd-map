@@ -1,0 +1,307 @@
+name: Accept mixed Directions step geometry
+
+on:
+  pull_request:
+    paths:
+      - js/app.js
+      - .github/workflows/directions-mixed-geometry-contract.yml
+  push:
+    branches: [main]
+    paths:
+      - js/app.js
+      - .github/workflows/directions-mixed-geometry-contract.yml
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Accept mixed path and fallback geometry
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require("fs");
+          const vm = require("vm");
+
+          const source = fs.readFileSync("js/app.js", "utf8");
+          const literalStart = source.indexOf("  function locationLiteral(location) {");
+          const literalEnd = source.indexOf("\n\n  function ", literalStart + 1);
+          const timeoutStart = source.indexOf("  function clearDirectionsRequestTimeout() {");
+          const computeStart = source.indexOf("  function computeRoute(", timeoutStart);
+          const computeEnd = source.indexOf("\n\n  function clearRoute() {", computeStart);
+
+          if (
+            literalStart < 0 || literalEnd < 0 ||
+            timeoutStart < 0 || computeStart < 0 || computeEnd < 0
+          ) {
+            throw new Error("Directions mixed-geometry runtime functions could not be located");
+          }
+
+          const locationLiteralSource = source
+            .slice(literalStart, literalEnd)
+            .replace(/^  /gm, "");
+          const timeoutSource = source
+            .slice(timeoutStart, computeStart)
+            .replace(/^  /gm, "");
+          const computeRouteSource = source
+            .slice(computeStart, computeEnd)
+            .replace(/^  /gm, "");
+
+          let routeCallback = null;
+          let routeRequest = null;
+          let directionsResponse = null;
+          const clearedTimeouts = [];
+          const observed = {
+            errors: [],
+            banners: [],
+            clearError: [],
+            renderer: 0,
+            setDirections: 0,
+            clearRoute: 0,
+            panTo: 0,
+            setZoom: 0,
+            saveRecent: 0,
+            clearSignals: 0,
+            fetchSignals: 0,
+            updateNav: [],
+          };
+          const watchdog = "mixed-geometry-watchdog";
+          const origin = {
+            lat() { return 35.681236; },
+            lng() { return 139.767125; },
+          };
+
+          const context = {
+            Date,
+            setTimeout() {
+              return watchdog;
+            },
+            clearTimeout(id) {
+              clearedTimeouts.push(id);
+            },
+            els: {
+              navBanner: {
+                innerHTML: "",
+                classList: {
+                  contains() { return true; },
+                },
+              },
+            },
+            clearError(owner) {
+              observed.clearError.push(owner);
+            },
+            showError(title, body, owner) {
+              observed.errors.push([title, body, owner]);
+            },
+            setNavBanner(html) {
+              observed.banners.push(html);
+            },
+            userMarker: {
+              getPosition() {
+                return origin;
+              },
+            },
+            directionsService: {
+              route(request, callback) {
+                routeRequest = request;
+                routeCallback = callback;
+              },
+            },
+            google: {
+              maps: {
+                LatLng: class {
+                  constructor(lat, lng) {
+                    this._lat = lat;
+                    this._lng = lng;
+                  }
+                  lat() { return this._lat; }
+                  lng() { return this._lng; }
+                },
+                TravelMode: {
+                  WALKING: "WALKING",
+                },
+                DirectionsRenderer: class {
+                  constructor() {
+                    observed.renderer += 1;
+                  }
+                  setDirections(response) {
+                    observed.setDirections += 1;
+                    directionsResponse = response;
+                  }
+                },
+              },
+            },
+            map: {
+              panTo() { observed.panTo += 1; },
+              setZoom() { observed.setZoom += 1; },
+            },
+            clearRoute() { observed.clearRoute += 1; },
+            saveRecent() { observed.saveRecent += 1; },
+            clearSignals() { observed.clearSignals += 1; },
+            fetchSignals() { observed.fetchSignals += 1; },
+            meters() { return 0; },
+            updateNav(position, confirmOffRouteImmediately) {
+              observed.updateNav.push([position, confirmOffRouteImmediately]);
+            },
+          };
+          vm.createContext(context);
+
+          vm.runInContext(`
+            const ROUTE_ORIGIN_MAX_AGE_MS = 30000;
+            const DIRECTIONS_REQUEST_TIMEOUT_MS = 20000;
+            let lastPositionTimestamp = Date.now();
+            let lastPositionAccuracy = 5;
+            let followMode = true;
+            let navMode = false;
+            let navArrived = false;
+            let navSteps = [];
+            let navStepIdx = 0;
+            let navLastPosition = null;
+            let navLastPositionTimestamp = null;
+            let navLastPositionAccuracy = null;
+            let navStepProgressIdx = -1;
+            let navStepProgressSegment = 0;
+            let navStepProgressT = 0;
+            let navStepProgressRemaining = null;
+            let navStepProgressPosition = null;
+            let navStepProgressAccuracy = null;
+            let navDestination = null;
+            let navFullPath = [];
+            let offRouteCount = 0;
+            let lastOffRouteEvidenceTimestamp = null;
+            let navRerouting = false;
+            let routeRequestId = 0;
+            let routeRequestTimeoutId = null;
+            let routePreviousNavBanner = null;
+            let navBounds = null;
+            let zoomedForTurn = false;
+            let signalRequestId = 0;
+            let signalData = [];
+            let signalsOn = false;
+            let travelMode = "WALKING";
+            let directionsRenderer = null;
+
+            ${locationLiteralSource}
+            ${timeoutSource}
+            ${computeRouteSource}
+
+            this.__computeRoute = computeRoute;
+            this.__snapshot = () => ({
+              routeRequestId,
+              routeRequestTimeoutId,
+              routePreviousNavBanner,
+              navRerouting,
+              navMode,
+              navDestination: locationLiteral(navDestination),
+              navStepsLength: navSteps.length,
+              navFullPath: navFullPath.map((point) => locationLiteral(point)),
+              signalRequestId,
+              directionsRendererPresent: directionsRenderer !== null,
+              travelMode,
+            });
+          `, context);
+
+          const destination = { lat: 35.6895, lng: 139.6917 };
+          context.__computeRoute(destination, false, undefined, undefined, false);
+
+          if (!routeCallback || !routeRequest) {
+            throw new Error("Directions request/callback was not captured");
+          }
+          if (
+            routeRequest.travelMode !== "WALKING" ||
+            routeRequest.destination.lat() !== destination.lat ||
+            routeRequest.destination.lng() !== destination.lng
+          ) {
+            throw new Error(`Unexpected Directions request ${JSON.stringify(routeRequest)}`);
+          }
+
+          const active = context.__snapshot();
+          if (
+            active.routeRequestId !== 1 ||
+            active.routeRequestTimeoutId !== watchdog ||
+            active.navRerouting !== true ||
+            active.navMode !== false
+          ) {
+            throw new Error(`Unexpected active request state ${JSON.stringify(active)}`);
+          }
+
+          const pointA = new context.google.maps.LatLng(35.681236, 139.767125);
+          const pointB = new context.google.maps.LatLng(35.6816, 139.7675);
+          const pointC = new context.google.maps.LatLng(35.682, 139.768);
+          const fallbackStart = new context.google.maps.LatLng(35.6824, 139.7685);
+          const fallbackEnd = new context.google.maps.LatLng(35.6828, 139.769);
+          const pointF = new context.google.maps.LatLng(35.6832, 139.7695);
+          const pointG = new context.google.maps.LatLng(35.6836, 139.77);
+          const response = {
+            routes: [{
+              legs: [{
+                steps: [
+                  { path: [pointA, pointB, pointC] },
+                  { start_location: fallbackStart, end_location: fallbackEnd },
+                  { path: [pointF, pointG] },
+                ],
+              }],
+              bounds: null,
+            }],
+          };
+
+          routeCallback(response, "OK");
+
+          const settled = context.__snapshot();
+          const expectedPath = [
+            pointA,
+            pointB,
+            pointC,
+            fallbackStart,
+            fallbackEnd,
+            pointF,
+            pointG,
+          ].map((point) => ({ lat: point.lat(), lng: point.lng() }));
+          if (
+            settled.routeRequestId !== 1 ||
+            settled.routeRequestTimeoutId !== null ||
+            settled.routePreviousNavBanner !== null ||
+            settled.navRerouting !== false ||
+            settled.navMode !== true ||
+            settled.navStepsLength !== 3 ||
+            JSON.stringify(settled.navFullPath) !== JSON.stringify(expectedPath) ||
+            settled.signalRequestId !== 1 ||
+            settled.directionsRendererPresent !== true ||
+            settled.travelMode !== "WALKING" ||
+            !settled.navDestination ||
+            settled.navDestination.lat !== destination.lat ||
+            settled.navDestination.lng !== destination.lng
+          ) {
+            throw new Error(`Mixed step geometry did not activate navigation ${JSON.stringify(settled)}`);
+          }
+
+          if (JSON.stringify(clearedTimeouts) !== JSON.stringify([watchdog])) {
+            throw new Error(`Directions watchdog was not released exactly once ${JSON.stringify(clearedTimeouts)}`);
+          }
+          if (observed.errors.length !== 0) {
+            throw new Error(`Valid mixed geometry showed an error ${JSON.stringify(observed.errors)}`);
+          }
+          if (
+            observed.renderer !== 1 ||
+            observed.setDirections !== 1 ||
+            directionsResponse !== response ||
+            observed.clearRoute !== 1 ||
+            observed.panTo !== 1 ||
+            observed.setZoom !== 1 ||
+            observed.saveRecent !== 1 ||
+            observed.clearSignals !== 1 ||
+            observed.fetchSignals !== 0 ||
+            observed.updateNav.length !== 1 ||
+            observed.updateNav[0][0].lat !== origin.lat() ||
+            observed.updateNav[0][0].lng !== origin.lng() ||
+            observed.updateNav[0][1] !== false
+          ) {
+            throw new Error(`Expected navigation side effects were not preserved ${JSON.stringify(observed)}`);
+          }
+
+          console.log("Mixed path/fallback Directions geometry preserves route order and activates navigation");
+          NODE
