@@ -1,0 +1,202 @@
+name: Guard Google Maps bootstrap cleanup
+
+on:
+  pull_request:
+    paths:
+      - js/app.js
+      - .github/workflows/google-maps-loader-contract.yml
+  push:
+    branches: [main]
+    paths:
+      - js/app.js
+      - .github/workflows/google-maps-loader-contract.yml
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Exercise Google Maps bootstrap cleanup contract
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require("fs");
+          const vm = require("vm");
+
+          const source = fs.readFileSync("js/app.js", "utf8");
+          const loaderStart = source.indexOf("  const GOOGLE_MAPS_LOAD_TIMEOUT_MS");
+          const loaderEnd = source.indexOf("\n\n  /* 加算ディスプレイ向け", loaderStart);
+          if (loaderStart < 0 || loaderEnd < 0) {
+            throw new Error("Google Maps bootstrap loader block could not be located");
+          }
+
+          const loaderSource = source
+            .slice(loaderStart, loaderEnd)
+            .replace(/^  /gm, "");
+
+          const sourceContracts = [
+            [
+              "watchdog ownership release",
+              /clearTimeout\(timeoutId\);\s*timeoutId = null;/,
+            ],
+            ["script error-handler release", /s\.onerror = null;/],
+            [
+              "late-callback tombstone",
+              /window\.__mrdMapInit = \(\) => \{\};/,
+            ],
+            ["failed-script removal", /if \(removeScript\) s\.remove\(\);/],
+          ];
+          for (const [label, pattern] of sourceContracts) {
+            if (!pattern.test(loaderSource)) {
+              throw new Error(`Google Maps loader cleanup contract changed: ${label}`);
+            }
+          }
+
+          async function exercise(kind) {
+            let appendedScript = null;
+            let removeCount = 0;
+            let nextTimerId = 1;
+            const timers = new Map();
+            const clearedTimers = [];
+
+            const context = {
+              cfg: { GOOGLE_MAPS_API_KEY: "test key" },
+              window: {},
+              document: {
+                createElement(tag) {
+                  if (tag !== "script") throw new Error(`Unexpected element: ${tag}`);
+                  return {
+                    src: "",
+                    async: false,
+                    onerror: null,
+                    remove() {
+                      removeCount += 1;
+                    },
+                  };
+                },
+                head: {
+                  appendChild(script) {
+                    if (appendedScript) throw new Error("Loader appended more than one script");
+                    appendedScript = script;
+                  },
+                },
+              },
+              setTimeout(callback, delay) {
+                const id = nextTimerId++;
+                timers.set(id, { callback, delay });
+                return id;
+              },
+              clearTimeout(id) {
+                clearedTimers.push(id);
+                timers.delete(id);
+              },
+            };
+
+            vm.createContext(context);
+            vm.runInContext(
+              loaderSource +
+                "\nthis.__loadGoogleMaps = loadGoogleMaps;" +
+                "\nthis.__timeoutMs = GOOGLE_MAPS_LOAD_TIMEOUT_MS;",
+              context,
+            );
+
+            if (context.__timeoutMs < 1000 || context.__timeoutMs > 60000) {
+              throw new Error(
+                `Google Maps bootstrap timeout must remain finite (1-60s), got ${context.__timeoutMs}ms`,
+              );
+            }
+
+            const promise = context.__loadGoogleMaps();
+            const settled = promise.then(
+              (value) => ({ ok: true, value }),
+              (error) => ({ ok: false, error }),
+            );
+
+            if (!appendedScript) throw new Error(`${kind}: script was not appended`);
+            if (typeof appendedScript.onerror !== "function") {
+              throw new Error(`${kind}: script error handler was not installed`);
+            }
+            if (typeof context.window.__mrdMapInit !== "function") {
+              throw new Error(`${kind}: Maps callback was not installed`);
+            }
+            if (timers.size !== 1) {
+              throw new Error(`${kind}: expected exactly one bootstrap watchdog`);
+            }
+
+            const initialCallback = context.window.__mrdMapInit;
+            const [[timerId, timer]] = [...timers.entries()];
+            if (timer.delay !== context.__timeoutMs) {
+              throw new Error(`${kind}: watchdog delay does not use the timeout constant`);
+            }
+
+            if (kind === "success") {
+              context.window.__mrdMapInit();
+            } else if (kind === "error") {
+              appendedScript.onerror();
+            } else if (kind === "timeout") {
+              timer.callback();
+            } else {
+              throw new Error(`Unknown scenario: ${kind}`);
+            }
+
+            const result = await settled;
+            if (kind === "success" && !result.ok) {
+              throw new Error("success: loader rejected unexpectedly");
+            }
+            if (kind !== "success" && result.ok) {
+              throw new Error(`${kind}: loader resolved unexpectedly`);
+            }
+
+            if (clearedTimers.length !== 1 || clearedTimers[0] !== timerId) {
+              throw new Error(`${kind}: watchdog was not cleared exactly once`);
+            }
+            if (timers.size !== 0) {
+              throw new Error(`${kind}: watchdog ownership still appears active`);
+            }
+            if (appendedScript.onerror !== null) {
+              throw new Error(`${kind}: script error handler still retains loader state`);
+            }
+            if (context.window.__mrdMapInit === initialCallback) {
+              throw new Error(`${kind}: Maps callback still retains loader closure`);
+            }
+            if (typeof context.window.__mrdMapInit !== "function") {
+              throw new Error(`${kind}: late-callback tombstone is not callable`);
+            }
+
+            const expectedRemovals = kind === "success" ? 0 : 1;
+            if (removeCount !== expectedRemovals) {
+              throw new Error(
+                `${kind}: expected ${expectedRemovals} script removals, got ${removeCount}`,
+              );
+            }
+
+            const beforeLateCallback = {
+              clears: clearedTimers.length,
+              removals: removeCount,
+              timers: timers.size,
+            };
+            context.window.__mrdMapInit();
+            const afterLateCallback = {
+              clears: clearedTimers.length,
+              removals: removeCount,
+              timers: timers.size,
+            };
+            if (JSON.stringify(afterLateCallback) !== JSON.stringify(beforeLateCallback)) {
+              throw new Error(`${kind}: inert late callback mutated loader lifecycle state`);
+            }
+          }
+
+          (async () => {
+            for (const kind of ["success", "error", "timeout"]) {
+              await exercise(kind);
+            }
+            console.log("Google Maps bootstrap cleanup contract OK");
+          })().catch((error) => {
+            console.error(error);
+            process.exit(1);
+          });
+          NODE
