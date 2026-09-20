@@ -1,0 +1,211 @@
+name: Guard stale geocoder callbacks after Maps auth failure
+
+on:
+  pull_request:
+    paths:
+      - js/app.js
+      - .github/workflows/google-maps-auth-stale-geocoder-contract.yml
+  push:
+    branches: [main]
+    paths:
+      - js/app.js
+      - .github/workflows/google-maps-auth-stale-geocoder-contract.yml
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Reject reverse-geocode completions after terminal auth failure
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require("fs");
+          const vm = require("vm");
+
+          const source = fs.readFileSync("js/app.js", "utf8");
+          const cleanupStart = source.indexOf(
+            "  function stopRuntimeForGoogleMapsAuthFailure() {",
+          );
+          const cleanupEnd = source.indexOf(
+            "\n\n  function armGeoWatchRecoveryTimer() {",
+            cleanupStart,
+          );
+          const storageStart = source.indexOf("  function loadList(key) {");
+          const storageEnd = source.indexOf(
+            "\n\n  /* ---------- メニュー",
+            storageStart,
+          );
+
+          if (
+            cleanupStart < 0 ||
+            cleanupEnd < 0 ||
+            storageStart < 0 ||
+            storageEnd < 0
+          ) {
+            throw new Error("Geocoder/auth lifecycle functions could not be located");
+          }
+
+          const cleanupSource = source
+            .slice(cleanupStart, cleanupEnd)
+            .replace(/^  /gm, "");
+          const storageSource = source
+            .slice(storageStart, storageEnd)
+            .replace(/^  /gm, "");
+
+          let geocodeCallback = null;
+          let geocodeCalls = 0;
+          let storageWrites = 0;
+          const storage = new Map();
+          const geocoder = {
+            geocode(_request, callback) {
+              geocodeCalls += 1;
+              geocodeCallback = callback;
+            },
+          };
+
+          const localStorage = {
+            getItem(key) {
+              return storage.has(key) ? storage.get(key) : null;
+            },
+            setItem(key, value) {
+              storageWrites += 1;
+              storage.set(key, value);
+            },
+          };
+
+          const context = {
+            clearTimeout() {},
+            navigator: {
+              geolocation: {
+                clearWatch() {},
+              },
+            },
+            els: {
+              searchQuery: {
+                blur() {},
+              },
+            },
+            geocoder,
+            localStorage,
+          };
+          vm.createContext(context);
+
+          vm.runInContext(`
+            let googleMapsAuthFailed = false;
+            let geoWatchId = null;
+            let geoWatchRecoveryTimer = null;
+            let geoOneShotRequestId = 0;
+            let geoWatchGeneration = 0;
+            let routeRequestId = 0;
+            let routeRequestTimeoutId = null;
+            let routePreviousNavBanner = null;
+            let navRerouting = false;
+            let signalRequestId = 0;
+            let predictionRequestId = 0;
+            let placeDetailsRequestId = 0;
+            let predictionTimeoutId = null;
+            let placeDetailsTimeoutId = null;
+            let compositionRefreshTimeoutId = null;
+            let searchOpen = false;
+            let menuOpen = false;
+            let pickMode = false;
+            let panMode = false;
+
+            function clearGeoWatchRecoveryTimer() {
+              geoWatchRecoveryTimer = null;
+            }
+            function hasUnknownGeoWatchOwnership() {
+              return false;
+            }
+            function clearDirectionsRequestTimeout() {
+              routeRequestTimeoutId = null;
+            }
+            function disableCompass() {}
+
+            ${cleanupSource}
+            ${storageSource}
+
+            this.__resolvePlaceName = resolvePlaceName;
+            this.__failAuth = () => {
+              googleMapsAuthFailed = true;
+              stopRuntimeForGoogleMapsAuthFailure();
+            };
+            this.__snapshot = () => ({ googleMapsAuthFailed });
+          `, context);
+
+          function seedLists(name) {
+            storage.set(
+              "mrd.recents",
+              JSON.stringify([{ name, lat: 35.6812, lng: 139.7671 }]),
+            );
+            storage.set(
+              "mrd.favorites",
+              JSON.stringify([{ name, lat: 35.6812, lng: 139.7671 }]),
+            );
+          }
+
+          seedLists("35.6812,139.7671");
+          context.__resolvePlaceName(35.6812, 139.7671);
+          if (geocodeCalls !== 1 || typeof geocodeCallback !== "function") {
+            throw new Error("resolvePlaceName() did not issue the expected reverse-geocode request");
+          }
+          geocodeCallback(
+            [{ formatted_address: "日本、〒100-0001 東京都千代田区丸の内1丁目" }],
+            "OK",
+          );
+          const freshRecent = JSON.parse(storage.get("mrd.recents"));
+          const freshFavorite = JSON.parse(storage.get("mrd.favorites"));
+          if (
+            freshRecent[0].name !== "東京都千代田区丸の内1丁目" ||
+            freshFavorite[0].name !== "東京都千代田区丸の内1丁目"
+          ) {
+            throw new Error("fresh reverse-geocode completion did not update stored names");
+          }
+
+          seedLists("35.6812,139.7671");
+          storageWrites = 0;
+          geocodeCallback = null;
+          context.__resolvePlaceName(35.6812, 139.7671);
+          if (geocodeCalls !== 2 || typeof geocodeCallback !== "function") {
+            throw new Error("stale reverse-geocode scenario did not capture a callback");
+          }
+          const staleCallback = geocodeCallback;
+          const beforeFailure = context.__snapshot();
+          if (beforeFailure.googleMapsAuthFailed) {
+            throw new Error(`unexpected pre-failure state: ${JSON.stringify(beforeFailure)}`);
+          }
+
+          context.__failAuth();
+          const terminal = context.__snapshot();
+          if (!terminal.googleMapsAuthFailed) {
+            throw new Error(`terminal cleanup did not preserve auth failure state: ${JSON.stringify(terminal)}`);
+          }
+
+          staleCallback(
+            [{ formatted_address: "日本、〒100-0001 書き換えてはいけない住所" }],
+            "OK",
+          );
+          if (storageWrites !== 0) {
+            throw new Error("stale geocoder callback wrote localStorage after terminal auth failure");
+          }
+          const staleRecent = JSON.parse(storage.get("mrd.recents"));
+          const staleFavorite = JSON.parse(storage.get("mrd.favorites"));
+          if (
+            staleRecent[0].name !== "35.6812,139.7671" ||
+            staleFavorite[0].name !== "35.6812,139.7671"
+          ) {
+            throw new Error("stale geocoder callback changed persisted destination names");
+          }
+
+          context.__resolvePlaceName(35.6812, 139.7671);
+          if (geocodeCalls !== 2) {
+            throw new Error("resolvePlaceName() issued a new request after terminal auth failure");
+          }
+
+          console.log("Stale geocoder callbacks are no-ops after Google Maps auth failure");
+          NODE

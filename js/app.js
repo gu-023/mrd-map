@@ -812,8 +812,9 @@
 
   // 逆ジオコーディングで地点名を後付け（保存済みの履歴/お気に入りを更新）
   function resolvePlaceName(lat, lng) {
-    if (!geocoder) return;
+    if (!geocoder || googleMapsAuthFailed) return;
     geocoder.geocode({ location: { lat, lng } }, (results, status) => {
+      if (googleMapsAuthFailed) return;
       if (status !== "OK" || !results || !results[0]) return; // 失敗時は座標表示のまま
       const name = shortenAddr(results[0].formatted_address);
       ["mrd.recents", "mrd.favorites"].forEach((key) => {
