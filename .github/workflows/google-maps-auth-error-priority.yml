@@ -68,6 +68,7 @@ jobs:
             .slice(catchBodyStart, catchEnd)
             .replace(/^      /gm, "");
 
+          let cleanupCalls = 0;
           const context = {
             window: {},
             els: {
@@ -75,6 +76,9 @@ jobs:
                 innerHTML: "",
                 classList: { remove() {} },
               },
+            },
+            stopRuntimeForGoogleMapsAuthFailure() {
+              cleanupCalls += 1;
             },
           };
           vm.createContext(context);
@@ -93,6 +97,9 @@ jobs:
           // Authentication details are more actionable than a later generic script error/timeout.
           context.window.gm_authFailure();
           const authHtml = context.els.error.innerHTML;
+          if (cleanupCalls !== 1) {
+            throw new Error("gm_authFailure did not quiesce runtime exactly once");
+          }
           if (!authHtml.includes("Google Maps 認証エラー")) {
             throw new Error("gm_authFailure did not render the authentication error");
           }
@@ -111,6 +118,9 @@ jobs:
             throw new Error("generic bootstrap failure was not rendered");
           }
           context.window.gm_authFailure();
+          if (cleanupCalls !== 2) {
+            throw new Error("late gm_authFailure did not quiesce runtime exactly once");
+          }
           if (!context.els.error.innerHTML.includes("Google Maps 認証エラー")) {
             throw new Error("late authentication error did not replace the generic failure");
           }
