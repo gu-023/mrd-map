@@ -1,0 +1,262 @@
+name: Guard stale signal callbacks after Maps auth failure
+
+on:
+  pull_request:
+    paths:
+      - js/app.js
+      - .github/workflows/google-maps-auth-stale-signals-contract.yml
+  push:
+    branches: [main]
+    paths:
+      - js/app.js
+      - .github/workflows/google-maps-auth-stale-signals-contract.yml
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Reject stale Overpass completion after terminal auth failure
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require("fs");
+          const vm = require("vm");
+
+          const source = fs.readFileSync("js/app.js", "utf8");
+          const authCleanupStart = source.indexOf(
+            "  function stopRuntimeForGoogleMapsAuthFailure() {",
+          );
+          const authCleanupEnd = source.indexOf(
+            "\n\n  function armGeoWatchRecoveryTimer() {",
+            authCleanupStart,
+          );
+          const signalsStart = source.indexOf("  function fetchSignals() {");
+          const signalsEnd = source.indexOf(
+            "\n\n  function plotSignals() {",
+            signalsStart,
+          );
+
+          if (
+            authCleanupStart < 0 ||
+            authCleanupEnd < 0 ||
+            signalsStart < 0 ||
+            signalsEnd < 0
+          ) {
+            throw new Error("Maps-auth/signal lifecycle functions could not be located");
+          }
+
+          const authCleanupSource = source
+            .slice(authCleanupStart, authCleanupEnd)
+            .replace(/^  /gm, "");
+          const signalsSource = source
+            .slice(signalsStart, signalsEnd)
+            .replace(/^  /gm, "");
+
+          function pendingPromise() {
+            let resolve;
+            let reject;
+            const promise = new Promise((res, rej) => {
+              resolve = res;
+              reject = rej;
+            });
+            return { promise, resolve, reject };
+          }
+
+          function createHarness() {
+            const fetchPending = pendingPromise();
+            const calls = {
+              fetch: 0,
+              plotSignals: 0,
+              latLng: 0,
+              distance: 0,
+              blur: 0,
+              disableCompass: 0,
+              clearTimeout: [],
+            };
+
+            const context = {
+              fetch(url, options) {
+                calls.fetch += 1;
+                if (url !== "https://overpass-api.de/api/interpreter") {
+                  throw new Error(`unexpected Overpass URL: ${url}`);
+                }
+                if (options?.method !== "POST" || !String(options?.body).startsWith("data=")) {
+                  throw new Error("unexpected Overpass request shape");
+                }
+                return fetchPending.promise;
+              },
+              clearTimeout(id) {
+                calls.clearTimeout.push(id);
+              },
+              navigator: {
+                geolocation: {
+                  clearWatch() {
+                    throw new Error("unexpected clearWatch for null ownership");
+                  },
+                },
+              },
+              els: {
+                searchQuery: {
+                  blur() {
+                    calls.blur += 1;
+                  },
+                },
+              },
+              disableCompass() {
+                calls.disableCompass += 1;
+              },
+              google: {
+                maps: {
+                  LatLng: class {
+                    constructor(lat, lng) {
+                      calls.latLng += 1;
+                      this.lat = lat;
+                      this.lng = lng;
+                    }
+                  },
+                  geometry: {
+                    spherical: {
+                      computeDistanceBetween() {
+                        calls.distance += 1;
+                        return 0;
+                      },
+                    },
+                  },
+                },
+              },
+              plotSignals() {
+                calls.plotSignals += 1;
+              },
+            };
+            vm.createContext(context);
+
+            vm.runInContext(`
+              let geoOneShotRequestId = 0;
+              let geoWatchRecoveryTimer = null;
+              let geoWatchGeneration = 0;
+              let geoWatchId = null;
+              let routeRequestId = 0;
+              let routeRequestTimeoutId = null;
+              let routePreviousNavBanner = { owner: "route" };
+              let navRerouting = true;
+              let signalRequestId = 0;
+              let predictionRequestId = 0;
+              let placeDetailsRequestId = 0;
+              let predictionTimeoutId = null;
+              let placeDetailsTimeoutId = null;
+              let compositionRefreshTimeoutId = null;
+              let searchOpen = true;
+              let menuOpen = true;
+              let pickMode = true;
+              let panMode = true;
+              let navMode = true;
+              let navBounds = {
+                getSouthWest: () => ({ lat: () => 35.0, lng: () => 139.0 }),
+                getNorthEast: () => ({ lat: () => 36.0, lng: () => 140.0 }),
+              };
+              let navFullPath = [{ lat: 35.5, lng: 139.5 }];
+              let signalData = [{ lat: 35.1, lng: 139.1 }];
+
+              function clearGeoWatchRecoveryTimer() {
+                geoWatchRecoveryTimer = null;
+              }
+              function hasUnknownGeoWatchOwnership() {
+                return false;
+              }
+              function clearDirectionsRequestTimeout() {
+                if (routeRequestTimeoutId !== null) clearTimeout(routeRequestTimeoutId);
+                routeRequestTimeoutId = null;
+              }
+
+              ${authCleanupSource}
+              ${signalsSource}
+
+              this.__fetchSignals = fetchSignals;
+              this.__runCleanup = stopRuntimeForGoogleMapsAuthFailure;
+              this.__snapshot = () => ({
+                signalRequestId,
+                signalData: signalData.map((signal) => ({ ...signal })),
+                navMode,
+                routeRequestId,
+                navRerouting,
+                searchOpen,
+                menuOpen,
+                pickMode,
+                panMode,
+              });
+            `, context);
+
+            return { context, fetchPending, calls };
+          }
+
+          function callSnapshot(calls) {
+            return {
+              fetch: calls.fetch,
+              plotSignals: calls.plotSignals,
+              latLng: calls.latLng,
+              distance: calls.distance,
+              blur: calls.blur,
+              disableCompass: calls.disableCompass,
+              clearTimeout: [...calls.clearTimeout],
+            };
+          }
+
+          async function settleMicrotasks() {
+            await Promise.resolve();
+            await Promise.resolve();
+            await new Promise((resolve) => setImmediate(resolve));
+          }
+
+          (async () => {
+            const { context, fetchPending, calls } = createHarness();
+
+            context.__fetchSignals();
+            const active = context.__snapshot();
+            if (active.signalRequestId !== 1 || calls.fetch !== 1) {
+              throw new Error(`signal request was not active: ${JSON.stringify(active)}`);
+            }
+
+            context.__runCleanup();
+            const terminal = context.__snapshot();
+            if (
+              terminal.signalRequestId !== 2 ||
+              terminal.searchOpen !== false ||
+              terminal.menuOpen !== false ||
+              terminal.pickMode !== false ||
+              terminal.panMode !== false
+            ) {
+              throw new Error(`terminal cleanup was incomplete: ${JSON.stringify(terminal)}`);
+            }
+            const terminalCalls = callSnapshot(calls);
+
+            fetchPending.resolve({
+              ok: true,
+              json: async () => ({
+                elements: [{ lat: 35.5, lon: 139.5 }],
+              }),
+            });
+            await settleMicrotasks();
+
+            const after = context.__snapshot();
+            if (JSON.stringify(after) !== JSON.stringify(terminal)) {
+              throw new Error(
+                `stale signal completion changed state: ${JSON.stringify(terminal)} -> ${JSON.stringify(after)}`,
+              );
+            }
+            if (JSON.stringify(callSnapshot(calls)) !== JSON.stringify(terminalCalls)) {
+              throw new Error(
+                "stale signal completion performed Google Maps/plot side effects after cleanup",
+              );
+            }
+
+            console.log("Stale Overpass completion is a no-op after Google Maps auth failure");
+          })().catch((error) => {
+            console.error(error);
+            process.exitCode = 1;
+          });
+          NODE
