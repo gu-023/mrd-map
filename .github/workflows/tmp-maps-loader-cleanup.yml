@@ -18,62 +18,65 @@ jobs:
           fetch-depth: 0
 
       - name: Release settled loader closures
-        shell: python
         run: |
+          python3 - <<'PY'
           from pathlib import Path
-
           path = Path("js/app.js")
           text = path.read_text()
-          old = '''      let settled = false;
-      let timeoutId = null;
-      const finish = (callback, value) => {
-        if (settled) return;
-        settled = true;
-        if (timeoutId !== null) clearTimeout(timeoutId);
-        callback(value);
-      };
-      window.__mrdMapInit = () => finish(resolve);
-      const s = document.createElement("script");
-      const key = encodeURIComponent(cfg.GOOGLE_MAPS_API_KEY);
-'''
-          new = '''      let settled = false;
-      let timeoutId = null;
-      const s = document.createElement("script");
-      const finish = (callback, value, removeScript = false) => {
-        if (settled) return;
-        settled = true;
-        if (timeoutId !== null) {
-          clearTimeout(timeoutId);
-          timeoutId = null;
-        }
-        s.onerror = null;
-        // A removed async script can still finish in some hosts; keep a harmless callable tombstone
-        // without retaining this Promise/finish closure.
-        window.__mrdMapInit = () => {};
-        if (removeScript) s.remove();
-        callback(value);
-      };
-      window.__mrdMapInit = () => finish(resolve);
-      const key = encodeURIComponent(cfg.GOOGLE_MAPS_API_KEY);
-'''
+          old = (
+              "      let settled = false;\n"
+              "      let timeoutId = null;\n"
+              "      const finish = (callback, value) => {\n"
+              "        if (settled) return;\n"
+              "        settled = true;\n"
+              "        if (timeoutId !== null) clearTimeout(timeoutId);\n"
+              "        callback(value);\n"
+              "      };\n"
+              "      window.__mrdMapInit = () => finish(resolve);\n"
+              "      const s = document.createElement(\"script\");\n"
+              "      const key = encodeURIComponent(cfg.GOOGLE_MAPS_API_KEY);\n"
+          )
+          new = (
+              "      let settled = false;\n"
+              "      let timeoutId = null;\n"
+              "      const s = document.createElement(\"script\");\n"
+              "      const finish = (callback, value, removeScript = false) => {\n"
+              "        if (settled) return;\n"
+              "        settled = true;\n"
+              "        if (timeoutId !== null) {\n"
+              "          clearTimeout(timeoutId);\n"
+              "          timeoutId = null;\n"
+              "        }\n"
+              "        s.onerror = null;\n"
+              "        // A removed async script can still finish in some hosts; keep a harmless callable tombstone\n"
+              "        // without retaining this Promise/finish closure.\n"
+              "        window.__mrdMapInit = () => {};\n"
+              "        if (removeScript) s.remove();\n"
+              "        callback(value);\n"
+              "      };\n"
+              "      window.__mrdMapInit = () => finish(resolve);\n"
+              "      const key = encodeURIComponent(cfg.GOOGLE_MAPS_API_KEY);\n"
+          )
           if text.count(old) != 1:
-            raise SystemExit(f"expected loader block once, found {text.count(old)}")
+              raise SystemExit(f"expected loader block once, found {text.count(old)}")
           text = text.replace(old, new, 1)
-
-          old_failures = '''      s.onerror = () => finish(reject, new Error("Google Maps の読み込みに失敗"));
-      timeoutId = setTimeout(() => {
-        s.remove();
-        finish(reject, new Error("Google Maps の読み込みがタイムアウト"));
-      }, GOOGLE_MAPS_LOAD_TIMEOUT_MS);
-'''
-          new_failures = '''      s.onerror = () => finish(reject, new Error("Google Maps の読み込みに失敗"), true);
-      timeoutId = setTimeout(() => {
-        finish(reject, new Error("Google Maps の読み込みがタイムアウト"), true);
-      }, GOOGLE_MAPS_LOAD_TIMEOUT_MS);
-'''
+          old_failures = (
+              "      s.onerror = () => finish(reject, new Error(\"Google Maps の読み込みに失敗\"));\n"
+              "      timeoutId = setTimeout(() => {\n"
+              "        s.remove();\n"
+              "        finish(reject, new Error(\"Google Maps の読み込みがタイムアウト\"));\n"
+              "      }, GOOGLE_MAPS_LOAD_TIMEOUT_MS);\n"
+          )
+          new_failures = (
+              "      s.onerror = () => finish(reject, new Error(\"Google Maps の読み込みに失敗\"), true);\n"
+              "      timeoutId = setTimeout(() => {\n"
+              "        finish(reject, new Error(\"Google Maps の読み込みがタイムアウト\"), true);\n"
+              "      }, GOOGLE_MAPS_LOAD_TIMEOUT_MS);\n"
+          )
           if text.count(old_failures) != 1:
-            raise SystemExit(f"expected loader failure block once, found {text.count(old_failures)}")
+              raise SystemExit(f"expected loader failure block once, found {text.count(old_failures)}")
           path.write_text(text.replace(old_failures, new_failures, 1))
+          PY
 
       - name: Validate focused change
         run: |
