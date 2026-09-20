@@ -1,0 +1,44 @@
+name: ChatGPT edit step geometry guard
+
+on:
+  push:
+    branches: [chatgpt/fail-closed-invalid-step-geometry]
+
+permissions:
+  contents: write
+
+jobs:
+  edit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: chatgpt/fail-closed-invalid-step-geometry
+      - name: Apply focused runtime guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('js/app.js')
+          text = path.read_text()
+          old = '''        const routeSteps = leg && Array.isArray(leg.steps) ? leg.steps : null;\n        if (route && leg && routeSteps && routeSteps.length > 0) {'''
+          new = '''        const routeSteps = leg && Array.isArray(leg.steps) ? leg.steps : null;\n        const routeStepsHaveUsableGeometry = routeSteps && routeSteps.length > 0 && routeSteps.every((step) => {\n          if (!step) return false;\n          const path = Array.isArray(step.path) ? step.path : [];\n          if (path.length) {\n            return path.length >= 2 && path.every((point) => Boolean(locationLiteral(point)));\n          }\n          return Boolean(locationLiteral(step.start_location) && locationLiteral(step.end_location));\n        });\n        if (route && leg && routeStepsHaveUsableGeometry) {'''
+          if text.count(old) != 1:
+              raise SystemExit(f'expected one target block, found {text.count(old)}')
+          path.write_text(text.replace(old, new))
+          PY
+          node --check js/app.js
+          git diff --check
+          grep -F 'const routeStepsHaveUsableGeometry = routeSteps && routeSteps.length > 0' js/app.js
+          grep -F 'path.length >= 2 && path.every((point) => Boolean(locationLiteral(point)))' js/app.js
+      - name: Commit focused change and remove helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/chatgpt-edit-step-geometry.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add js/app.js .github/workflows/chatgpt-edit-step-geometry.yml
+          git commit -m 'Reject Directions steps with unusable geometry'
+          git push origin HEAD:chatgpt/fail-closed-invalid-step-geometry
