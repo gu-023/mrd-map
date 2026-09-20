@@ -1,0 +1,219 @@
+name: Guard Google Maps auth terminal cleanup
+
+on:
+  pull_request:
+    paths:
+      - js/app.js
+      - .github/workflows/google-maps-auth-terminal-contract.yml
+  push:
+    branches: [main]
+    paths:
+      - js/app.js
+      - .github/workflows/google-maps-auth-terminal-contract.yml
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Exercise terminal Google Maps auth cleanup
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require("fs");
+          const vm = require("vm");
+
+          const source = fs.readFileSync("js/app.js", "utf8");
+
+          const geoHelperStart = source.indexOf(
+            "  function hasUnknownGeoWatchOwnership() {",
+          );
+          const geoHelperEnd = source.indexOf(
+            "\n\n  function armGeoWatchRecoveryTimer() {",
+            geoHelperStart,
+          );
+          const directionsCleanupStart = source.indexOf(
+            "  function clearDirectionsRequestTimeout() {",
+          );
+          const directionsCleanupEnd = source.indexOf(
+            "\n\n  function computeRoute(",
+            directionsCleanupStart,
+          );
+
+          if (
+            geoHelperStart < 0 ||
+            geoHelperEnd < 0 ||
+            directionsCleanupStart < 0 ||
+            directionsCleanupEnd < 0
+          ) {
+            throw new Error("Google Maps auth cleanup helpers could not be located");
+          }
+
+          const geoCleanupSource = source
+            .slice(geoHelperStart, geoHelperEnd)
+            .replace(/^  /gm, "");
+          const directionsCleanupSource = source
+            .slice(directionsCleanupStart, directionsCleanupEnd)
+            .replace(/^  /gm, "");
+
+          function runScenario(initialWatchId) {
+            const clearedTimeouts = [];
+            const clearedWatches = [];
+            let blurCalls = 0;
+            let compassCleanupCalls = 0;
+
+            const context = {
+              clearTimeout(id) {
+                clearedTimeouts.push(id);
+              },
+              navigator: {
+                geolocation: {
+                  clearWatch(id) {
+                    clearedWatches.push(id);
+                  },
+                },
+              },
+              els: {
+                searchQuery: {
+                  blur() {
+                    blurCalls += 1;
+                  },
+                },
+              },
+              disableCompass() {
+                compassCleanupCalls += 1;
+              },
+            };
+            vm.createContext(context);
+
+            const initialWatchLiteral = Number.isNaN(initialWatchId)
+              ? "Number.NaN"
+              : String(initialWatchId);
+
+            vm.runInContext(`
+              let geoWatchId = ${initialWatchLiteral};
+              let geoWatchRecoveryTimer = "geo-recovery";
+              let geoOneShotRequestId = 41;
+              let geoWatchGeneration = 52;
+              let routeRequestId = 63;
+              let routeRequestTimeoutId = "directions";
+              let routePreviousNavBanner = { text: "previous" };
+              let navRerouting = true;
+              let signalRequestId = 74;
+              let predictionRequestId = 85;
+              let placeDetailsRequestId = 96;
+              let predictionTimeoutId = "prediction";
+              let placeDetailsTimeoutId = "details";
+              let compositionRefreshTimeoutId = "composition";
+              let searchOpen = true;
+              let menuOpen = true;
+              let pickMode = true;
+              let panMode = true;
+
+              ${directionsCleanupSource}
+              ${geoCleanupSource}
+
+              this.__runCleanup = stopRuntimeForGoogleMapsAuthFailure;
+              this.__snapshot = () => ({
+                geoWatchId,
+                geoWatchRecoveryTimer,
+                geoOneShotRequestId,
+                geoWatchGeneration,
+                routeRequestId,
+                routeRequestTimeoutId,
+                routePreviousNavBanner,
+                navRerouting,
+                signalRequestId,
+                predictionRequestId,
+                placeDetailsRequestId,
+                predictionTimeoutId,
+                placeDetailsTimeoutId,
+                compositionRefreshTimeoutId,
+                searchOpen,
+                menuOpen,
+                pickMode,
+                panMode,
+              });
+            `, context);
+
+            context.__runCleanup();
+            return {
+              state: context.__snapshot(),
+              clearedTimeouts,
+              clearedWatches,
+              blurCalls,
+              compassCleanupCalls,
+            };
+          }
+
+          function assertTerminalState(result, expectClearWatch) {
+            const { state } = result;
+            const expectedTimeouts = [
+              "geo-recovery",
+              "directions",
+              "prediction",
+              "details",
+              "composition",
+            ];
+
+            if (state.geoWatchId !== null || state.geoWatchRecoveryTimer !== null) {
+              throw new Error("GPS watch ownership was not released");
+            }
+            if (state.geoOneShotRequestId !== 42 || state.geoWatchGeneration !== 53) {
+              throw new Error("GPS callback generations were not invalidated");
+            }
+            if (state.routeRequestId !== 64 || state.routeRequestTimeoutId !== null) {
+              throw new Error("Directions request ownership was not invalidated");
+            }
+            if (state.routePreviousNavBanner !== null || state.navRerouting !== false) {
+              throw new Error("Directions pending UI state was not released");
+            }
+            if (
+              state.signalRequestId !== 75 ||
+              state.predictionRequestId !== 86 ||
+              state.placeDetailsRequestId !== 97
+            ) {
+              throw new Error("signal/Places callback generations were not invalidated");
+            }
+            if (
+              state.predictionTimeoutId !== null ||
+              state.placeDetailsTimeoutId !== null ||
+              state.compositionRefreshTimeoutId !== null
+            ) {
+              throw new Error("Places/composition timer ownership was not released");
+            }
+            if (state.searchOpen || state.menuOpen || state.pickMode || state.panMode) {
+              throw new Error("interactive UI modes remained active after terminal auth failure");
+            }
+            if (result.blurCalls !== 1) {
+              throw new Error("search input was not blurred exactly once");
+            }
+            if (result.compassCleanupCalls !== 1) {
+              throw new Error("compass cleanup was not requested exactly once");
+            }
+            if (
+              JSON.stringify(result.clearedTimeouts.sort()) !==
+              JSON.stringify(expectedTimeouts.sort())
+            ) {
+              throw new Error(
+                `unexpected timer cleanup set: ${JSON.stringify(result.clearedTimeouts)}`,
+              );
+            }
+            if (expectClearWatch) {
+              if (JSON.stringify(result.clearedWatches) !== JSON.stringify([17])) {
+                throw new Error("owned GPS watch was not cleared exactly once");
+              }
+            } else if (result.clearedWatches.length !== 0) {
+              throw new Error("unknown GPS watch ownership was cleared unsafely");
+            }
+          }
+
+          assertTerminalState(runScenario(17), true);
+          assertTerminalState(runScenario(Number.NaN), false);
+
+          console.log("Google Maps auth terminal cleanup contract OK");
+          NODE
