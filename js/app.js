@@ -92,6 +92,7 @@
   let signalMarkers = [];
   let signalRequestId = 0; // 古い Overpass callback を無視するための世代番号
   let geocoder = null;
+  let geocodeGeneration = 0; // terminal Maps auth failure 後の古い reverse-geocode callback を無効化
   let travelMode = "WALKING"; // WALKING / DRIVING / BICYCLING / TRANSIT
   // メニュー
   let menuOpen = false;
@@ -306,6 +307,7 @@
     routePreviousNavBanner = null;
     navRerouting = false;
     signalRequestId += 1;
+    geocodeGeneration += 1;
     predictionRequestId += 1;
     placeDetailsRequestId += 1;
     if (predictionTimeoutId !== null) clearTimeout(predictionTimeoutId);
@@ -812,8 +814,10 @@
 
   // 逆ジオコーディングで地点名を後付け（保存済みの履歴/お気に入りを更新）
   function resolvePlaceName(lat, lng) {
-    if (!geocoder) return;
+    if (!geocoder || googleMapsAuthFailed) return;
+    const requestGeneration = geocodeGeneration;
     geocoder.geocode({ location: { lat, lng } }, (results, status) => {
+      if (requestGeneration !== geocodeGeneration || googleMapsAuthFailed) return;
       if (status !== "OK" || !results || !results[0]) return; // 失敗時は座標表示のまま
       const name = shortenAddr(results[0].formatted_address);
       ["mrd.recents", "mrd.favorites"].forEach((key) => {
