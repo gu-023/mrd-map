@@ -1,0 +1,327 @@
+name: Guard stale Directions callbacks after Maps auth failure
+
+on:
+  pull_request:
+    paths:
+      - js/app.js
+      - .github/workflows/google-maps-auth-stale-directions-contract.yml
+  push:
+    branches: [main]
+    paths:
+      - js/app.js
+      - .github/workflows/google-maps-auth-stale-directions-contract.yml
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Reject stale Directions callback after terminal auth failure
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require("fs");
+          const vm = require("vm");
+
+          const source = fs.readFileSync("js/app.js", "utf8");
+          const geoHelperStart = source.indexOf(
+            "  function hasUnknownGeoWatchOwnership() {",
+          );
+          const geoHelperEnd = source.indexOf(
+            "\n\n  function armGeoWatchRecoveryTimer() {",
+            geoHelperStart,
+          );
+          const directionsCleanupStart = source.indexOf(
+            "  function clearDirectionsRequestTimeout() {",
+          );
+          const computeRouteStart = source.indexOf(
+            "  function computeRoute(",
+            directionsCleanupStart,
+          );
+          const computeRouteEnd = source.indexOf(
+            "\n\n  function clearRoute() {",
+            computeRouteStart,
+          );
+
+          if (
+            geoHelperStart < 0 ||
+            geoHelperEnd < 0 ||
+            directionsCleanupStart < 0 ||
+            computeRouteStart < 0 ||
+            computeRouteEnd < 0
+          ) {
+            throw new Error("Directions/auth lifecycle functions could not be located");
+          }
+
+          const geoCleanupSource = source
+            .slice(geoHelperStart, geoHelperEnd)
+            .replace(/^  /gm, "");
+          const directionsCleanupSource = source
+            .slice(directionsCleanupStart, computeRouteStart)
+            .replace(/^  /gm, "");
+          const computeRouteSource = source
+            .slice(computeRouteStart, computeRouteEnd)
+            .replace(/^  /gm, "");
+
+          let routeCallback = null;
+          let routeCalls = 0;
+          const clearedTimeouts = [];
+          const mutations = {
+            showError: 0,
+            setNavBanner: 0,
+            renderer: 0,
+            clearRoute: 0,
+            panTo: 0,
+            setZoom: 0,
+            saveRecent: 0,
+            clearSignals: 0,
+            fetchSignals: 0,
+            updateNav: 0,
+          };
+
+          const origin = {
+            lat() { return 35.681236; },
+            lng() { return 139.767125; },
+          };
+
+          const context = {
+            Date,
+            clearTimeout(id) {
+              clearedTimeouts.push(id);
+            },
+            setTimeout() {
+              return "directions-watchdog";
+            },
+            navigator: {
+              geolocation: {
+                clearWatch() {},
+              },
+            },
+            els: {
+              navBanner: {
+                innerHTML: "existing navigation",
+                classList: {
+                  contains() { return false; },
+                },
+              },
+              searchQuery: {
+                blur() {},
+              },
+            },
+            disableCompass() {},
+            locationLiteral(value) {
+              return value;
+            },
+            clearError() {},
+            showError() {
+              mutations.showError += 1;
+            },
+            setNavBanner() {
+              mutations.setNavBanner += 1;
+            },
+            userMarker: {
+              getPosition() {
+                return origin;
+              },
+            },
+            directionsService: {
+              route(_request, callback) {
+                routeCalls += 1;
+                routeCallback = callback;
+              },
+            },
+            google: {
+              maps: {
+                LatLng: class {
+                  constructor(lat, lng) {
+                    this._lat = lat;
+                    this._lng = lng;
+                  }
+                  lat() { return this._lat; }
+                  lng() { return this._lng; }
+                },
+                TravelMode: {
+                  WALKING: "WALKING",
+                },
+                DirectionsRenderer: class {
+                  constructor() {
+                    mutations.renderer += 1;
+                  }
+                  setDirections() {}
+                },
+              },
+            },
+            map: {
+              panTo() {
+                mutations.panTo += 1;
+              },
+              setZoom() {
+                mutations.setZoom += 1;
+              },
+            },
+            clearRoute() {
+              mutations.clearRoute += 1;
+            },
+            saveRecent() {
+              mutations.saveRecent += 1;
+            },
+            clearSignals() {
+              mutations.clearSignals += 1;
+            },
+            fetchSignals() {
+              mutations.fetchSignals += 1;
+            },
+            meters() {
+              return 0;
+            },
+            updateNav() {
+              mutations.updateNav += 1;
+            },
+          };
+          vm.createContext(context);
+
+          vm.runInContext(`
+            const ROUTE_ORIGIN_MAX_AGE_MS = 30000;
+            const DIRECTIONS_REQUEST_TIMEOUT_MS = 20000;
+            let lastPositionTimestamp = Date.now();
+            let lastPositionAccuracy = 5;
+            let followMode = true;
+            let navMode = true;
+            let navArrived = false;
+            let navSteps = [];
+            let navStepIdx = 0;
+            let navLastPosition = null;
+            let navLastPositionTimestamp = null;
+            let navLastPositionAccuracy = null;
+            let navStepProgressIdx = -1;
+            let navStepProgressSegment = 0;
+            let navStepProgressT = 0;
+            let navStepProgressRemaining = null;
+            let navStepProgressPosition = null;
+            let navStepProgressAccuracy = null;
+            let navDestination = null;
+            let navFullPath = [];
+            let offRouteCount = 0;
+            let lastOffRouteEvidenceTimestamp = null;
+            let navRerouting = false;
+            let routeRequestId = 0;
+            let routeRequestTimeoutId = null;
+            let routePreviousNavBanner = null;
+            let navBounds = null;
+            let zoomedForTurn = false;
+            let signalRequestId = 0;
+            let signalData = [];
+            let signalsOn = false;
+            let travelMode = "WALKING";
+            let directionsRenderer = null;
+
+            let geoWatchId = null;
+            let geoWatchRecoveryTimer = null;
+            let geoOneShotRequestId = 0;
+            let geoWatchGeneration = 0;
+            let predictionRequestId = 0;
+            let placeDetailsRequestId = 0;
+            let predictionTimeoutId = null;
+            let placeDetailsTimeoutId = null;
+            let compositionRefreshTimeoutId = null;
+            let searchOpen = false;
+            let menuOpen = false;
+            let pickMode = false;
+            let panMode = false;
+
+            ${directionsCleanupSource}
+            ${geoCleanupSource}
+            ${computeRouteSource}
+
+            this.__computeRoute = computeRoute;
+            this.__runCleanup = stopRuntimeForGoogleMapsAuthFailure;
+            this.__snapshot = () => ({
+              routeRequestId,
+              routeRequestTimeoutId,
+              routePreviousNavBanner,
+              navRerouting,
+              navMode,
+              navDestination,
+              navStepsLength: navSteps.length,
+              signalRequestId,
+            });
+          `, context);
+
+          context.__computeRoute(
+            { lat: 35.6895, lng: 139.6917 },
+            false,
+            undefined,
+            undefined,
+            false,
+          );
+
+          if (routeCalls !== 1 || !routeCallback) {
+            throw new Error("Directions callback was not captured from computeRoute()");
+          }
+
+          const active = context.__snapshot();
+          if (
+            active.routeRequestId !== 1 ||
+            active.routeRequestTimeoutId !== "directions-watchdog" ||
+            active.navRerouting !== true
+          ) {
+            throw new Error(`unexpected active Directions ownership: ${JSON.stringify(active)}`);
+          }
+
+          context.__runCleanup();
+          const terminal = context.__snapshot();
+          if (
+            terminal.routeRequestId !== 2 ||
+            terminal.routeRequestTimeoutId !== null ||
+            terminal.routePreviousNavBanner !== null ||
+            terminal.navRerouting !== false
+          ) {
+            throw new Error(
+              `terminal cleanup did not invalidate Directions callback: ${JSON.stringify(terminal)}`,
+            );
+          }
+          if (JSON.stringify(clearedTimeouts) !== JSON.stringify(["directions-watchdog"])) {
+            throw new Error(
+              `terminal cleanup did not clear the Directions watchdog exactly once: ` +
+              JSON.stringify(clearedTimeouts),
+            );
+          }
+
+          for (const key of Object.keys(mutations)) mutations[key] = 0;
+          const stateBeforeCallback = context.__snapshot();
+          const clearCountBeforeCallback = clearedTimeouts.length;
+
+          routeCallback(
+            {
+              routes: [{
+                legs: [{ steps: [] }],
+                bounds: null,
+              }],
+            },
+            "OK",
+          );
+
+          const stateAfterCallback = context.__snapshot();
+          if (JSON.stringify(stateAfterCallback) !== JSON.stringify(stateBeforeCallback)) {
+            throw new Error(
+              `stale Directions callback changed state after auth failure: ` +
+              JSON.stringify({ stateBeforeCallback, stateAfterCallback }),
+            );
+          }
+          if (clearedTimeouts.length !== clearCountBeforeCallback) {
+            throw new Error("stale Directions callback touched watchdog ownership after auth failure");
+          }
+          const unexpectedMutations = Object.entries(mutations).filter(([, count]) => count !== 0);
+          if (unexpectedMutations.length) {
+            throw new Error(
+              `stale Directions callback mutated runtime after auth failure: ` +
+              JSON.stringify(unexpectedMutations),
+            );
+          }
+
+          console.log("Stale Directions callback is a no-op after Google Maps auth failure");
+          NODE
