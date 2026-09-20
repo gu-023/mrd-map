@@ -131,6 +131,55 @@ jobs:
                   "Current Directions callback must reject stale generations before clearing its watchdog"
               )
 
+          sync_call = block.find("startDirectionsRequest();", callback_start)
+          sync_try = block.rfind("    try {", 0, sync_call)
+          sync_catch = block.find("    } catch {", sync_call)
+          if (
+              sync_call < 0
+              or sync_try < 0
+              or sync_catch < 0
+              or sync_try > sync_call
+              or sync_call > sync_catch
+          ):
+              raise SystemExit(
+                  "DirectionsService.route() must be invoked through the guarded startDirectionsRequest() try/catch"
+              )
+
+          sync_recovery = block[sync_catch:]
+          sync_recovery_order = [
+              ("current-request guard", "if (requestId !== routeRequestId) return;"),
+              ("watchdog clear", "clearDirectionsRequestTimeout();"),
+              ("generation invalidation", "routeRequestId++;"),
+              ("saved banner capture", "const previousNavBanner = routePreviousNavBanner;"),
+              ("saved banner ownership release", "routePreviousNavBanner = null;"),
+              ("reroute pending-state release", "navRerouting = false;"),
+              ("conditional follow recovery", "if (resumeFollowOnFailure) {"),
+              ("visible sync-failure feedback", '"経路を開始できません"'),
+              ("Directions error ownership", '"directions"'),
+              ("previous banner restore", "setNavBanner(previousNavBanner);"),
+          ]
+          previous_position = -1
+          for name, fragment in sync_recovery_order:
+              position = sync_recovery.find(fragment)
+              if position < 0:
+                  raise SystemExit(
+                      "Directions synchronous failure recovery contract is incomplete: " + name
+                  )
+              if position <= previous_position:
+                  raise SystemExit(
+                      "Directions synchronous failure recovery order regressed at: " + name
+                  )
+              previous_position = position
+
+          if (
+              "computeRoute(" in sync_recovery
+              or "directionsService.route(" in sync_recovery
+              or "startDirectionsRequest();" in sync_recovery
+          ):
+              raise SystemExit(
+                  "Directions synchronous failure recovery must not retry the route automatically"
+              )
+
           pick_start = text.find("  function enterPickMode()")
           pick_end = text.find("\n  function exitPickMode()", pick_start)
           if pick_start < 0 or pick_end < 0:
