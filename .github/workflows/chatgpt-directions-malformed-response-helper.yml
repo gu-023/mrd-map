@@ -1,0 +1,277 @@
+name: ChatGPT malformed Directions response helper
+
+on:
+  push:
+    branches:
+      - chatgpt/guard-directions-malformed-response
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: chatgpt/guard-directions-malformed-response
+
+      - name: Harden malformed OK Directions responses
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("js/app.js")
+          app = path.read_text(encoding="utf-8")
+
+          replacements = [
+              (
+                  '        if (status === "OK" && res.routes[0]) {',
+                  '''        const route = status === "OK" && res && Array.isArray(res.routes)
+          ? res.routes[0]
+          : null;
+        const leg = route && Array.isArray(route.legs) ? route.legs[0] : null;
+        const routeSteps = leg && Array.isArray(leg.steps) ? leg.steps : null;
+        if (route && leg && routeSteps) {''',
+              ),
+              (
+                  '          navSteps = res.routes[0].legs[0].steps || [];',
+                  '          navSteps = routeSteps;',
+              ),
+              (
+                  '          navBounds = res.routes[0].bounds || null;',
+                  '          navBounds = route.bounds || null;',
+              ),
+              (
+                  '''          } else {
+            showError("経路を取得できません", `ステータス: <code>${status}</code>`, "directions");
+          }
+          setNavBanner(previousNavBanner);''',
+                  '''          } else if (status === "OK") {
+            showError(
+              "経路を取得できません",
+              "経路データが不完全です。もう一度お試しください。",
+              "directions"
+            );
+          } else {
+            showError("経路を取得できません", `ステータス: <code>${status}</code>`, "directions");
+          }
+          setNavBanner(previousNavBanner);''',
+              ),
+          ]
+
+          for old, new in replacements:
+              count = app.count(old)
+              if count != 1:
+                  raise SystemExit(f"Expected exactly one patch anchor, found {count}: {old[:80]!r}")
+              app = app.replace(old, new, 1)
+
+          path.write_text(app, encoding="utf-8")
+          PY
+
+          node --check js/app.js
+          git diff --check
+          if git diff -- js/app.js | grep -Eq 'AIza[0-9A-Za-z_-]{20,}'; then
+            echo "Potential Google API key found in diff" >&2
+            exit 1
+          fi
+
+      - name: Exercise malformed and valid Directions callbacks
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require("fs");
+          const vm = require("vm");
+
+          const source = fs.readFileSync("js/app.js", "utf8");
+          if (source.includes('status === "OK" && res.routes[0]')) {
+            throw new Error("unsafe direct routes dereference remains");
+          }
+          if (source.includes('res.routes[0].legs[0].steps')) {
+            throw new Error("unsafe direct legs/steps dereference remains");
+          }
+
+          const cleanupStart = source.indexOf("  function clearDirectionsRequestTimeout() {");
+          const computeStart = source.indexOf("  function computeRoute(", cleanupStart);
+          const computeEnd = source.indexOf("\n\n  function clearRoute() {", computeStart);
+          if (cleanupStart < 0 || computeStart < 0 || computeEnd < 0) {
+            throw new Error("Directions functions could not be located");
+          }
+          const cleanupSource = source.slice(cleanupStart, computeStart).replace(/^  /gm, "");
+          const computeSource = source.slice(computeStart, computeEnd).replace(/^  /gm, "");
+
+          let routeCallback = null;
+          let rendererCount = 0;
+          const errors = [];
+          const banners = [];
+          const clearedTimeouts = [];
+          const origin = {
+            lat() { return 35.681236; },
+            lng() { return 139.767125; },
+          };
+
+          const context = {
+            Date,
+            setTimeout() { return "directions-watchdog"; },
+            clearTimeout(id) { clearedTimeouts.push(id); },
+            locationLiteral(value) { return value; },
+            clearError() {},
+            showError(title, body, sourceName) { errors.push({ title, body, sourceName }); },
+            setNavBanner(value) { banners.push(value); },
+            userMarker: { getPosition() { return origin; } },
+            directionsService: {
+              route(_request, callback) { routeCallback = callback; },
+            },
+            google: {
+              maps: {
+                LatLng: class {
+                  constructor(lat, lng) { this._lat = lat; this._lng = lng; }
+                  lat() { return this._lat; }
+                  lng() { return this._lng; }
+                },
+                TravelMode: { WALKING: "WALKING" },
+                DirectionsRenderer: class {
+                  constructor() { rendererCount += 1; }
+                  setDirections() {}
+                },
+              },
+            },
+            els: {
+              navBanner: {
+                innerHTML: "existing navigation",
+                classList: { contains() { return false; } },
+              },
+            },
+            map: { panTo() {}, setZoom() {} },
+            clearRoute() {},
+            saveRecent() {},
+            clearSignals() {},
+            fetchSignals() {},
+            meters() { return 0; },
+            updateNav() {},
+          };
+          vm.createContext(context);
+          vm.runInContext(`
+            const ROUTE_ORIGIN_MAX_AGE_MS = 30000;
+            const DIRECTIONS_REQUEST_TIMEOUT_MS = 20000;
+            let lastPositionTimestamp = Date.now();
+            let lastPositionAccuracy = 5;
+            let followMode = true;
+            let navMode = true;
+            let navArrived = false;
+            let navSteps = [];
+            let navStepIdx = 0;
+            let navLastPosition = null;
+            let navLastPositionTimestamp = null;
+            let navLastPositionAccuracy = null;
+            let navStepProgressIdx = -1;
+            let navStepProgressSegment = 0;
+            let navStepProgressT = 0;
+            let navStepProgressRemaining = null;
+            let navStepProgressPosition = null;
+            let navStepProgressAccuracy = null;
+            let navDestination = null;
+            let navFullPath = [];
+            let offRouteCount = 0;
+            let lastOffRouteEvidenceTimestamp = null;
+            let navRerouting = false;
+            let routeRequestId = 0;
+            let routeRequestTimeoutId = null;
+            let routePreviousNavBanner = null;
+            let navBounds = null;
+            let zoomedForTurn = false;
+            let signalRequestId = 0;
+            let signalData = [];
+            let signalsOn = false;
+            let travelMode = "WALKING";
+            let directionsRenderer = null;
+            ${cleanupSource}
+            ${computeSource}
+            this.__computeRoute = computeRoute;
+            this.__snapshot = () => ({
+              navRerouting,
+              routeRequestTimeoutId,
+              routePreviousNavBanner,
+              navStepsLength: navSteps.length,
+            });
+          `, context);
+
+          function startRequest() {
+            routeCallback = null;
+            context.__computeRoute(
+              { lat: 35.6895, lng: 139.6917 },
+              false,
+              undefined,
+              undefined,
+              false,
+            );
+            if (!routeCallback) throw new Error("Directions callback was not captured");
+            return routeCallback;
+          }
+
+          const malformedCases = [
+            undefined,
+            { routes: [] },
+            { routes: [{ legs: [] }] },
+            { routes: [{ legs: [{}] }] },
+            { routes: [{ legs: [{ steps: null }] }] },
+          ];
+
+          for (const response of malformedCases) {
+            const errorCount = errors.length;
+            const bannerCount = banners.length;
+            const callback = startRequest();
+            callback(response, "OK");
+            if (errors.length !== errorCount + 1) {
+              throw new Error("malformed OK response did not surface exactly one error");
+            }
+            const err = errors.at(-1);
+            if (
+              err.title !== "経路を取得できません" ||
+              !err.body.includes("経路データが不完全") ||
+              err.sourceName !== "directions"
+            ) {
+              throw new Error(`unexpected malformed-response error: ${JSON.stringify(err)}`);
+            }
+            if (banners.length !== bannerCount + 2 || banners.at(-1) !== "existing navigation") {
+              throw new Error(`previous navigation banner was not restored: ${JSON.stringify(banners)}`);
+            }
+            const state = context.__snapshot();
+            if (
+              state.navRerouting !== false ||
+              state.routeRequestTimeoutId !== null ||
+              state.routePreviousNavBanner !== null
+            ) {
+              throw new Error(`malformed response left pending ownership: ${JSON.stringify(state)}`);
+            }
+          }
+
+          const errorsBeforeValid = errors.length;
+          const validCallback = startRequest();
+          validCallback(
+            { routes: [{ legs: [{ steps: [] }], bounds: null }] },
+            "OK",
+          );
+          if (errors.length !== errorsBeforeValid) {
+            throw new Error("valid Directions response unexpectedly reported an error");
+          }
+          if (rendererCount !== 1) {
+            throw new Error(`valid Directions response did not render exactly once: ${rendererCount}`);
+          }
+
+          console.log("Malformed Directions OK responses fail closed; valid response still succeeds");
+          NODE
+
+      - name: Commit runtime change
+        shell: bash
+        run: |
+          if git diff --quiet -- js/app.js; then
+            echo "Expected js/app.js change was not produced" >&2
+            exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add js/app.js
+          git commit -m "Fail closed on malformed Directions responses"
+          git push origin HEAD:chatgpt/guard-directions-malformed-response
