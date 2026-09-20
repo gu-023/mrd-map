@@ -1,0 +1,60 @@
+name: ChatGPT empty Directions steps helper
+
+on:
+  push:
+    branches:
+      - chatgpt/reject-empty-directions-steps
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Apply empty-step fail-closed guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("js/app.js")
+          text = path.read_text()
+          old = '        if (route && leg && routeSteps) {'
+          new = '        if (route && leg && routeSteps && routeSteps.length > 0) {'
+          if text.count(old) != 1:
+              raise SystemExit(f"expected exactly one success guard, found {text.count(old)}")
+          path.write_text(text.replace(old, new, 1))
+          PY
+
+      - name: Verify change
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check js/app.js
+          git diff --check
+          python3 - <<'PY'
+          from pathlib import Path
+          text = Path("js/app.js").read_text()
+          required = 'if (route && leg && routeSteps && routeSteps.length > 0) {'
+          if text.count(required) != 1:
+              raise SystemExit("empty Directions steps are not guarded")
+          if 'if (route && leg && routeSteps) {' in text:
+              raise SystemExit("old permissive Directions success guard remains")
+          PY
+
+      - name: Commit runtime change and remove helper
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/chatgpt-empty-directions-steps-helper.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add js/app.js .github/workflows/chatgpt-empty-directions-steps-helper.yml
+          git commit -m "Reject empty Directions step lists"
+          git push origin HEAD:"$GITHUB_REF_NAME"
