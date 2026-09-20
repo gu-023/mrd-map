@@ -122,6 +122,7 @@
 
   /* ---------- 起動時チェック ---------- */
   let errorSource = null;
+  const GOOGLE_MAPS_AUTH_ERROR_SOURCE = "google-maps-auth";
 
   function showError(titleHtml, bodyHtml, source = null) {
     errorSource = source;
@@ -154,7 +155,8 @@
       "・Maps JavaScript API が未有効化<br>" +
       "・リファラー制限の不一致<br>" +
       "・課金(Billing)未設定<br>" +
-      "PCのChromeコンソールで <code>◯◯MapError</code> を確認してください。"
+      "PCのChromeコンソールで <code>◯◯MapError</code> を確認してください。",
+      GOOGLE_MAPS_AUTH_ERROR_SOURCE
     );
   };
 
@@ -2300,5 +2302,8 @@
   renderFocus();
   loadGoogleMaps()
     .then(initMap)
-    .catch((err) => showError("地図の読み込みに失敗", String(err.message || err)));
+    .catch((err) => {
+      if (errorSource === GOOGLE_MAPS_AUTH_ERROR_SOURCE) return;
+      showError("地図の読み込みに失敗", String(err.message || err));
+    });
 })();
