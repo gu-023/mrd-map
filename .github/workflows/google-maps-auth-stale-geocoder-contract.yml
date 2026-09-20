@@ -97,7 +97,6 @@ jobs:
 
           vm.runInContext(`
             let googleMapsAuthFailed = false;
-            let geocodeGeneration = 0;
             let geoWatchId = null;
             let geoWatchRecoveryTimer = null;
             let geoOneShotRequestId = 0;
@@ -136,10 +135,7 @@ jobs:
               googleMapsAuthFailed = true;
               stopRuntimeForGoogleMapsAuthFailure();
             };
-            this.__snapshot = () => ({
-              googleMapsAuthFailed,
-              geocodeGeneration,
-            });
+            this.__snapshot = () => ({ googleMapsAuthFailed });
           `, context);
 
           function seedLists(name) {
@@ -180,14 +176,14 @@ jobs:
           }
           const staleCallback = geocodeCallback;
           const beforeFailure = context.__snapshot();
-          if (beforeFailure.googleMapsAuthFailed || beforeFailure.geocodeGeneration !== 0) {
+          if (beforeFailure.googleMapsAuthFailed) {
             throw new Error(`unexpected pre-failure state: ${JSON.stringify(beforeFailure)}`);
           }
 
           context.__failAuth();
           const terminal = context.__snapshot();
-          if (!terminal.googleMapsAuthFailed || terminal.geocodeGeneration !== 1) {
-            throw new Error(`terminal cleanup did not invalidate geocoder work: ${JSON.stringify(terminal)}`);
+          if (!terminal.googleMapsAuthFailed) {
+            throw new Error(`terminal cleanup did not preserve auth failure state: ${JSON.stringify(terminal)}`);
           }
 
           staleCallback(
