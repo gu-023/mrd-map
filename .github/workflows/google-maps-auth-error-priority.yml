@@ -1,0 +1,122 @@
+name: Guard Google Maps startup error priority
+
+on:
+  pull_request:
+    paths:
+      - js/app.js
+      - .github/workflows/google-maps-auth-error-priority.yml
+  push:
+    branches: [main]
+    paths:
+      - js/app.js
+      - .github/workflows/google-maps-auth-error-priority.yml
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Exercise Google Maps startup error priority
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require("fs");
+          const vm = require("vm");
+
+          const source = fs.readFileSync("js/app.js", "utf8");
+
+          const errorStateStart = source.indexOf("  let errorSource = null;");
+          const errorStateEnd = source.indexOf(
+            "\n\n  if (!cfg.GOOGLE_MAPS_API_KEY",
+            errorStateStart,
+          );
+          const authHandlerStart = source.indexOf(
+            "  window.gm_authFailure = function () {",
+            errorStateEnd,
+          );
+          const authHandlerEnd = source.indexOf(
+            "\n\n  /* ---------- Google Maps スクリプトを動的ロード ---------- */",
+            authHandlerStart,
+          );
+          const catchStart = source.lastIndexOf("    .catch((err) => {");
+          const catchBodyStart = source.indexOf("{", catchStart) + 1;
+          const catchEnd = source.indexOf("\n    });", catchBodyStart);
+
+          if (
+            errorStateStart < 0 ||
+            errorStateEnd < 0 ||
+            authHandlerStart < 0 ||
+            authHandlerEnd < 0 ||
+            catchStart < 0 ||
+            catchBodyStart <= 0 ||
+            catchEnd < 0
+          ) {
+            throw new Error("Google Maps startup error-handling blocks could not be located");
+          }
+
+          const errorStateSource = source
+            .slice(errorStateStart, errorStateEnd)
+            .replace(/^  /gm, "");
+          const authHandlerSource = source
+            .slice(authHandlerStart, authHandlerEnd)
+            .replace(/^  /gm, "");
+          const catchBodySource = source
+            .slice(catchBodyStart, catchEnd)
+            .replace(/^      /gm, "");
+
+          const context = {
+            window: {},
+            els: {
+              error: {
+                innerHTML: "",
+                classList: { remove() {} },
+              },
+            },
+          };
+          vm.createContext(context);
+          vm.runInContext(
+            errorStateSource +
+              "\n" + authHandlerSource +
+              "\nthis.__handleGoogleMapsLoadError = (err) => {" + catchBodySource + "\n};" +
+              "\nthis.__getErrorSource = () => errorSource;",
+            context,
+          );
+
+          if (typeof context.window.gm_authFailure !== "function") {
+            throw new Error("gm_authFailure handler was not installed");
+          }
+
+          // Authentication details are more actionable than a later generic script error/timeout.
+          context.window.gm_authFailure();
+          const authHtml = context.els.error.innerHTML;
+          if (!authHtml.includes("Google Maps 認証エラー")) {
+            throw new Error("gm_authFailure did not render the authentication error");
+          }
+          if (context.__getErrorSource() !== "google-maps-auth") {
+            throw new Error("gm_authFailure did not claim authentication-error ownership");
+          }
+          context.__handleGoogleMapsLoadError(new Error("generic bootstrap failure"));
+          if (context.els.error.innerHTML !== authHtml) {
+            throw new Error("generic bootstrap failure overwrote the authentication error");
+          }
+
+          // Reverse ordering must still improve a generic failure when auth diagnostics arrive later.
+          vm.runInContext('errorSource = null; els.error.innerHTML = "";', context);
+          context.__handleGoogleMapsLoadError(new Error("generic bootstrap failure"));
+          if (!context.els.error.innerHTML.includes("地図の読み込みに失敗")) {
+            throw new Error("generic bootstrap failure was not rendered");
+          }
+          context.window.gm_authFailure();
+          if (!context.els.error.innerHTML.includes("Google Maps 認証エラー")) {
+            throw new Error("late authentication error did not replace the generic failure");
+          }
+          if (context.__getErrorSource() !== "google-maps-auth") {
+            throw new Error("late authentication error did not claim error ownership");
+          }
+
+          console.log("Google Maps startup error priority contract OK");
+          NODE
