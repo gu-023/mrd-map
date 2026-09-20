@@ -165,23 +165,30 @@
     return new Promise((resolve, reject) => {
       let settled = false;
       let timeoutId = null;
-      const finish = (callback, value) => {
+      const s = document.createElement("script");
+      const finish = (callback, value, removeScript = false) => {
         if (settled) return;
         settled = true;
-        if (timeoutId !== null) clearTimeout(timeoutId);
+        if (timeoutId !== null) {
+          clearTimeout(timeoutId);
+          timeoutId = null;
+        }
+        s.onerror = null;
+        // A removed async script can still finish in some hosts; keep a harmless callable tombstone
+        // without retaining this Promise/finish closure.
+        window.__mrdMapInit = () => {};
+        if (removeScript) s.remove();
         callback(value);
       };
       window.__mrdMapInit = () => finish(resolve);
-      const s = document.createElement("script");
       const key = encodeURIComponent(cfg.GOOGLE_MAPS_API_KEY);
       s.src =
         `https://maps.googleapis.com/maps/api/js?key=${key}` +
         `&callback=__mrdMapInit&libraries=marker,geometry,places&loading=async&language=ja&region=JP`;
       s.async = true;
-      s.onerror = () => finish(reject, new Error("Google Maps の読み込みに失敗"));
+      s.onerror = () => finish(reject, new Error("Google Maps の読み込みに失敗"), true);
       timeoutId = setTimeout(() => {
-        s.remove();
-        finish(reject, new Error("Google Maps の読み込みがタイムアウト"));
+        finish(reject, new Error("Google Maps の読み込みがタイムアウト"), true);
       }, GOOGLE_MAPS_LOAD_TIMEOUT_MS);
       document.head.appendChild(s);
     });
