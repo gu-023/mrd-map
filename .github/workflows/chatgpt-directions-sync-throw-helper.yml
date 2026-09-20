@@ -1,0 +1,130 @@
+name: ChatGPT Directions sync throw helper
+
+on:
+  push:
+    branches:
+      - chatgpt/recover-directions-sync-throw
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: chatgpt/recover-directions-sync-throw
+          fetch-depth: 0
+
+      - name: Apply synchronous Directions throw recovery
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("js/app.js")
+          text = path.read_text()
+
+          call_old = "    directionsService.route(\n"
+          call_new = "    const startDirectionsRequest = () => directionsService.route(\n"
+          if call_new not in text:
+              if text.count(call_old) != 1:
+                  raise SystemExit(f"expected one direct Directions route call, found {text.count(call_old)}")
+              text = text.replace(call_old, call_new, 1)
+
+          tail_old = "    );\n  }\n\n  function clearRoute()"
+          recovery = '''    );
+    try {
+      startDirectionsRequest();
+    } catch {
+      if (requestId !== routeRequestId) return;
+      clearDirectionsRequestTimeout();
+      routeRequestId++; // 部分的に開始された callback が後から届いても無効化
+      const previousNavBanner = routePreviousNavBanner;
+      routePreviousNavBanner = null;
+      navRerouting = false;
+      if (resumeFollowOnFailure) {
+        followMode = true;
+        const currentPosition = userMarker && userMarker.getPosition();
+        if (currentPosition) map.panTo(currentPosition);
+      }
+      showError(
+        "経路を開始できません",
+        "もう一度お試しください。続く場合は ↻ で再読み込みしてください。",
+        "directions"
+      );
+      setNavBanner(previousNavBanner);
+    }
+  }
+
+  function clearRoute()'''
+          if '"経路を開始できません"' not in text:
+              start = text.find("  function computeRoute(")
+              if start < 0:
+                  raise SystemExit("computeRoute() not found")
+              tail_at = text.find(tail_old, start)
+              if tail_at < 0:
+                  raise SystemExit("Directions call tail anchor not found")
+              text = text[:tail_at] + recovery + text[tail_at + len(tail_old):]
+
+          path.write_text(text)
+          PY
+
+      - name: Validate JavaScript and recovery contract
+        shell: bash
+        run: |
+          node --check js/app.js
+          git diff --check
+          python3 - <<'PY'
+          from pathlib import Path
+
+          text = Path("js/app.js").read_text()
+          start = text.find("  function computeRoute(")
+          end = text.find("\n  function clearRoute()", start)
+          if start < 0 or end < 0:
+              raise SystemExit("computeRoute() block not found")
+          block = text[start:end]
+
+          timeout = block.find("routeRequestTimeoutId = setTimeout(() => {")
+          route_call = block.find("directionsService.route(")
+          invoke = block.find("startDirectionsRequest();", route_call)
+          catch = block.find("    } catch {", invoke)
+          if min(timeout, route_call, invoke, catch) < 0 or not (timeout < route_call < invoke < catch):
+              raise SystemExit("Directions request must arm watchdog, define route call, invoke it, then recover synchronous throws")
+
+          recovery = block[catch:]
+          required = [
+              "if (requestId !== routeRequestId) return;",
+              "clearDirectionsRequestTimeout();",
+              "routeRequestId++;",
+              "routePreviousNavBanner = null;",
+              "navRerouting = false;",
+              '"経路を開始できません"',
+              '"directions"',
+              "setNavBanner(previousNavBanner);",
+          ]
+          positions = []
+          for fragment in required:
+              pos = recovery.find(fragment)
+              if pos < 0:
+                  raise SystemExit(f"missing sync-throw recovery fragment: {fragment}")
+              positions.append(pos)
+          if positions != sorted(positions):
+              raise SystemExit("sync-throw recovery ordering is unsafe")
+          if "computeRoute(" in recovery or "startDirectionsRequest();" in recovery[recovery.find("setNavBanner(previousNavBanner);") + 1:]:
+              raise SystemExit("sync-throw recovery must not auto-retry Directions")
+          PY
+
+      - name: Commit runtime change
+        shell: bash
+        run: |
+          if git diff --quiet -- js/app.js; then
+            echo "Runtime change already applied"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add js/app.js
+          git commit -m "Recover from synchronous Directions failures"
+          git push origin HEAD:chatgpt/recover-directions-sync-throw
