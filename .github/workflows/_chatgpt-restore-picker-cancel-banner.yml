@@ -23,25 +23,29 @@ jobs:
 
           path = Path('js/app.js')
           text = path.read_text()
-          old = '''  function toggleNav() {
-    if (pickMode) {
-      exitPickMode();
-    } else {
-      openDestinationMenu();
-    }
-  }
-'''
-          new = '''  function toggleNav() {
-    if (pickMode) {
-      const previousNavBanner = navMode ? routePreviousNavBanner : null;
-      exitPickMode();
-      setNavBanner(previousNavBanner);
-      routePreviousNavBanner = null;
-    } else {
-      openDestinationMenu();
-    }
-  }
-'''
+          old = "\n".join([
+              "  function toggleNav() {",
+              "    if (pickMode) {",
+              "      exitPickMode();",
+              "    } else {",
+              "      openDestinationMenu();",
+              "    }",
+              "  }",
+              "",
+          ])
+          new = "\n".join([
+              "  function toggleNav() {",
+              "    if (pickMode) {",
+              "      const previousNavBanner = navMode ? routePreviousNavBanner : null;",
+              "      exitPickMode();",
+              "      setNavBanner(previousNavBanner);",
+              "      routePreviousNavBanner = null;",
+              "    } else {",
+              "      openDestinationMenu();",
+              "    }",
+              "  }",
+              "",
+          ])
           if text.count(old) != 1:
               raise SystemExit(f'expected exactly one toggleNav target, found {text.count(old)}')
           path.write_text(text.replace(old, new, 1))
