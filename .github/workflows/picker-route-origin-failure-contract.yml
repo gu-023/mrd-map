@@ -1,0 +1,252 @@
+name: Guard picker route origin failure recovery
+
+on:
+  pull_request:
+    paths:
+      - js/app.js
+      - .github/workflows/picker-route-origin-failure-contract.yml
+  push:
+    branches: [main]
+    paths:
+      - js/app.js
+      - .github/workflows/picker-route-origin-failure-contract.yml
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Verify picker origin failures release recovery ownership
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require("fs");
+          const vm = require("vm");
+
+          const source = fs.readFileSync("js/app.js", "utf8");
+          const sliceFunction = (name, nextName) => {
+            const start = source.indexOf(`  function ${name}(`);
+            const end = source.indexOf(`\n  function ${nextName}(`, start);
+            if (start < 0 || end < 0) {
+              throw new Error(`${name}() block could not be located`);
+            }
+            return source.slice(start, end).replace(/^  /gm, "");
+          };
+
+          const enterPickModeSource = sliceFunction("enterPickMode", "exitPickMode");
+          const exitPickModeSource = sliceFunction("exitPickMode", "confirmDestination");
+          const confirmDestinationSource = sliceFunction(
+            "confirmDestination",
+            "clearDirectionsRequestTimeout",
+          );
+          const cleanupSource = sliceFunction(
+            "clearDirectionsRequestTimeout",
+            "computeRoute",
+          );
+          const computeRouteSource = sliceFunction("computeRoute", "clearRoute");
+
+          function runScenario(initialFollow, originKind) {
+            let bannerHidden = false;
+            let bannerHtml = "次は右折";
+            let pickerHidden = true;
+            let routeCalls = 0;
+            let timeoutCalls = 0;
+            const banners = [];
+            const errors = [];
+
+            const origin = {
+              lat() { return 35.681236; },
+              lng() { return 139.767125; },
+            };
+
+            const context = {
+              Date: { now() { return 100000; } },
+              setTimeout() {
+                timeoutCalls += 1;
+                throw new Error("Directions watchdog must not arm on origin failure");
+              },
+              clearTimeout() {},
+              els: {
+                navBanner: {
+                  get innerHTML() { return bannerHtml; },
+                  set innerHTML(value) { bannerHtml = value; },
+                  classList: {
+                    contains(name) {
+                      return name === "hidden" ? bannerHidden : false;
+                    },
+                  },
+                },
+                picker: {
+                  classList: {
+                    remove(name) {
+                      if (name === "hidden") pickerHidden = false;
+                    },
+                    add(name) {
+                      if (name === "hidden") pickerHidden = true;
+                    },
+                  },
+                },
+              },
+              map: {
+                getCenter() {
+                  return { lat: 35.6895, lng: 139.6917 };
+                },
+              },
+              userMarker: {
+                getPosition() {
+                  return originKind === "missing" ? null : origin;
+                },
+              },
+              locationLiteral(value) {
+                if (!value) return null;
+                const lat = typeof value.lat === "function" ? value.lat() : value.lat;
+                const lng = typeof value.lng === "function" ? value.lng() : value.lng;
+                return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null;
+              },
+              setNavBanner(value) {
+                banners.push(value);
+                if (value === null) {
+                  bannerHidden = true;
+                  bannerHtml = "";
+                } else {
+                  bannerHidden = false;
+                  bannerHtml = value;
+                }
+              },
+              showError(title, body, sourceName) {
+                errors.push({ title, body, sourceName });
+              },
+              clearError() {},
+              disableCompass() {},
+              directionsService: {
+                route() {
+                  routeCalls += 1;
+                  throw new Error("Directions request must not start on origin failure");
+                },
+              },
+              google: {
+                maps: {
+                  LatLng: class {
+                    constructor(lat, lng) {
+                      this._lat = lat;
+                      this._lng = lng;
+                    }
+                    lat() { return this._lat; }
+                    lng() { return this._lng; }
+                  },
+                  TravelMode: { WALKING: "WALKING" },
+                },
+              },
+            };
+            vm.createContext(context);
+
+            const lastPositionTimestamp = originKind === "stale" ? 0 : 100000;
+            vm.runInContext(`
+              const ROUTE_ORIGIN_MAX_AGE_MS = 30000;
+              const DIRECTIONS_REQUEST_TIMEOUT_MS = 20000;
+              let lastPositionTimestamp = ${lastPositionTimestamp};
+              let lastPositionAccuracy = 5;
+              let followMode = ${initialFollow ? "true" : "false"};
+              let compassOn = false;
+              let compassPermissionPending = false;
+              let pickMode = false;
+              let navMode = true;
+              let navRerouting = false;
+              let routeRequestId = 0;
+              let routeRequestTimeoutId = null;
+              let routePreviousNavBanner = null;
+              let travelMode = "WALKING";
+
+              ${enterPickModeSource}
+              ${exitPickModeSource}
+              ${confirmDestinationSource}
+              ${cleanupSource}
+              ${computeRouteSource}
+
+              this.__enter = enterPickMode;
+              this.__confirm = confirmDestination;
+              this.__snapshot = () => ({
+                followMode,
+                pickMode,
+                navRerouting,
+                routeRequestId,
+                routeRequestTimeoutId,
+                routePreviousNavBanner,
+                previousFollowMode: enterPickMode.previousFollowMode,
+              });
+            `, context);
+
+            context.__enter();
+            const entered = context.__snapshot();
+            if (
+              entered.followMode !== false ||
+              entered.pickMode !== true ||
+              entered.previousFollowMode !== initialFollow ||
+              entered.routePreviousNavBanner !== "次は右折" ||
+              pickerHidden !== false
+            ) {
+              throw new Error(
+                `${originKind}/${initialFollow}: picker entry lost recovery ownership ` +
+                JSON.stringify({ entered, pickerHidden }),
+              );
+            }
+
+            context.__confirm();
+            const recovered = context.__snapshot();
+            if (
+              recovered.followMode !== initialFollow ||
+              recovered.pickMode !== false ||
+              recovered.navRerouting !== false ||
+              recovered.routeRequestId !== 0 ||
+              recovered.routeRequestTimeoutId !== null ||
+              recovered.routePreviousNavBanner !== null ||
+              recovered.previousFollowMode !== null ||
+              pickerHidden !== true
+            ) {
+              throw new Error(
+                `${originKind}/${initialFollow}: early failure leaked picker recovery state ` +
+                JSON.stringify({ recovered, pickerHidden }),
+              );
+            }
+
+            if (routeCalls !== 0 || timeoutCalls !== 0) {
+              throw new Error(
+                `${originKind}/${initialFollow}: request armed before origin validation ` +
+                JSON.stringify({ routeCalls, timeoutCalls }),
+              );
+            }
+
+            const expectedBanner = initialFollow ? "次は右折" : null;
+            if (banners[banners.length - 1] !== expectedBanner) {
+              throw new Error(
+                `${originKind}/${initialFollow}: banner recovery mismatch ` +
+                JSON.stringify(banners),
+              );
+            }
+
+            const lastError = errors[errors.length - 1];
+            const expectedTitle = originKind === "stale"
+              ? "現在地が古いため経路を開始できません"
+              : "現在地が未取得";
+            if (!lastError || lastError.title !== expectedTitle || lastError.sourceName !== "geolocation") {
+              throw new Error(
+                `${originKind}/${initialFollow}: expected geolocation error was not surfaced ` +
+                JSON.stringify(lastError),
+              );
+            }
+          }
+
+          for (const initialFollow of [true, false]) {
+            for (const originKind of ["missing", "stale"]) {
+              runScenario(initialFollow, originKind);
+            }
+          }
+
+          console.log(
+            "Picker origin failures preserve follow ownership and release saved banner context before request arm",
+          );
+          NODE
