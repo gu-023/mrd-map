@@ -306,7 +306,12 @@
     clearDirectionsRequestTimeout();
     routePreviousNavBanner = null;
     navRerouting = false;
-    cancelSignalRequest();
+    signalRequestId++;
+    if (typeof fetchSignals === "function" && fetchSignals.abortController) {
+      const signalAbortController = fetchSignals.abortController;
+      fetchSignals.abortController = null;
+      signalAbortController.abort();
+    }
     predictionRequestId += 1;
     placeDetailsRequestId += 1;
     if (predictionTimeoutId !== null) clearTimeout(predictionTimeoutId);
@@ -904,7 +909,14 @@
         label: `🚥 信号表示: ${signalsOn ? "ON" : "OFF"}`,
         action: () => {
           signalsOn = !signalsOn;
-          if (!signalsOn) cancelSignalRequest();
+          if (!signalsOn) {
+            signalRequestId++;
+            if (typeof fetchSignals === "function" && fetchSignals.abortController) {
+              const signalAbortController = fetchSignals.abortController;
+              fetchSignals.abortController = null;
+              signalAbortController.abort();
+            }
+          }
           if (signalsOn && !signalData.length) fetchSignals();
           else plotSignals();
           closeMenuToMap();
@@ -1557,7 +1569,12 @@
               saveRecent(routeDestination, name); // 既存ルートの移動手段だけを変える場合は履歴を更新しない
             }
           }
-          cancelSignalRequest(); // 前ルートの未完了 Overpass transport/callback を停止・無効化
+          signalRequestId++; // 前ルートの未完了 Overpass callback を無効化
+          if (typeof fetchSignals === "function" && fetchSignals.abortController) {
+            const signalAbortController = fetchSignals.abortController;
+            fetchSignals.abortController = null;
+            signalAbortController.abort();
+          }
           clearSignals();
           signalData = [];
           if (signalsOn) fetchSignals(); // ルート周辺の信号機を取得
@@ -1626,17 +1643,15 @@
     }
   }
 
-  function cancelSignalRequest() {
-    signalRequestId++;
-    const abortController = fetchSignals.abortController;
-    fetchSignals.abortController = null;
-    if (abortController) abortController.abort();
-  }
-
   function cancelNav() {
     routeRequestId++; // 未完了の Directions callback でナビが復活しないよう無効化
     clearDirectionsRequestTimeout();
-    cancelSignalRequest(); // 未完了の Overpass transport/callback で信号が復活しないよう停止・無効化
+    signalRequestId++; // 未完了の Overpass callback で信号が復活しないよう無効化
+    if (typeof fetchSignals === "function" && fetchSignals.abortController) {
+      const signalAbortController = fetchSignals.abortController;
+      fetchSignals.abortController = null;
+      signalAbortController.abort();
+    }
     navRerouting = false;
     navMode = false;
     navArrived = false;
