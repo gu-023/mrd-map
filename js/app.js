@@ -111,7 +111,7 @@
   let predictionBackZone = "input"; // 候補先頭から↑で、候補へ入った元の入力手段へ戻す
   let searchReturnPrediction = null; // 移動手段から戻る際に直前の候補へD-padフォーカスを復元
   let predictionRequestId = 0; // 古い Autocomplete callback を無視するための世代番号
-  let placeDetailsRequestId = 0; // 古い Place Details callback を無視するための世代番号
+  let placeDetailsRequestId = 0; // 古い Place Details callback を無視するための要求世代
   let predictionTimeoutId = null;
   let placeDetailsTimeoutId = null;
   let compositionRefreshTimeoutId = null;
@@ -1671,6 +1671,11 @@
         const near = [];
         for (const el of j.elements) {
           if (near.length >= 200) break;
+          if (!el ||
+              !Number.isFinite(el.lat) || el.lat < -90 || el.lat > 90 ||
+              !Number.isFinite(el.lon) || el.lon < -180 || el.lon > 180) {
+            continue;
+          }
           const pt = new google.maps.LatLng(el.lat, el.lon);
           let min = navFullPath.length === 1 ? meters(pt, navFullPath[0]) : Infinity;
           for (let i = 0; i < navFullPath.length - 1; i++) {
