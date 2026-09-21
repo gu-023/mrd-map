@@ -323,7 +323,6 @@
     searchOpen = false;
     menuOpen = false;
     pickMode = false;
-    enterPickMode.previousFollowMode = null;
     panMode = false;
     els.searchQuery.blur();
     disableCompass();
