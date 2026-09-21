@@ -1,4 +1,4 @@
-name: Guard Directions takeover watchdog runtime
+name: Guard Directions takeover callbacks runtime
 
 on:
   pull_request:
@@ -20,7 +20,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Verify menu/search takeover cancels Directions watchdog at runtime
+      - name: Verify menu/search takeover invalidates Directions callbacks at runtime
         shell: bash
         run: |
           node <<'NODE'
@@ -60,11 +60,22 @@ jobs:
               openMenu: 0,
               closeMenu: 0,
               renderSearch: 0,
+              clearRoute: 0,
+              directionsRenderer: 0,
+              setDirections: 0,
+              saveRecent: 0,
+              clearSignals: 0,
+              fetchSignals: 0,
+              updateNav: 0,
             };
 
             const origin = {
               lat() { return 35.681236; },
               lng() { return 139.767125; },
+            };
+            const routePoint = {
+              lat() { return 35.6895; },
+              lng() { return 139.6917; },
             };
 
             const context = {
@@ -129,7 +140,12 @@ jobs:
                     WALKING: "WALKING",
                   },
                   DirectionsRenderer: class {
-                    setDirections() {}
+                    constructor() {
+                      mutations.directionsRenderer += 1;
+                    }
+                    setDirections() {
+                      mutations.setDirections += 1;
+                    }
                   },
                 },
               },
@@ -137,14 +153,24 @@ jobs:
                 panTo() {},
                 setZoom() {},
               },
-              clearRoute() {},
-              saveRecent() {},
-              clearSignals() {},
-              fetchSignals() {},
+              clearRoute() {
+                mutations.clearRoute += 1;
+              },
+              saveRecent() {
+                mutations.saveRecent += 1;
+              },
+              clearSignals() {
+                mutations.clearSignals += 1;
+              },
+              fetchSignals() {
+                mutations.fetchSignals += 1;
+              },
               meters() {
                 return 0;
               },
-              updateNav() {},
+              updateNav() {
+                mutations.updateNav += 1;
+              },
               loadList() {
                 return [];
               },
@@ -282,6 +308,37 @@ jobs:
               );
             }
 
+            const stateBeforeLateRoute = context.__snapshot();
+            const mutationsBeforeLateRoute = { ...mutations };
+            const clearCountBeforeLateRoute = clearedTimeouts.length;
+
+            // Simulate a successful Directions response that arrives after D-pad takeover.
+            routeCallback({
+              routes: [{
+                bounds: {},
+                legs: [{
+                  steps: [{ path: [origin, routePoint] }],
+                }],
+              }],
+            }, "OK");
+
+            const stateAfterLateRoute = context.__snapshot();
+            if (JSON.stringify(stateAfterLateRoute) !== JSON.stringify(stateBeforeLateRoute)) {
+              throw new Error(
+                `${label}: stale Directions service callback changed state after takeover: ` +
+                JSON.stringify({ stateBeforeLateRoute, stateAfterLateRoute }),
+              );
+            }
+            if (clearedTimeouts.length !== clearCountBeforeLateRoute) {
+              throw new Error(`${label}: stale Directions service callback touched watchdog ownership`);
+            }
+            if (JSON.stringify(mutations) !== JSON.stringify(mutationsBeforeLateRoute)) {
+              throw new Error(
+                `${label}: stale Directions service callback produced side effects after takeover: ` +
+                JSON.stringify({ mutationsBeforeLateRoute, mutations }),
+              );
+            }
+
             const stateBeforeLateTimeout = context.__snapshot();
             const mutationsBeforeLateTimeout = { ...mutations };
             const clearCountBeforeLateTimeout = clearedTimeouts.length;
@@ -315,6 +372,6 @@ jobs:
           runScenario("Search", searchSource, "openSearch");
 
           console.log(
-            "Destination menu/search takeover clears the live Directions watchdog and stale timeout callbacks remain inert",
+            "Destination menu/search takeover invalidates stale Directions service and watchdog callbacks",
           );
           NODE
