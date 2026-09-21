@@ -84,7 +84,6 @@
   let routeRequestId = 0; // 古い Directions callback を無視するための世代番号
   let routeRequestTimeoutId = null; // 進行中 Directions request の watchdog（takeover/cancel/new request で解除）
   let routePreviousNavBanner = null; // 経路要求前の案内（キャンセル/失敗時の復元用）
-  let pickPreviousFollowMode = null; // picker開始前の追従状態（キャンセル時に復元）
   let navBounds = null; // ルート全体の範囲（プレビュー用）
   let zoomedForTurn = false; // 曲がり角ズーム中か
   // 信号機（OpenStreetMap）
@@ -324,7 +323,7 @@
     searchOpen = false;
     menuOpen = false;
     pickMode = false;
-    pickPreviousFollowMode = null;
+    enterPickMode.previousFollowMode = null;
     panMode = false;
     els.searchQuery.blur();
     disableCompass();
@@ -774,10 +773,10 @@
   function toggleNav() {
     if (pickMode) {
       const previousNavBanner = navMode ? routePreviousNavBanner : null;
-      const previousFollowMode = pickPreviousFollowMode;
+      const previousFollowMode = enterPickMode.previousFollowMode;
       exitPickMode();
-      if (previousFollowMode !== null) followMode = previousFollowMode;
-      pickPreviousFollowMode = null;
+      if (typeof previousFollowMode === "boolean") followMode = previousFollowMode;
+      enterPickMode.previousFollowMode = null;
       setNavBanner(previousNavBanner);
       routePreviousNavBanner = null;
     } else {
@@ -1421,7 +1420,7 @@
       clearError("directions");
     }
     if (compassOn || compassPermissionPending) disableCompass(); // 回転中/許可待ちは画面基準のパン前に解除
-    pickPreviousFollowMode = followMode;
+    enterPickMode.previousFollowMode = followMode;
     pickMode = true;
     followMode = false;
     els.picker.classList.remove("hidden");
@@ -1437,7 +1436,7 @@
   function confirmDestination() {
     const dest = map.getCenter();
     exitPickMode();
-    pickPreviousFollowMode = null;
+    enterPickMode.previousFollowMode = null;
     computeRoute(dest, false, undefined, undefined, true);
   }
 
