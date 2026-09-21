@@ -1,0 +1,99 @@
+name: Apply Directions seam dedupe
+
+on:
+  push:
+    branches:
+      - chatgpt/deduplicate-directions-seams
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: chatgpt/deduplicate-directions-seams
+          fetch-depth: 0
+
+      - name: Apply atomic runtime and contract change
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          app = Path("js/app.js")
+          text = app.read_text()
+          old = '''          // オフルート判定用に詳細経路点を平坦化
+          navFullPath = [];
+          navSteps.forEach((s) => {
+            const path = (s.path && s.path.length ? s.path : [s.start_location, s.end_location]);
+            navFullPath.push(...path);
+          });'''
+          new = '''          // ルート全体の詳細経路点を平坦化し、隣接 step の共有端点は重複させない。
+          navFullPath = [];
+          let lastRoutePoint = null;
+          navSteps.forEach((s) => {
+            const path = (s.path && s.path.length ? s.path : [s.start_location, s.end_location]);
+            path.forEach((point) => {
+              const location = locationLiteral(point);
+              if (!lastRoutePoint || location.lat !== lastRoutePoint.lat || location.lng !== lastRoutePoint.lng) {
+                navFullPath.push(point);
+                lastRoutePoint = location;
+              }
+            });
+          });'''
+          if text.count(old) != 1:
+              raise SystemExit(f"expected runtime block once, found {text.count(old)}")
+          app.write_text(text.replace(old, new))
+
+          workflow = Path(".github/workflows/directions-mixed-geometry-contract.yml")
+          text = workflow.read_text()
+          old_points = '''          const pointC = new context.google.maps.LatLng(35.682, 139.768);
+          const fallbackStart = new context.google.maps.LatLng(35.6824, 139.7685);
+          const fallbackEnd = new context.google.maps.LatLng(35.6828, 139.769);
+          const pointF = new context.google.maps.LatLng(35.6832, 139.7695);
+          const pointG = new context.google.maps.LatLng(35.6836, 139.77);'''
+          new_points = '''          const pointC = new context.google.maps.LatLng(35.682, 139.768);
+          const fallbackStart = new context.google.maps.LatLng(35.682, 139.768); // shared seam, distinct object
+          const fallbackEnd = new context.google.maps.LatLng(35.6828, 139.769);
+          const pointF = new context.google.maps.LatLng(35.6828, 139.769); // shared seam, distinct object
+          const pointG = new context.google.maps.LatLng(35.6836, 139.77);'''
+          if text.count(old_points) != 1:
+              raise SystemExit(f"expected geometry fixture once, found {text.count(old_points)}")
+          text = text.replace(old_points, new_points)
+
+          old_expected = '''          const expectedPath = [
+            pointA,
+            pointB,
+            pointC,
+            fallbackStart,
+            fallbackEnd,
+            pointF,
+            pointG,
+          ].map((point) => ({ lat: point.lat(), lng: point.lng() }));'''
+          new_expected = '''          const expectedPath = [
+            pointA,
+            pointB,
+            pointC,
+            fallbackEnd,
+            pointG,
+          ].map((point) => ({ lat: point.lat(), lng: point.lng() }));'''
+          if text.count(old_expected) != 1:
+              raise SystemExit(f"expected path assertion once, found {text.count(old_expected)}")
+          workflow.write_text(text.replace(old_expected, new_expected))
+          PY
+
+          node --check js/app.js
+          git diff --check
+
+      - name: Commit branch change and remove helper
+        shell: bash
+        run: |
+          git rm .github/workflows/chatgpt-apply-directions-seam-dedupe.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add js/app.js .github/workflows/directions-mixed-geometry-contract.yml
+          git commit -m "Deduplicate shared Directions step seams"
+          git push origin HEAD:chatgpt/deduplicate-directions-seams
