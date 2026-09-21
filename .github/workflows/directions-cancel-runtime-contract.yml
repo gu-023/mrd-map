@@ -1,0 +1,326 @@
+name: Guard navigation cancel against stale Directions callbacks
+
+on:
+  pull_request:
+    paths:
+      - js/app.js
+      - .github/workflows/directions-cancel-runtime-contract.yml
+  push:
+    branches: [main]
+    paths:
+      - js/app.js
+      - .github/workflows/directions-cancel-runtime-contract.yml
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Verify navigation cancel invalidates stale Directions callbacks at runtime
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require("fs");
+          const vm = require("vm");
+
+          const source = fs.readFileSync("js/app.js", "utf8");
+          const sliceFunction = (name, nextName) => {
+            const start = source.indexOf(`  function ${name}(`);
+            const end = source.indexOf(`\n  function ${nextName}(`, start);
+            if (start < 0 || end < 0) {
+              throw new Error(`${name}() block could not be located`);
+            }
+            return source.slice(start, end).replace(/^  /gm, "");
+          };
+
+          const cleanupSource = sliceFunction(
+            "clearDirectionsRequestTimeout",
+            "computeRoute",
+          );
+          const computeRouteSource = sliceFunction("computeRoute", "clearRoute");
+          const clearRouteSource = sliceFunction("clearRoute", "cancelNav");
+          const cancelNavSource = sliceFunction("cancelNav", "fetchSignals");
+
+          let routeCallback = null;
+          let timeoutCallback = null;
+          let routeCalls = 0;
+          const clearedTimeouts = [];
+          const mutations = {
+            autoZoomForTurn: 0,
+            clearError: 0,
+            clearSignals: 0,
+            fetchSignals: 0,
+            mapPanTo: 0,
+            mapSetZoom: 0,
+            rendererSetMap: 0,
+            setNavBanner: 0,
+            showError: 0,
+          };
+
+          const origin = {
+            lat() { return 35.681236; },
+            lng() { return 139.767125; },
+          };
+
+          const existingRenderer = {
+            setMap(value) {
+              if (value !== null) throw new Error("cancelNav() must detach the renderer");
+              mutations.rendererSetMap += 1;
+            },
+          };
+
+          const fetchSignals = () => {
+            mutations.fetchSignals += 1;
+          };
+          fetchSignals.abortController = null;
+
+          const context = {
+            Date,
+            clearTimeout(id) {
+              clearedTimeouts.push(id);
+            },
+            setTimeout(callback) {
+              timeoutCallback = callback;
+              return "directions-watchdog";
+            },
+            els: {
+              navBanner: {
+                innerHTML: "existing navigation",
+                classList: {
+                  contains() { return false; },
+                },
+              },
+            },
+            locationLiteral(value) {
+              return value;
+            },
+            clearError() {
+              mutations.clearError += 1;
+            },
+            showError() {
+              mutations.showError += 1;
+            },
+            setNavBanner() {
+              mutations.setNavBanner += 1;
+            },
+            userMarker: {
+              getPosition() {
+                return origin;
+              },
+            },
+            directionsService: {
+              route(_request, callback) {
+                routeCalls += 1;
+                routeCallback = callback;
+              },
+            },
+            google: {
+              maps: {
+                LatLng: class {
+                  constructor(lat, lng) {
+                    this._lat = lat;
+                    this._lng = lng;
+                  }
+                  lat() { return this._lat; }
+                  lng() { return this._lng; }
+                },
+                TravelMode: {
+                  WALKING: "WALKING",
+                },
+              },
+            },
+            map: {
+              panTo() {
+                mutations.mapPanTo += 1;
+              },
+              setZoom() {
+                mutations.mapSetZoom += 1;
+              },
+            },
+            autoZoomForTurn() {
+              mutations.autoZoomForTurn += 1;
+            },
+            clearSignals() {
+              mutations.clearSignals += 1;
+            },
+            fetchSignals,
+            existingRenderer,
+          };
+          vm.createContext(context);
+
+          vm.runInContext(`
+            const ROUTE_ORIGIN_MAX_AGE_MS = 30000;
+            const DIRECTIONS_REQUEST_TIMEOUT_MS = 20000;
+            let lastPositionTimestamp = Date.now();
+            let lastPositionAccuracy = 5;
+            let followMode = false;
+            let navMode = true;
+            let navArrived = true;
+            let navSteps = [{ id: "old-step" }];
+            let navStepIdx = 1;
+            let navLastPosition = { id: "old-position" };
+            let navLastPositionTimestamp = 1;
+            let navLastPositionAccuracy = 9;
+            let navStepProgressIdx = 1;
+            let navStepProgressSegment = 2;
+            let navStepProgressT = 0.5;
+            let navStepProgressRemaining = 10;
+            let navStepProgressPosition = { id: "old-progress" };
+            let navStepProgressAccuracy = 9;
+            let navDestination = { id: "old-destination" };
+            let navFullPath = [{ id: "old-path" }];
+            let offRouteCount = 2;
+            let lastOffRouteEvidenceTimestamp = 1;
+            let navRerouting = false;
+            let routeRequestId = 0;
+            let routeRequestTimeoutId = null;
+            let routePreviousNavBanner = null;
+            let navBounds = { id: "old-bounds" };
+            let zoomedForTurn = true;
+            let signalRequestId = 0;
+            let signalData = [{ id: "old-signal" }];
+            let signalsOn = true;
+            let travelMode = "WALKING";
+            let directionsRenderer = existingRenderer;
+
+            ${cleanupSource}
+            ${computeRouteSource}
+            ${clearRouteSource}
+            ${cancelNavSource}
+
+            this.__computeRoute = computeRoute;
+            this.__cancelNav = cancelNav;
+            this.__snapshot = () => ({
+              routeRequestId,
+              routeRequestTimeoutId,
+              routePreviousNavBanner,
+              navRerouting,
+              navMode,
+              navArrived,
+              navStepsLength: navSteps.length,
+              navLastPosition,
+              navLastPositionTimestamp,
+              navLastPositionAccuracy,
+              navStepProgressIdx,
+              navStepProgressSegment,
+              navStepProgressT,
+              navStepProgressRemaining,
+              navStepProgressPosition,
+              navStepProgressAccuracy,
+              navDestination,
+              navFullPathLength: navFullPath.length,
+              offRouteCount,
+              lastOffRouteEvidenceTimestamp,
+              zoomedForTurn,
+              signalRequestId,
+              signalDataLength: signalData.length,
+              hasDirectionsRenderer: directionsRenderer !== null,
+            });
+          `, context);
+
+          context.__computeRoute(
+            { lat: 35.6895, lng: 139.6917 },
+            true,
+            undefined,
+            undefined,
+            false,
+          );
+
+          if (routeCalls !== 1 || !routeCallback || typeof timeoutCallback !== "function") {
+            throw new Error("Directions request/watchdog was not armed before cancellation");
+          }
+
+          const active = context.__snapshot();
+          if (
+            active.routeRequestId !== 1 ||
+            active.routeRequestTimeoutId !== "directions-watchdog" ||
+            active.routePreviousNavBanner !== "existing navigation" ||
+            active.navRerouting !== true ||
+            active.navMode !== true
+          ) {
+            throw new Error(`unexpected active Directions ownership ${JSON.stringify(active)}`);
+          }
+
+          context.__cancelNav();
+
+          const cancelled = context.__snapshot();
+          const expectedCancelled = {
+            routeRequestId: 2,
+            routeRequestTimeoutId: null,
+            routePreviousNavBanner: null,
+            navRerouting: false,
+            navMode: false,
+            navArrived: false,
+            navStepsLength: 0,
+            navLastPosition: null,
+            navLastPositionTimestamp: null,
+            navLastPositionAccuracy: null,
+            navStepProgressIdx: -1,
+            navStepProgressSegment: 0,
+            navStepProgressT: 0,
+            navStepProgressRemaining: null,
+            navStepProgressPosition: null,
+            navStepProgressAccuracy: null,
+            navDestination: null,
+            navFullPathLength: 0,
+            offRouteCount: 2,
+            lastOffRouteEvidenceTimestamp: 1,
+            zoomedForTurn: false,
+            signalRequestId: 1,
+            signalDataLength: 0,
+            hasDirectionsRenderer: false,
+          };
+          if (JSON.stringify(cancelled) !== JSON.stringify(expectedCancelled)) {
+            throw new Error(
+              `cancelNav() did not release navigation/Directions ownership: ${JSON.stringify(cancelled)}`,
+            );
+          }
+          if (JSON.stringify(clearedTimeouts) !== JSON.stringify(["directions-watchdog"])) {
+            throw new Error(
+              `Directions watchdog was not cleared exactly once: ${JSON.stringify(clearedTimeouts)}`,
+            );
+          }
+          if (
+            mutations.clearRoute !== undefined ||
+            mutations.rendererSetMap !== 1 ||
+            mutations.clearSignals !== 1 ||
+            mutations.autoZoomForTurn !== 0 ||
+            mutations.fetchSignals !== 0 ||
+            mutations.showError !== 0
+          ) {
+            throw new Error(`unexpected cancellation side effects ${JSON.stringify(mutations)}`);
+          }
+
+          const stateBeforeLateCallbacks = context.__snapshot();
+          const mutationsBeforeLateCallbacks = { ...mutations };
+          const clearCountBeforeLateCallbacks = clearedTimeouts.length;
+
+          // Simulate callbacks already queued when cancelNav() invalidated the request.
+          routeCallback({}, "OK");
+          timeoutCallback();
+
+          const stateAfterLateCallbacks = context.__snapshot();
+          if (JSON.stringify(stateAfterLateCallbacks) !== JSON.stringify(stateBeforeLateCallbacks)) {
+            throw new Error(
+              "stale Directions callbacks changed state after navigation cancellation: " +
+              JSON.stringify({ stateBeforeLateCallbacks, stateAfterLateCallbacks }),
+            );
+          }
+          if (clearedTimeouts.length !== clearCountBeforeLateCallbacks) {
+            throw new Error("stale Directions callbacks touched watchdog ownership after cancellation");
+          }
+          if (JSON.stringify(mutations) !== JSON.stringify(mutationsBeforeLateCallbacks)) {
+            throw new Error(
+              "stale Directions callbacks produced UI/runtime side effects after cancellation: " +
+              JSON.stringify({ mutationsBeforeLateCallbacks, mutations }),
+            );
+          }
+
+          console.log(
+            "Navigation cancel releases recovery/watchdog ownership and keeps stale Directions callbacks inert",
+          );
+          NODE
