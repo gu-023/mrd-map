@@ -76,6 +76,8 @@ jobs:
             const fetchPending = pendingPromise();
             const calls = {
               fetch: 0,
+              fetchSignal: null,
+              abort: 0,
               plotSignals: 0,
               latLng: 0,
               distance: 0,
@@ -85,7 +87,17 @@ jobs:
               clearTimeout: [],
             };
 
+            class MockAbortController {
+              constructor() {
+                this.signal = { owner: this };
+              }
+              abort() {
+                calls.abort += 1;
+              }
+            }
+
             const context = {
+              AbortController: MockAbortController,
               fetch(url, options) {
                 calls.fetch += 1;
                 if (url !== "https://overpass-api.de/api/interpreter") {
@@ -94,6 +106,7 @@ jobs:
                 if (options?.method !== "POST" || !String(options?.body).startsWith("data=")) {
                   throw new Error("unexpected Overpass request shape");
                 }
+                calls.fetchSignal = options?.signal;
                 return fetchPending.promise;
               },
               setTimeout(callback, delay) {
@@ -193,6 +206,7 @@ jobs:
               this.__snapshot = () => ({
                 signalRequestId,
                 signalData: signalData.map((signal) => ({ ...signal })),
+                signalAbortOwned: !!fetchSignals.abortController,
                 navMode,
                 routeRequestId,
                 navRerouting,
@@ -209,6 +223,7 @@ jobs:
           function sideEffectSnapshot(calls) {
             return {
               fetch: calls.fetch,
+              abort: calls.abort,
               plotSignals: calls.plotSignals,
               latLng: calls.latLng,
               distance: calls.distance,
@@ -228,8 +243,13 @@ jobs:
 
             context.__fetchSignals();
             const active = context.__snapshot();
-            if (active.signalRequestId !== 1 || calls.fetch !== 1) {
-              throw new Error(`signal request was not active: ${JSON.stringify(active)}`);
+            if (
+              active.signalRequestId !== 1 ||
+              !active.signalAbortOwned ||
+              calls.fetch !== 1 ||
+              !calls.fetchSignal
+            ) {
+              throw new Error(`signal request was not abortable and active: ${JSON.stringify(active)}`);
             }
             if (calls.setTimeout.length !== 1 || calls.setTimeout[0].delay !== overpassTimeoutMs) {
               throw new Error("signal request watchdog was not armed with the configured timeout");
@@ -239,12 +259,16 @@ jobs:
             const terminal = context.__snapshot();
             if (
               terminal.signalRequestId !== 2 ||
+              terminal.signalAbortOwned !== false ||
               terminal.searchOpen !== false ||
               terminal.menuOpen !== false ||
               terminal.pickMode !== false ||
               terminal.panMode !== false
             ) {
               throw new Error(`terminal cleanup was incomplete: ${JSON.stringify(terminal)}`);
+            }
+            if (calls.abort !== 1) {
+              throw new Error(`terminal cleanup must abort the owned Overpass transport once, got ${calls.abort}`);
             }
             const terminalEffects = sideEffectSnapshot(calls);
             const terminalClearCount = calls.clearTimeout.length;
@@ -265,7 +289,7 @@ jobs:
             }
             if (JSON.stringify(sideEffectSnapshot(calls)) !== JSON.stringify(terminalEffects)) {
               throw new Error(
-                "stale signal completion performed Google Maps/plot side effects after cleanup",
+                "stale signal completion performed transport/Google Maps/plot side effects after cleanup",
               );
             }
             if (
@@ -275,7 +299,7 @@ jobs:
               throw new Error("stale signal completion did not clear only its own watchdog");
             }
 
-            console.log("Stale Overpass completion is a no-op after Google Maps auth failure");
+            console.log("Maps auth cleanup aborts owned Overpass transport and rejects stale completion");
           })().catch((error) => {
             console.error(error);
             process.exitCode = 1;
