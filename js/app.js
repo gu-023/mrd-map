@@ -1531,11 +1531,18 @@
             map.setZoom(routeTravelMode === "DRIVING" ? 17 : 18);
           }
           zoomedForTurn = false;
-          // オフルート判定用に詳細経路点を平坦化
+          // ルート全体の詳細経路点を平坦化し、隣接 step の共有端点は重複させない。
           navFullPath = [];
+          let lastRoutePoint = null;
           navSteps.forEach((s) => {
             const path = (s.path && s.path.length ? s.path : [s.start_location, s.end_location]);
-            navFullPath.push(...path);
+            path.forEach((point) => {
+              const location = locationLiteral(point);
+              if (!lastRoutePoint || location.lat !== lastRoutePoint.lat || location.lng !== lastRoutePoint.lng) {
+                navFullPath.push(point);
+                lastRoutePoint = location;
+              }
+            });
           });
           navMode = true;
           navArrived = false;
