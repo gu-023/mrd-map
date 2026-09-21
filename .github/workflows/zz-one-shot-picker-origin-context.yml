@@ -24,18 +24,22 @@ jobs:
 
           path = Path("js/app.js")
           source = path.read_text()
-          old = '''      if (resumeFollowOnFailure) {
-        followMode = true;
-        setNavBanner(navMode ? routePreviousNavBanner : null);
-        routePreviousNavBanner = null;
-      }
-      if (originIsStale) {'''
-          new = '''      if (resumeFollowOnFailure) {
-        followMode = true;
-        setNavBanner(navMode ? routePreviousNavBanner : null);
-      }
-      routePreviousNavBanner = null;
-      if (originIsStale) {'''
+          old = (
+              "      if (resumeFollowOnFailure) {\n"
+              "        followMode = true;\n"
+              "        setNavBanner(navMode ? routePreviousNavBanner : null);\n"
+              "        routePreviousNavBanner = null;\n"
+              "      }\n"
+              "      if (originIsStale) {"
+          )
+          new = (
+              "      if (resumeFollowOnFailure) {\n"
+              "        followMode = true;\n"
+              "        setNavBanner(navMode ? routePreviousNavBanner : null);\n"
+              "      }\n"
+              "      routePreviousNavBanner = null;\n"
+              "      if (originIsStale) {"
+          )
           if source.count(old) != 1:
               raise SystemExit(f"expected one picker-origin recovery block, found {source.count(old)}")
           path.write_text(source.replace(old, new, 1))
@@ -44,7 +48,6 @@ jobs:
           node --check js/app.js
           git diff --check
           test "$(git diff --name-only)" = "js/app.js"
-          grep -Fq 'routePreviousNavBanner = null;' js/app.js
 
       - name: Commit runtime patch
         shell: bash
