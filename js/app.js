@@ -1450,6 +1450,11 @@
   function computeRoute(dest, isReroute, name, requestedTravelMode, resumeFollowOnFailure) {
     const destination = locationLiteral(dest);
     if (!destination) {
+      if (resumeFollowOnFailure) {
+        followMode = true;
+        setNavBanner(navMode ? routePreviousNavBanner : null);
+      }
+      routePreviousNavBanner = null;
       showError("目的地が無効です", "目的地をもう一度選択してください。", "directions");
       return;
     }
