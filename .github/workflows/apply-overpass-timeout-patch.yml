@@ -26,49 +26,56 @@ jobs:
           text = path.read_text()
 
           anchor = '  let signalRequestId = 0; // 古い Overpass callback を無視するための世代番号\n'
-          replacement = (
-              '  const OVERPASS_REQUEST_TIMEOUT_MS = 25000; // server側20秒に通信余裕を加えたclient上限\n'
-              + anchor
-          )
+          replacement = '  const OVERPASS_REQUEST_TIMEOUT_MS = 25000; // server側20秒に通信余裕を加えたclient上限\n' + anchor
           if 'const OVERPASS_REQUEST_TIMEOUT_MS = 25000;' not in text:
               if text.count(anchor) != 1:
                   raise SystemExit(f"signal timeout anchor count={text.count(anchor)}")
               text = text.replace(anchor, replacement, 1)
 
-          old_fetch = '''    fetch("https://overpass-api.de/api/interpreter", {
-              method: "POST",
-              body: "data=" + encodeURIComponent(q),
-            })'''
-          new_fetch = '''    const abortController = typeof AbortController === "function" ? new AbortController() : null;
-            const requestOptions = {
-              method: "POST",
-              body: "data=" + encodeURIComponent(q),
-            };
-            if (abortController) requestOptions.signal = abortController.signal;
-            const timeoutId = setTimeout(() => {
-              if (requestId === signalRequestId) signalRequestId++;
-              if (abortController) abortController.abort();
-            }, OVERPASS_REQUEST_TIMEOUT_MS);
-            fetch("https://overpass-api.de/api/interpreter", requestOptions)'''
+          old_fetch = "\n".join([
+              '    fetch("https://overpass-api.de/api/interpreter", {',
+              '      method: "POST",',
+              '      body: "data=" + encodeURIComponent(q),',
+              '    })',
+          ])
+          new_fetch = "\n".join([
+              '    const abortController = typeof AbortController === "function" ? new AbortController() : null;',
+              '    const requestOptions = {',
+              '      method: "POST",',
+              '      body: "data=" + encodeURIComponent(q),',
+              '    };',
+              '    if (abortController) requestOptions.signal = abortController.signal;',
+              '    const timeoutId = setTimeout(() => {',
+              '      if (requestId === signalRequestId) signalRequestId++;',
+              '      if (abortController) abortController.abort();',
+              '    }, OVERPASS_REQUEST_TIMEOUT_MS);',
+              '    fetch("https://overpass-api.de/api/interpreter", requestOptions)',
+          ])
           if 'const abortController = typeof AbortController === "function" ? new AbortController() : null;' not in text:
               if text.count(old_fetch) != 1:
                   raise SystemExit(f"fetch anchor count={text.count(old_fetch)}")
               text = text.replace(old_fetch, new_fetch, 1)
 
-          then_anchor = '''      .then((j) => {
-                if (requestId !== signalRequestId || !navMode) return;'''
-          then_replacement = '''      .then((j) => {
-                clearTimeout(timeoutId);
-                if (requestId !== signalRequestId || !navMode) return;'''
+          then_anchor = "\n".join([
+              '      .then((j) => {',
+              '        if (requestId !== signalRequestId || !navMode) return;',
+          ])
+          then_replacement = "\n".join([
+              '      .then((j) => {',
+              '        clearTimeout(timeoutId);',
+              '        if (requestId !== signalRequestId || !navMode) return;',
+          ])
           if 'clearTimeout(timeoutId);\n        if (requestId !== signalRequestId || !navMode) return;' not in text:
               if text.count(then_anchor) != 1:
                   raise SystemExit(f"then anchor count={text.count(then_anchor)}")
               text = text.replace(then_anchor, then_replacement, 1)
 
           catch_anchor = '      .catch(() => {}); // 取得失敗は無視（ベストエフォート）'
-          catch_replacement = '''      .catch(() => {
-                clearTimeout(timeoutId);
-              }); // 取得失敗/タイムアウトは無視（ベストエフォート）'''
+          catch_replacement = "\n".join([
+              '      .catch(() => {',
+              '        clearTimeout(timeoutId);',
+              '      }); // 取得失敗/タイムアウトは無視（ベストエフォート）',
+          ])
           if '取得失敗/タイムアウトは無視（ベストエフォート）' not in text:
               if text.count(catch_anchor) != 1:
                   raise SystemExit(f"catch anchor count={text.count(catch_anchor)}")
