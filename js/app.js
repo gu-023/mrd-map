@@ -1669,6 +1669,7 @@
       signalAbortController.abort();
     }
     navRerouting = false;
+    routePreviousNavBanner = null;
     navMode = false;
     navArrived = false;
     if (followMode) autoZoomForTurn(0, true);
