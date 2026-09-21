@@ -788,11 +788,16 @@
     try {
       const parsed = JSON.parse(localStorage.getItem(key) || "[]");
       if (!Array.isArray(parsed)) return [];
-      return parsed.filter((p) =>
-        p &&
-        Number.isFinite(p.lat) && p.lat >= -90 && p.lat <= 90 &&
-        Number.isFinite(p.lng) && p.lng >= -180 && p.lng <= 180
-      );
+      return parsed
+        .filter((p) =>
+          p &&
+          Number.isFinite(p.lat) && p.lat >= -90 && p.lat <= 90 &&
+          Number.isFinite(p.lng) && p.lng >= -180 && p.lng <= 180
+        )
+        .map((p) => {
+          const name = typeof p.name === "string" ? p.name.trim() : "";
+          return { ...p, name: name || placeKey(p.lat, p.lng) };
+        });
     } catch (e) {
       return [];
     }
