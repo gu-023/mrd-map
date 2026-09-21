@@ -40,12 +40,16 @@ jobs:
             "\n\n  function plotSignals() {",
             signalsStart,
           );
+          const signalTimeoutMatch = source.match(
+            /^  const OVERPASS_REQUEST_TIMEOUT_MS = (\d+);/m,
+          );
 
           if (
             authCleanupStart < 0 ||
             authCleanupEnd < 0 ||
             signalsStart < 0 ||
-            signalsEnd < 0
+            signalsEnd < 0 ||
+            !signalTimeoutMatch
           ) {
             throw new Error("Maps-auth/signal lifecycle functions could not be located");
           }
@@ -56,6 +60,7 @@ jobs:
           const signalsSource = source
             .slice(signalsStart, signalsEnd)
             .replace(/^  /gm, "");
+          const overpassTimeoutMs = Number(signalTimeoutMatch[1]);
 
           function pendingPromise() {
             let resolve;
@@ -76,6 +81,7 @@ jobs:
               distance: 0,
               blur: 0,
               disableCompass: 0,
+              setTimeout: [],
               clearTimeout: [],
             };
 
@@ -89,6 +95,11 @@ jobs:
                   throw new Error("unexpected Overpass request shape");
                 }
                 return fetchPending.promise;
+              },
+              setTimeout(callback, delay) {
+                const id = { callback, delay };
+                calls.setTimeout.push(id);
+                return id;
               },
               clearTimeout(id) {
                 calls.clearTimeout.push(id);
@@ -144,6 +155,7 @@ jobs:
               let routeRequestTimeoutId = null;
               let routePreviousNavBanner = { owner: "route" };
               let navRerouting = true;
+              const OVERPASS_REQUEST_TIMEOUT_MS = ${overpassTimeoutMs};
               let signalRequestId = 0;
               let predictionRequestId = 0;
               let placeDetailsRequestId = 0;
@@ -194,7 +206,7 @@ jobs:
             return { context, fetchPending, calls };
           }
 
-          function callSnapshot(calls) {
+          function sideEffectSnapshot(calls) {
             return {
               fetch: calls.fetch,
               plotSignals: calls.plotSignals,
@@ -202,7 +214,6 @@ jobs:
               distance: calls.distance,
               blur: calls.blur,
               disableCompass: calls.disableCompass,
-              clearTimeout: [...calls.clearTimeout],
             };
           }
 
@@ -220,6 +231,9 @@ jobs:
             if (active.signalRequestId !== 1 || calls.fetch !== 1) {
               throw new Error(`signal request was not active: ${JSON.stringify(active)}`);
             }
+            if (calls.setTimeout.length !== 1 || calls.setTimeout[0].delay !== overpassTimeoutMs) {
+              throw new Error("signal request watchdog was not armed with the configured timeout");
+            }
 
             context.__runCleanup();
             const terminal = context.__snapshot();
@@ -232,7 +246,8 @@ jobs:
             ) {
               throw new Error(`terminal cleanup was incomplete: ${JSON.stringify(terminal)}`);
             }
-            const terminalCalls = callSnapshot(calls);
+            const terminalEffects = sideEffectSnapshot(calls);
+            const terminalClearCount = calls.clearTimeout.length;
 
             fetchPending.resolve({
               ok: true,
@@ -248,10 +263,16 @@ jobs:
                 `stale signal completion changed state: ${JSON.stringify(terminal)} -> ${JSON.stringify(after)}`,
               );
             }
-            if (JSON.stringify(callSnapshot(calls)) !== JSON.stringify(terminalCalls)) {
+            if (JSON.stringify(sideEffectSnapshot(calls)) !== JSON.stringify(terminalEffects)) {
               throw new Error(
                 "stale signal completion performed Google Maps/plot side effects after cleanup",
               );
+            }
+            if (
+              calls.clearTimeout.length !== terminalClearCount + 1 ||
+              calls.clearTimeout.at(-1) !== calls.setTimeout[0]
+            ) {
+              throw new Error("stale signal completion did not clear only its own watchdog");
             }
 
             console.log("Stale Overpass completion is a no-op after Google Maps auth failure");
