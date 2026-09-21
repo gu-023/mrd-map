@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - chatgpt/recover-invalid-destination-picker-context
     paths:
       - js/app.js
       - .github/workflows/picker-invalid-destination-contract.yml
