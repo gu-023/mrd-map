@@ -22,18 +22,16 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           path = Path('js/app.js')
-          text = path.read_text()
-          old = '''    navRerouting = false;
-    navMode = false;
-'''
-          new = '''    navRerouting = false;
-    routePreviousNavBanner = null;
-    navMode = false;
-'''
-          count = text.count(old)
-          if count != 1:
-              raise SystemExit(f'expected exactly one cancelNav anchor, found {count}')
-          path.write_text(text.replace(old, new, 1))
+          lines = path.read_text().splitlines(keepends=True)
+          start = next(i for i, line in enumerate(lines) if line == '  function cancelNav() {' + chr(10))
+          nav_rerouting = [i for i in range(start, min(start + 80, len(lines))) if lines[i].strip() == 'navRerouting = false;']
+          if len(nav_rerouting) != 1:
+              raise SystemExit(f'expected exactly one cancelNav navRerouting line, found {len(nav_rerouting)}')
+          insert_at = nav_rerouting[0] + 1
+          if lines[insert_at].strip() != 'navMode = false;':
+              raise SystemExit('cancelNav anchor changed unexpectedly')
+          lines.insert(insert_at, '    routePreviousNavBanner = null;' + chr(10))
+          path.write_text(''.join(lines))
           PY
           node --check js/app.js
           git diff --check
@@ -41,10 +39,10 @@ jobs:
           from pathlib import Path
           text = Path('js/app.js').read_text()
           start = text.index('  function cancelNav() {')
-          end = text.index('\n  /* ---------- 信号機', start)
+          end = text.index('  /* ---------- 信号機', start)
           body = text[start:end]
-          if 'routePreviousNavBanner = null;' not in body:
-              raise SystemExit('cancelNav does not clear routePreviousNavBanner')
+          if body.count('routePreviousNavBanner = null;') != 1:
+              raise SystemExit('cancelNav must clear routePreviousNavBanner exactly once')
           PY
       - name: Commit product change
         shell: bash
