@@ -1434,9 +1434,10 @@
 
   function confirmDestination() {
     const dest = map.getCenter();
+    const resumeFollowOnFailure = enterPickMode.previousFollowMode === true;
     exitPickMode();
     enterPickMode.previousFollowMode = null;
-    computeRoute(dest, false, undefined, undefined, true);
+    computeRoute(dest, false, undefined, undefined, resumeFollowOnFailure);
   }
 
   function clearDirectionsRequestTimeout() {
