@@ -1461,8 +1461,8 @@
       if (resumeFollowOnFailure) {
         followMode = true;
         setNavBanner(navMode ? routePreviousNavBanner : null);
-        routePreviousNavBanner = null;
       }
+      routePreviousNavBanner = null;
       if (originIsStale) {
         showError(
           "現在地が古いため経路を開始できません",
