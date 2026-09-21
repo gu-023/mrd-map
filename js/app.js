@@ -1683,9 +1683,13 @@
     navStepProgressRemaining = null;
     navStepProgressPosition = null;
     navStepProgressAccuracy = null;
+    navStepIdx = 0;
     navSteps = [];
     navFullPath = [];
     navDestination = null;
+    offRouteCount = 0;
+    lastOffRouteEvidenceTimestamp = null;
+    navBounds = null;
     clearError("directions");
     clearRoute();
     clearSignals();
