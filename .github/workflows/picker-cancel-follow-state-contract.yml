@@ -189,3 +189,285 @@ jobs:
 
           console.log("Picker cancel/confirm preserves exact pre-entry follow ownership");
           NODE
+
+      - name: Verify picker route failures preserve follow ownership at runtime
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require("fs");
+          const vm = require("vm");
+
+          const source = fs.readFileSync("js/app.js", "utf8");
+          const sliceFunction = (name, nextName) => {
+            const start = source.indexOf(`  function ${name}(`);
+            const end = source.indexOf(`\n  function ${nextName}(`, start);
+            if (start < 0 || end < 0) {
+              throw new Error(`${name}() block could not be located`);
+            }
+            return source.slice(start, end).replace(/^  /gm, "");
+          };
+
+          const enterPickModeSource = sliceFunction("enterPickMode", "exitPickMode");
+          const exitPickModeSource = sliceFunction("exitPickMode", "confirmDestination");
+          const confirmDestinationSource = sliceFunction(
+            "confirmDestination",
+            "clearDirectionsRequestTimeout",
+          );
+          const cleanupSource = sliceFunction(
+            "clearDirectionsRequestTimeout",
+            "computeRoute",
+          );
+          const computeRouteSource = sliceFunction("computeRoute", "clearRoute");
+
+          function runScenario(initialFollow, failureKind) {
+            let routeCallback = null;
+            let timeoutCallback = null;
+            let routeCalls = 0;
+            let panCalls = 0;
+            let bannerHidden = false;
+            let bannerHtml = "次は右折";
+            let pickerHidden = true;
+            const clearedTimeouts = [];
+            const errors = [];
+            const banners = [];
+
+            const origin = {
+              lat() { return 35.681236; },
+              lng() { return 139.767125; },
+            };
+
+            const navBanner = {
+              get innerHTML() { return bannerHtml; },
+              set innerHTML(value) { bannerHtml = value; },
+              classList: {
+                contains(name) {
+                  return name === "hidden" ? bannerHidden : false;
+                },
+              },
+            };
+
+            const context = {
+              Date,
+              clearTimeout(id) {
+                clearedTimeouts.push(id);
+              },
+              setTimeout(callback) {
+                timeoutCallback = callback;
+                return "directions-watchdog";
+              },
+              els: {
+                navBanner,
+                picker: {
+                  classList: {
+                    remove(name) {
+                      if (name === "hidden") pickerHidden = false;
+                    },
+                    add(name) {
+                      if (name === "hidden") pickerHidden = true;
+                    },
+                  },
+                },
+              },
+              map: {
+                getCenter() {
+                  return { lat: 35.6895, lng: 139.6917 };
+                },
+                panTo() {
+                  panCalls += 1;
+                },
+                setZoom() {},
+              },
+              userMarker: {
+                getPosition() {
+                  return origin;
+                },
+              },
+              locationLiteral(value) {
+                if (!value) return null;
+                const lat = typeof value.lat === "function" ? value.lat() : value.lat;
+                const lng = typeof value.lng === "function" ? value.lng() : value.lng;
+                return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null;
+              },
+              setNavBanner(value) {
+                banners.push(value);
+                if (value === null) {
+                  bannerHidden = true;
+                  bannerHtml = "";
+                } else {
+                  bannerHidden = false;
+                  bannerHtml = value;
+                }
+              },
+              clearError() {},
+              showError(title, body, sourceName) {
+                errors.push({ title, body, sourceName });
+              },
+              disableCompass() {},
+              directionsService: {
+                route(_request, callback) {
+                  routeCalls += 1;
+                  if (failureKind === "sync") {
+                    throw new Error("synthetic Directions start failure");
+                  }
+                  routeCallback = callback;
+                },
+              },
+              google: {
+                maps: {
+                  LatLng: class {
+                    constructor(lat, lng) {
+                      this._lat = lat;
+                      this._lng = lng;
+                    }
+                    lat() { return this._lat; }
+                    lng() { return this._lng; }
+                  },
+                  TravelMode: {
+                    WALKING: "WALKING",
+                  },
+                },
+              },
+              clearRoute() {},
+              saveRecent() {},
+              clearSignals() {},
+              fetchSignals() {},
+              meters() { return 0; },
+              updateNav() {},
+            };
+            vm.createContext(context);
+
+            vm.runInContext(`
+              const ROUTE_ORIGIN_MAX_AGE_MS = 30000;
+              const DIRECTIONS_REQUEST_TIMEOUT_MS = 20000;
+              let lastPositionTimestamp = Date.now();
+              let lastPositionAccuracy = 5;
+              let followMode = ${initialFollow ? "true" : "false"};
+              let compassOn = false;
+              let compassPermissionPending = false;
+              let pickMode = false;
+              let navMode = true;
+              let navRerouting = false;
+              let routeRequestId = 0;
+              let routeRequestTimeoutId = null;
+              let routePreviousNavBanner = null;
+              let travelMode = "WALKING";
+
+              ${enterPickModeSource}
+              ${exitPickModeSource}
+              ${confirmDestinationSource}
+              ${cleanupSource}
+              ${computeRouteSource}
+
+              this.__enter = enterPickMode;
+              this.__confirm = confirmDestination;
+              this.__snapshot = () => ({
+                followMode,
+                pickMode,
+                navRerouting,
+                routeRequestId,
+                routeRequestTimeoutId,
+                routePreviousNavBanner,
+                previousFollowMode: enterPickMode.previousFollowMode,
+              });
+            `, context);
+
+            context.__enter();
+            const entered = context.__snapshot();
+            if (
+              entered.followMode !== false ||
+              entered.pickMode !== true ||
+              entered.previousFollowMode !== initialFollow ||
+              entered.routePreviousNavBanner !== "次は右折" ||
+              pickerHidden !== false
+            ) {
+              throw new Error(
+                `${failureKind}/${initialFollow}: picker entry lost ownership ` +
+                JSON.stringify({ entered, pickerHidden }),
+              );
+            }
+
+            context.__confirm();
+
+            if (routeCalls !== 1 || typeof timeoutCallback !== "function") {
+              throw new Error(
+                `${failureKind}/${initialFollow}: Directions request/watchdog was not armed`,
+              );
+            }
+
+            if (failureKind === "status") {
+              if (typeof routeCallback !== "function") {
+                throw new Error("status failure did not capture the Directions callback");
+              }
+              routeCallback(null, "ZERO_RESULTS");
+            } else if (failureKind === "timeout") {
+              timeoutCallback();
+            } else if (failureKind !== "sync") {
+              throw new Error(`unknown failure kind: ${failureKind}`);
+            }
+
+            const recovered = context.__snapshot();
+            if (
+              recovered.followMode !== initialFollow ||
+              recovered.pickMode !== false ||
+              recovered.navRerouting !== false ||
+              recovered.routeRequestTimeoutId !== null ||
+              recovered.routePreviousNavBanner !== null ||
+              recovered.previousFollowMode !== null ||
+              pickerHidden !== true
+            ) {
+              throw new Error(
+                `${failureKind}/${initialFollow}: route failure changed picker/follow ownership ` +
+                JSON.stringify({ recovered, pickerHidden }),
+              );
+            }
+
+            const expectedPanCalls = initialFollow ? 1 : 0;
+            if (panCalls !== expectedPanCalls) {
+              throw new Error(
+                `${failureKind}/${initialFollow}: expected ${expectedPanCalls} recovery pan(s), got ${panCalls}`,
+              );
+            }
+
+            const expectedClears = failureKind === "timeout" ? 0 : 1;
+            if (
+              clearedTimeouts.length !== expectedClears ||
+              (expectedClears === 1 && clearedTimeouts[0] !== "directions-watchdog")
+            ) {
+              throw new Error(
+                `${failureKind}/${initialFollow}: watchdog cleanup mismatch ` +
+                JSON.stringify(clearedTimeouts),
+              );
+            }
+
+            const lastError = errors[errors.length - 1];
+            const expectedTitle = failureKind === "timeout"
+              ? "経路の取得がタイムアウトしました"
+              : failureKind === "sync"
+                ? "経路を開始できません"
+                : "経路を取得できません";
+            if (!lastError || lastError.title !== expectedTitle || lastError.sourceName !== "directions") {
+              throw new Error(
+                `${failureKind}/${initialFollow}: failure branch did not surface expected error ` +
+                JSON.stringify(lastError),
+              );
+            }
+
+            const expectedFinalBanner = initialFollow ? "次は右折" : null;
+            if (banners[banners.length - 1] !== expectedFinalBanner) {
+              throw new Error(
+                `${failureKind}/${initialFollow}: banner recovery mismatch ` +
+                JSON.stringify(banners),
+              );
+            }
+          }
+
+          for (const initialFollow of [true, false]) {
+            for (const failureKind of ["status", "timeout", "sync"]) {
+              runScenario(initialFollow, failureKind);
+            }
+          }
+
+          console.log(
+            "Picker confirm preserves pre-entry follow ownership across Directions status, timeout, and sync failures",
+          );
+          NODE
