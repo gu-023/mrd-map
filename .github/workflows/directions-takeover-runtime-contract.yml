@@ -1,0 +1,320 @@
+name: Guard Directions takeover watchdog runtime
+
+on:
+  pull_request:
+    paths:
+      - js/app.js
+      - .github/workflows/directions-takeover-runtime-contract.yml
+  push:
+    branches: [main]
+    paths:
+      - js/app.js
+      - .github/workflows/directions-takeover-runtime-contract.yml
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Verify menu/search takeover cancels Directions watchdog at runtime
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require("fs");
+          const vm = require("vm");
+
+          const source = fs.readFileSync("js/app.js", "utf8");
+          const sliceFunction = (name, nextName) => {
+            const start = source.indexOf(`  function ${name}(`);
+            const end = source.indexOf(`\n  function ${nextName}(`, start);
+            if (start < 0 || end < 0) {
+              throw new Error(`${name}() block could not be located`);
+            }
+            return source.slice(start, end).replace(/^  /gm, "");
+          };
+
+          const cleanupSource = sliceFunction(
+            "clearDirectionsRequestTimeout",
+            "computeRoute",
+          );
+          const computeRouteSource = sliceFunction("computeRoute", "clearRoute");
+          const destinationMenuSource = sliceFunction(
+            "openDestinationMenu",
+            "openStepList",
+          );
+          const searchSource = sliceFunction("openSearch", "closeSearch");
+
+          function runScenario(label, takeoverSource, takeoverName) {
+            let routeCallback = null;
+            let timeoutCallback = null;
+            let routeCalls = 0;
+            const clearedTimeouts = [];
+            const mutations = {
+              showError: 0,
+              setNavBanner: 0,
+              clearError: 0,
+              openMenu: 0,
+              closeMenu: 0,
+              renderSearch: 0,
+            };
+
+            const origin = {
+              lat() { return 35.681236; },
+              lng() { return 139.767125; },
+            };
+
+            const context = {
+              Date,
+              clearTimeout(id) {
+                clearedTimeouts.push(id);
+              },
+              setTimeout(callback) {
+                timeoutCallback = callback;
+                return "directions-watchdog";
+              },
+              els: {
+                navBanner: {
+                  innerHTML: "existing navigation",
+                  classList: {
+                    contains() { return false; },
+                  },
+                },
+                search: {
+                  classList: {
+                    remove() {},
+                  },
+                },
+                searchQuery: {
+                  focus() {},
+                },
+              },
+              locationLiteral(value) {
+                return value;
+              },
+              clearError() {
+                mutations.clearError += 1;
+              },
+              showError() {
+                mutations.showError += 1;
+              },
+              setNavBanner() {
+                mutations.setNavBanner += 1;
+              },
+              userMarker: {
+                getPosition() {
+                  return origin;
+                },
+              },
+              directionsService: {
+                route(_request, callback) {
+                  routeCalls += 1;
+                  routeCallback = callback;
+                },
+              },
+              google: {
+                maps: {
+                  LatLng: class {
+                    constructor(lat, lng) {
+                      this._lat = lat;
+                      this._lng = lng;
+                    }
+                    lat() { return this._lat; }
+                    lng() { return this._lng; }
+                  },
+                  TravelMode: {
+                    WALKING: "WALKING",
+                  },
+                  DirectionsRenderer: class {
+                    setDirections() {}
+                  },
+                },
+              },
+              map: {
+                panTo() {},
+                setZoom() {},
+              },
+              clearRoute() {},
+              saveRecent() {},
+              clearSignals() {},
+              fetchSignals() {},
+              meters() {
+                return 0;
+              },
+              updateNav() {},
+              loadList() {
+                return [];
+              },
+              travelLabel() {
+                return "徒歩";
+              },
+              openMenu() {
+                mutations.openMenu += 1;
+              },
+              closeMenu() {
+                mutations.closeMenu += 1;
+              },
+              closeMenuToMap() {},
+              enterPickMode() {},
+              openListMenu() {},
+              openTravelMenu() {},
+              openStepList() {},
+              openSearch() {},
+              createPlacesSearchApi() {
+                return {
+                  startSession() {},
+                };
+              },
+              renderSearch() {
+                mutations.renderSearch += 1;
+              },
+            };
+            vm.createContext(context);
+
+            vm.runInContext(`
+              const ROUTE_ORIGIN_MAX_AGE_MS = 30000;
+              const DIRECTIONS_REQUEST_TIMEOUT_MS = 20000;
+              let lastPositionTimestamp = Date.now();
+              let lastPositionAccuracy = 5;
+              let followMode = true;
+              let navMode = false;
+              let navArrived = false;
+              let navSteps = [];
+              let navStepIdx = 0;
+              let navLastPosition = null;
+              let navLastPositionTimestamp = null;
+              let navLastPositionAccuracy = null;
+              let navStepProgressIdx = -1;
+              let navStepProgressSegment = 0;
+              let navStepProgressT = 0;
+              let navStepProgressRemaining = null;
+              let navStepProgressPosition = null;
+              let navStepProgressAccuracy = null;
+              let navDestination = null;
+              let navFullPath = [];
+              let offRouteCount = 0;
+              let lastOffRouteEvidenceTimestamp = null;
+              let navRerouting = false;
+              let routeRequestId = 0;
+              let routeRequestTimeoutId = null;
+              let routePreviousNavBanner = null;
+              let navBounds = null;
+              let zoomedForTurn = false;
+              let signalRequestId = 0;
+              let signalData = [];
+              let signalsOn = true;
+              let travelMode = "WALKING";
+              let directionsRenderer = null;
+
+              let placesSearchApi = null;
+              let searchOpen = false;
+              let searchQuery = "";
+              let searchPredictions = [];
+              let searchLoading = false;
+              let searchEmpty = false;
+              let placeDetailsLoading = false;
+              let searchZone = "input";
+              let keyIdx = 0;
+              let predIdx = 0;
+              let predictionBackZone = "input";
+              let searchReturnPrediction = null;
+
+              ${cleanupSource}
+              ${computeRouteSource}
+              ${takeoverSource}
+
+              this.__computeRoute = computeRoute;
+              this.__takeover = ${takeoverName};
+              this.__snapshot = () => ({
+                routeRequestId,
+                routeRequestTimeoutId,
+                routePreviousNavBanner,
+                navRerouting,
+                navMode,
+                navDestination,
+                searchOpen,
+              });
+            `, context);
+
+            context.__computeRoute(
+              { lat: 35.6895, lng: 139.6917 },
+              false,
+              undefined,
+              undefined,
+              false,
+            );
+
+            if (routeCalls !== 1 || !routeCallback || typeof timeoutCallback !== "function") {
+              throw new Error(`${label}: Directions request/watchdog was not armed`);
+            }
+
+            const active = context.__snapshot();
+            if (
+              active.routeRequestId !== 1 ||
+              active.routeRequestTimeoutId !== "directions-watchdog" ||
+              active.navRerouting !== true
+            ) {
+              throw new Error(
+                `${label}: unexpected active ownership ${JSON.stringify(active)}`,
+              );
+            }
+
+            context.__takeover();
+            const takenOver = context.__snapshot();
+            if (
+              takenOver.routeRequestId !== 2 ||
+              takenOver.routeRequestTimeoutId !== null ||
+              takenOver.routePreviousNavBanner !== null ||
+              takenOver.navRerouting !== false
+            ) {
+              throw new Error(
+                `${label}: takeover did not release Directions ownership ` +
+                JSON.stringify(takenOver),
+              );
+            }
+            if (JSON.stringify(clearedTimeouts) !== JSON.stringify(["directions-watchdog"])) {
+              throw new Error(
+                `${label}: watchdog was not cleared exactly once: ` +
+                JSON.stringify(clearedTimeouts),
+              );
+            }
+
+            const stateBeforeLateTimeout = context.__snapshot();
+            const mutationsBeforeLateTimeout = { ...mutations };
+            const clearCountBeforeLateTimeout = clearedTimeouts.length;
+
+            // Simulate a callback that was already queued when clearTimeout() ran.
+            timeoutCallback();
+
+            const stateAfterLateTimeout = context.__snapshot();
+            if (JSON.stringify(stateAfterLateTimeout) !== JSON.stringify(stateBeforeLateTimeout)) {
+              throw new Error(
+                `${label}: stale Directions timeout changed state after takeover: ` +
+                JSON.stringify({ stateBeforeLateTimeout, stateAfterLateTimeout }),
+              );
+            }
+            if (clearedTimeouts.length !== clearCountBeforeLateTimeout) {
+              throw new Error(`${label}: stale timeout touched watchdog ownership`);
+            }
+            if (JSON.stringify(mutations) !== JSON.stringify(mutationsBeforeLateTimeout)) {
+              throw new Error(
+                `${label}: stale timeout touched UI after takeover: ` +
+                JSON.stringify({ mutationsBeforeLateTimeout, mutations }),
+              );
+            }
+          }
+
+          runScenario(
+            "Destination menu",
+            destinationMenuSource,
+            "openDestinationMenu",
+          );
+          runScenario("Search", searchSource, "openSearch");
+
+          console.log(
+            "Destination menu/search takeover clears the live Directions watchdog and stale timeout callbacks remain inert",
+          );
+          NODE
