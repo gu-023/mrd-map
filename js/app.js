@@ -785,7 +785,17 @@
 
   /* ---------- お気に入り/履歴（localStorage・ログイン不要） ---------- */
   function loadList(key) {
-    try { return JSON.parse(localStorage.getItem(key) || "[]"); } catch (e) { return []; }
+    try {
+      const parsed = JSON.parse(localStorage.getItem(key) || "[]");
+      if (!Array.isArray(parsed)) return [];
+      return parsed.filter((p) =>
+        p &&
+        Number.isFinite(p.lat) && p.lat >= -90 && p.lat <= 90 &&
+        Number.isFinite(p.lng) && p.lng >= -180 && p.lng <= 180
+      );
+    } catch (e) {
+      return [];
+    }
   }
   function saveList(key, arr) {
     try { localStorage.setItem(key, JSON.stringify(arr)); } catch (e) {}
