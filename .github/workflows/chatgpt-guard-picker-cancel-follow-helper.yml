@@ -1,0 +1,135 @@
+name: One-shot picker cancel follow-state test helper
+
+on:
+  push:
+    branches:
+      - chatgpt/restore-picker-follow-state
+
+permissions:
+  contents: write
+
+jobs:
+  patch-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extend picker runtime contract
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('.github/workflows/directions-picker-takeover-runtime-contract.yml')
+          text = path.read_text()
+          replacements = [
+              (
+                  '          const pickerSource = sliceFunction("enterPickMode", "exitPickMode");\n',
+                  '          const pickerSource = sliceFunction("enterPickMode", "exitPickMode");\n'
+                  '          const exitPickerSource = sliceFunction("exitPickMode", "confirmDestination");\n'
+                  '          const toggleNavSource = sliceFunction("toggleNav", "loadList");\n',
+              ),
+              (
+                  '            pickerShow: 0,\n            clearRoute: 0,\n',
+                  '            pickerShow: 0,\n            pickerHide: 0,\n            clearRoute: 0,\n',
+              ),
+              (
+                  '                  remove() {\n                    mutations.pickerShow += 1;\n                  },\n',
+                  '                  remove() {\n                    mutations.pickerShow += 1;\n                  },\n'
+                  '                  add() {\n                    mutations.pickerHide += 1;\n                  },\n',
+              ),
+              (
+                  '            ${computeRouteSource}\n            ${pickerSource}\n\n            this.__computeRoute = computeRoute;\n            this.__takeover = enterPickMode;\n',
+                  '            ${computeRouteSource}\n            ${pickerSource}\n            ${exitPickerSource}\n            ${toggleNavSource}\n\n            this.__computeRoute = computeRoute;\n            this.__takeover = enterPickMode;\n            this.__cancelPicker = toggleNav;\n            this.__setFollowMode = (value) => { followMode = value; };\n',
+              ),
+              (
+                  '              pickMode,\n              followMode,\n            });\n',
+                  '              pickMode,\n              followMode,\n              pickerPreviousFollowMode: enterPickMode.previousFollowMode,\n            });\n',
+              ),
+              (
+                  '            takenOver.pickMode !== true ||\n            takenOver.followMode !== false\n',
+                  '            takenOver.pickMode !== true ||\n            takenOver.followMode !== false ||\n            takenOver.pickerPreviousFollowMode !== true\n',
+              ),
+              (
+                  '          console.log(\n            "Picker takeover invalidates stale Directions service and watchdog callbacks",\n          );\n',
+                  '          context.__cancelPicker();\n'
+                  '          const cancelledFollowing = context.__snapshot();\n'
+                  '          if (\n'
+                  '            cancelledFollowing.pickMode !== false ||\n'
+                  '            cancelledFollowing.followMode !== true ||\n'
+                  '            cancelledFollowing.pickerPreviousFollowMode !== null\n'
+                  '          ) {\n'
+                  '            throw new Error(\n'
+                  '              "Picker: cancel did not restore prior follow-on state " +\n'
+                  '              JSON.stringify(cancelledFollowing),\n'
+                  '            );\n'
+                  '          }\n'
+                  '          if (mutations.pickerHide !== 1) {\n'
+                  '            throw new Error(`Picker: picker overlay was hidden ${mutations.pickerHide} times`);\n'
+                  '          }\n'
+                  '\n'
+                  '          context.__setFollowMode(false);\n'
+                  '          context.__takeover();\n'
+                  '          const manualViewPicker = context.__snapshot();\n'
+                  '          if (\n'
+                  '            manualViewPicker.followMode !== false ||\n'
+                  '            manualViewPicker.pickerPreviousFollowMode !== false\n'
+                  '          ) {\n'
+                  '            throw new Error(\n'
+                  '              "Picker: entry did not preserve prior follow-off state " +\n'
+                  '              JSON.stringify(manualViewPicker),\n'
+                  '            );\n'
+                  '          }\n'
+                  '          context.__cancelPicker();\n'
+                  '          const cancelledManualView = context.__snapshot();\n'
+                  '          if (\n'
+                  '            cancelledManualView.pickMode !== false ||\n'
+                  '            cancelledManualView.followMode !== false ||\n'
+                  '            cancelledManualView.pickerPreviousFollowMode !== null\n'
+                  '          ) {\n'
+                  '            throw new Error(\n'
+                  '              "Picker: cancel did not preserve prior follow-off state " +\n'
+                  '              JSON.stringify(cancelledManualView),\n'
+                  '            );\n'
+                  '          }\n'
+                  '\n'
+                  '          console.log(\n'
+                  '            "Picker takeover invalidates stale Directions callbacks and cancel restores prior follow state",\n'
+                  '          );\n',
+              ),
+          ]
+          for old, new in replacements:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'expected one workflow anchor, found {count}: {old!r}')
+              text = text.replace(old, new, 1)
+          path.write_text(text)
+          PY
+
+      - name: Validate focused contract syntax
+        run: |
+          git diff --check
+          python3 - <<'PY'
+          from pathlib import Path
+          text = Path('.github/workflows/directions-picker-takeover-runtime-contract.yml').read_text()
+          for snippet in [
+              'const exitPickerSource = sliceFunction("exitPickMode", "confirmDestination");',
+              'this.__cancelPicker = toggleNav;',
+              'pickerPreviousFollowMode: enterPickMode.previousFollowMode,',
+              'cancel did not restore prior follow-on state',
+              'cancel did not preserve prior follow-off state',
+          ]:
+              if snippet not in text:
+                  raise SystemExit(f'missing contract snippet: {snippet}')
+          PY
+
+      - name: Commit contract update and remove helper
+        run: |
+          rm .github/workflows/chatgpt-guard-picker-cancel-follow-helper.yml
+          git add .github/workflows/directions-picker-takeover-runtime-contract.yml .github/workflows/chatgpt-guard-picker-cancel-follow-helper.yml
+          git diff --cached --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Guard picker cancel follow-state restoration"
+          git push
