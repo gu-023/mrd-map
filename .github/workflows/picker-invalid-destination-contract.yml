@@ -1,0 +1,95 @@
+name: Picker invalid destination recovery contract
+
+on:
+  push:
+    branches:
+      - main
+      - chatgpt/recover-invalid-destination-picker-context
+    paths:
+      - js/app.js
+      - .github/workflows/picker-invalid-destination-contract.yml
+  pull_request:
+    paths:
+      - js/app.js
+      - .github/workflows/picker-invalid-destination-contract.yml
+
+permissions:
+  contents: read
+
+jobs:
+  invalid-destination-recovery:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Exercise computeRoute invalid-destination recovery
+        shell: bash
+        run: |
+          node <<'NODE'
+          const assert = require('assert');
+          const fs = require('fs');
+          const vm = require('vm');
+
+          const source = fs.readFileSync('js/app.js', 'utf8');
+
+          function extractFunction(name) {
+            const marker = `  function ${name}(`;
+            const start = source.indexOf(marker);
+            assert.notStrictEqual(start, -1, `${name}() not found`);
+            const brace = source.indexOf('{', start);
+            assert.notStrictEqual(brace, -1, `${name}() body not found`);
+            let depth = 0;
+            for (let i = brace; i < source.length; i += 1) {
+              if (source[i] === '{') depth += 1;
+              else if (source[i] === '}') {
+                depth -= 1;
+                if (depth === 0) return source.slice(start, i + 1).replace(/^  /gm, '');
+              }
+            }
+            throw new Error(`${name}() body is unbalanced`);
+          }
+
+          const computeRouteSource = extractFunction('computeRoute');
+
+          function runCase({ resumeFollowOnFailure, expectedFollow, expectedBannerCalls }) {
+            const bannerCalls = [];
+            const errors = [];
+            const context = {
+              followMode: false,
+              navMode: true,
+              routePreviousNavBanner: '<b>次の曲がり角</b>',
+              locationLiteral: () => null,
+              setNavBanner: (value) => bannerCalls.push(value),
+              showError: (...args) => errors.push(args),
+              google: new Proxy({}, { get() { throw new Error('Google Maps must not be touched'); } }),
+              userMarker: new Proxy({}, { get() { throw new Error('origin must not be touched'); } }),
+              setTimeout: () => { throw new Error('watchdog must not be armed'); },
+              clearTimeout: () => { throw new Error('watchdog must not be cleared'); },
+            };
+            vm.createContext(context);
+            vm.runInContext(computeRouteSource, context);
+            vm.runInContext(
+              `computeRoute(null, false, undefined, undefined, ${resumeFollowOnFailure ? 'true' : 'false'})`,
+              context
+            );
+
+            assert.strictEqual(context.followMode, expectedFollow);
+            assert.strictEqual(context.routePreviousNavBanner, null, 'picker recovery context must be released');
+            assert.deepStrictEqual(bannerCalls, expectedBannerCalls);
+            assert.strictEqual(errors.length, 1);
+            assert.deepStrictEqual(
+              Array.from(errors[0]),
+              ['目的地が無効です', '目的地をもう一度選択してください。', 'directions']
+            );
+          }
+
+          runCase({
+            resumeFollowOnFailure: true,
+            expectedFollow: true,
+            expectedBannerCalls: ['<b>次の曲がり角</b>'],
+          });
+          runCase({
+            resumeFollowOnFailure: false,
+            expectedFollow: false,
+            expectedBannerCalls: [],
+          });
+          NODE
