@@ -90,6 +90,7 @@
   let signalsOn = true;
   let signalData = [];
   let signalMarkers = [];
+  const OVERPASS_REQUEST_TIMEOUT_MS = 25000; // server側20秒に通信余裕を加えたclient上限
   let signalRequestId = 0; // 古い Overpass callback を無視するための世代番号
   let geocoder = null;
   let travelMode = "WALKING"; // WALKING / DRIVING / BICYCLING / TRANSIT
@@ -1660,12 +1661,20 @@
     const q =
       `[out:json][timeout:20];node["highway"="traffic_signals"]` +
       `(${sw.lat()},${sw.lng()},${ne.lat()},${ne.lng()});out;`;
-    fetch("https://overpass-api.de/api/interpreter", {
+    const abortController = typeof AbortController === "function" ? new AbortController() : null;
+    const requestOptions = {
       method: "POST",
       body: "data=" + encodeURIComponent(q),
-    })
+    };
+    if (abortController) requestOptions.signal = abortController.signal;
+    const timeoutId = setTimeout(() => {
+      if (requestId === signalRequestId) signalRequestId++;
+      if (abortController) abortController.abort();
+    }, OVERPASS_REQUEST_TIMEOUT_MS);
+    fetch("https://overpass-api.de/api/interpreter", requestOptions)
       .then((r) => (r.ok ? r.json() : null))
       .then((j) => {
+        clearTimeout(timeoutId);
         if (requestId !== signalRequestId || !navMode) return;
         if (!j || !j.elements) return;
         const near = [];
@@ -1688,7 +1697,9 @@
         signalData = near;
         plotSignals();
       })
-      .catch(() => {}); // 取得失敗は無視（ベストエフォート）
+      .catch(() => {
+        clearTimeout(timeoutId);
+      }); // 取得失敗/タイムアウトは無視（ベストエフォート）
   }
 
   function plotSignals() {
