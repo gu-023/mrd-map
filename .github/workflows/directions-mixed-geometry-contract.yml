@@ -235,9 +235,9 @@ jobs:
           const fallbackStart = new context.google.maps.LatLng(pointC.lat(), pointC.lng());
           const fallbackEnd = new context.google.maps.LatLng(35.6828, 139.769);
           const pointF = new context.google.maps.LatLng(fallbackEnd.lat(), fallbackEnd.lng());
-          const pointG = new context.google.maps.LatLng(35.6836, 139.77);
-          if (pointC === fallbackStart || fallbackEnd === pointF) {
-            throw new Error("Shared seam fixtures must be distinct LatLng objects");
+          const pointG = new context.google.maps.LatLng(pointB.lat(), pointB.lng());
+          if (pointC === fallbackStart || fallbackEnd === pointF || pointB === pointG) {
+            throw new Error("Shared-coordinate fixtures must be distinct LatLng objects");
           }
           const response = {
             routes: [{
@@ -304,5 +304,5 @@ jobs:
             throw new Error(`Expected navigation side effects were not preserved ${JSON.stringify(observed)}`);
           }
 
-          console.log("Mixed path/fallback Directions geometry deduplicates shared seams and preserves route order");
+          console.log("Mixed Directions geometry deduplicates adjacent seams and preserves non-adjacent revisits");
           NODE
