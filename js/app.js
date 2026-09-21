@@ -771,7 +771,10 @@
   // 🚩: 目的地メニューを開く（選択中モードなら抜ける）
   function toggleNav() {
     if (pickMode) {
+      const previousNavBanner = navMode ? routePreviousNavBanner : null;
       exitPickMode();
+      setNavBanner(previousNavBanner);
+      routePreviousNavBanner = null;
     } else {
       openDestinationMenu();
     }
