@@ -772,7 +772,10 @@
   function toggleNav() {
     if (pickMode) {
       const previousNavBanner = navMode ? routePreviousNavBanner : null;
+      const previousFollowMode = enterPickMode.previousFollowMode;
       exitPickMode();
+      if (typeof previousFollowMode === "boolean") followMode = previousFollowMode;
+      enterPickMode.previousFollowMode = null;
       setNavBanner(previousNavBanner);
       routePreviousNavBanner = null;
     } else {
@@ -1416,6 +1419,7 @@
       clearError("directions");
     }
     if (compassOn || compassPermissionPending) disableCompass(); // 回転中/許可待ちは画面基準のパン前に解除
+    enterPickMode.previousFollowMode = followMode;
     pickMode = true;
     followMode = false;
     els.picker.classList.remove("hidden");
@@ -1431,6 +1435,7 @@
   function confirmDestination() {
     const dest = map.getCenter();
     exitPickMode();
+    enterPickMode.previousFollowMode = null;
     computeRoute(dest, false, undefined, undefined, true);
   }
 

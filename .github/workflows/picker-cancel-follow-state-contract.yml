@@ -1,0 +1,173 @@
+name: Guard picker cancel follow-state restoration
+
+on:
+  pull_request:
+    paths:
+      - js/app.js
+      - .github/workflows/picker-cancel-follow-state-contract.yml
+  push:
+    branches: [main]
+    paths:
+      - js/app.js
+      - .github/workflows/picker-cancel-follow-state-contract.yml
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Verify picker cancel restores the previous follow state
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require("fs");
+          const vm = require("vm");
+
+          const source = fs.readFileSync("js/app.js", "utf8");
+          const sliceFunction = (name, nextName) => {
+            const start = source.indexOf(`  function ${name}(`);
+            const end = source.indexOf(`\n  function ${nextName}(`, start);
+            if (start < 0 || end < 0) {
+              throw new Error(`${name}() block could not be located`);
+            }
+            return source.slice(start, end).replace(/^  /gm, "");
+          };
+
+          const toggleNavSource = sliceFunction("toggleNav", "loadList");
+          const enterPickModeSource = sliceFunction("enterPickMode", "exitPickMode");
+          const exitPickModeSource = sliceFunction("exitPickMode", "confirmDestination");
+          const confirmDestinationSource = sliceFunction(
+            "confirmDestination",
+            "clearDirectionsRequestTimeout",
+          );
+
+          const bannerCalls = [];
+          let computeRouteCalls = 0;
+          const context = {
+            els: {
+              navBanner: {
+                innerHTML: "次は右折",
+                classList: {
+                  contains() { return false; },
+                },
+              },
+              picker: {
+                classList: {
+                  remove() {},
+                  add() {},
+                },
+              },
+            },
+            map: {
+              getCenter() {
+                return { lat: 35.681236, lng: 139.767125 };
+              },
+            },
+            setNavBanner(value) {
+              bannerCalls.push(value);
+            },
+            clearDirectionsRequestTimeout() {},
+            clearError() {},
+            disableCompass() {},
+            openDestinationMenu() {},
+            computeRoute() {
+              computeRouteCalls += 1;
+            },
+          };
+          vm.createContext(context);
+
+          vm.runInContext(`
+            let followMode = true;
+            let pickMode = false;
+            let navMode = true;
+            let navRerouting = false;
+            let routeRequestId = 0;
+            let routePreviousNavBanner = null;
+            let compassOn = false;
+            let compassPermissionPending = false;
+
+            ${toggleNavSource}
+            ${enterPickModeSource}
+            ${exitPickModeSource}
+            ${confirmDestinationSource}
+
+            this.__enter = enterPickMode;
+            this.__cancel = toggleNav;
+            this.__confirm = confirmDestination;
+            this.__reset = (follow) => {
+              followMode = follow;
+              pickMode = false;
+              navMode = true;
+              navRerouting = false;
+              routePreviousNavBanner = null;
+              enterPickMode.previousFollowMode = null;
+            };
+            this.__snapshot = () => ({
+              followMode,
+              pickMode,
+              routePreviousNavBanner,
+              previousFollowMode: enterPickMode.previousFollowMode,
+            });
+          `, context);
+
+          context.__reset(true);
+          context.__enter();
+          let state = context.__snapshot();
+          if (
+            state.pickMode !== true ||
+            state.followMode !== false ||
+            state.previousFollowMode !== true ||
+            state.routePreviousNavBanner !== "次は右折"
+          ) {
+            throw new Error(`follow-on picker entry lost ownership: ${JSON.stringify(state)}`);
+          }
+          context.__cancel();
+          state = context.__snapshot();
+          if (
+            state.pickMode !== false ||
+            state.followMode !== true ||
+            state.previousFollowMode !== null ||
+            state.routePreviousNavBanner !== null
+          ) {
+            throw new Error(`follow-on picker cancel was not restored: ${JSON.stringify(state)}`);
+          }
+          if (bannerCalls.at(-1) !== "次は右折") {
+            throw new Error(`navigation banner was not restored: ${JSON.stringify(bannerCalls)}`);
+          }
+
+          context.__reset(false);
+          context.__enter();
+          state = context.__snapshot();
+          if (
+            state.pickMode !== true ||
+            state.followMode !== false ||
+            state.previousFollowMode !== false
+          ) {
+            throw new Error(`follow-off picker entry lost ownership: ${JSON.stringify(state)}`);
+          }
+          context.__cancel();
+          state = context.__snapshot();
+          if (
+            state.pickMode !== false ||
+            state.followMode !== false ||
+            state.previousFollowMode !== null
+          ) {
+            throw new Error(`follow-off picker cancel changed manual view: ${JSON.stringify(state)}`);
+          }
+
+          context.__reset(true);
+          context.__enter();
+          context.__confirm();
+          state = context.__snapshot();
+          if (state.previousFollowMode !== null || computeRouteCalls !== 1) {
+            throw new Error(
+              `confirmed picker retained cancel-only state: ${JSON.stringify({ state, computeRouteCalls })}`,
+            );
+          }
+
+          console.log("Picker cancel restores exact pre-entry follow state");
+          NODE
