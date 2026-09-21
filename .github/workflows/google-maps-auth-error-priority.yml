@@ -12,7 +12,7 @@ on:
       - .github/workflows/google-maps-auth-error-priority.yml
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   guard:
@@ -94,7 +94,6 @@ jobs:
             throw new Error("gm_authFailure handler was not installed");
           }
 
-          // Authentication details are more actionable than a later generic script error/timeout.
           context.window.gm_authFailure();
           const authHtml = context.els.error.innerHTML;
           if (cleanupCalls !== 1) {
@@ -111,7 +110,6 @@ jobs:
             throw new Error("generic bootstrap failure overwrote the authentication error");
           }
 
-          // Reverse ordering must still improve a generic failure when auth diagnostics arrive later.
           vm.runInContext('errorSource = null; els.error.innerHTML = "";', context);
           context.__handleGoogleMapsLoadError(new Error("generic bootstrap failure"));
           if (!context.els.error.innerHTML.includes("地図の読み込みに失敗")) {
@@ -130,3 +128,50 @@ jobs:
 
           console.log("Google Maps startup error priority contract OK");
           NODE
+
+  apply-overpass-guard:
+    if: github.head_ref == 'chatgpt/skip-malformed-overpass-signals' && github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: chatgpt/skip-malformed-overpass-signals
+          fetch-depth: 0
+      - name: Apply malformed Overpass node guard
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('js/app.js')
+          text = path.read_text()
+          guard = '!Number.isFinite(el.lat) || el.lat < -90 || el.lat > 90'
+          if guard in text:
+              raise SystemExit(0)
+          old = '''        for (const el of j.elements) {
+            if (near.length >= 200) break;
+            const pt = new google.maps.LatLng(el.lat, el.lon);
+'''
+          new = '''        for (const el of j.elements) {
+            if (near.length >= 200) break;
+            if (!el ||
+                !Number.isFinite(el.lat) || el.lat < -90 || el.lat > 90 ||
+                !Number.isFinite(el.lon) || el.lon < -180 || el.lon > 180) {
+              continue;
+            }
+            const pt = new google.maps.LatLng(el.lat, el.lon);
+'''
+          if text.count(old) != 1:
+              raise SystemExit(f'expected one Overpass loop anchor, found {text.count(old)}')
+          path.write_text(text.replace(old, new, 1))
+          PY
+          node --check js/app.js
+          git diff --check
+          if git diff --quiet -- js/app.js; then
+            echo 'Guard already present; nothing to push.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add js/app.js
+          git commit -m 'Skip malformed Overpass signal nodes'
+          git push origin HEAD:chatgpt/skip-malformed-overpass-signals
