@@ -201,6 +201,32 @@ jobs:
                   "Picker takeover must invalidate the in-flight Directions generation, clear its watchdog, then release reroute state"
               )
 
+          takeover_functions = [
+              ("openDestinationMenu", "openStepList", "Destination menu"),
+              ("openSearch", "closeSearch", "Search"),
+          ]
+          for function_name, next_function, label in takeover_functions:
+              takeover_start = text.find(f"  function {function_name}()")
+              takeover_end = text.find(f"\n  function {next_function}()", takeover_start)
+              if takeover_start < 0 or takeover_end < 0:
+                  raise SystemExit(f"{function_name}() block could not be located")
+              takeover_block = text[takeover_start:takeover_end]
+              takeover_guard = takeover_block.find("if (navRerouting) {")
+              takeover_invalidation = takeover_block.find("routeRequestId++;", takeover_guard)
+              takeover_clear = takeover_block.find("clearDirectionsRequestTimeout();", takeover_guard)
+              takeover_release = takeover_block.find("navRerouting = false;", takeover_guard)
+              if (
+                  takeover_guard < 0
+                  or takeover_invalidation < 0
+                  or takeover_clear < 0
+                  or takeover_release < 0
+                  or takeover_invalidation > takeover_clear
+                  or takeover_clear > takeover_release
+              ):
+                  raise SystemExit(
+                      f"{label} takeover must invalidate the in-flight Directions generation, clear its watchdog, then release reroute state"
+                  )
+
           cancel_start = text.find("  function cancelNav()")
           cancel_end = text.find("\n  /* ---------- 信号機", cancel_start)
           if cancel_start < 0 or cancel_end < 0:

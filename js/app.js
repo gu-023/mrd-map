@@ -889,6 +889,7 @@
   function openDestinationMenu() {
     if (navRerouting) {
       routeRequestId++; // 目的地メニューが D-pad を引き継いだら進行中の Directions callback を無効化
+      clearDirectionsRequestTimeout();
       navRerouting = false;
       clearError("directions");
       setNavBanner(navMode ? routePreviousNavBanner : null);
@@ -1075,6 +1076,7 @@
   function openSearch() {
     if (navRerouting) {
       routeRequestId++; // 検索が D-pad を引き継いだら進行中の Directions callback を無効化
+      clearDirectionsRequestTimeout();
       navRerouting = false;
       clearError("directions");
       if (navMode) setNavBanner(routePreviousNavBanner);
