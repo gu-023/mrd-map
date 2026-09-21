@@ -10,6 +10,7 @@ permissions:
 
 jobs:
   apply:
+    if: github.event.head_commit.message != 'Deduplicate shared Directions step seams'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -17,7 +18,7 @@ jobs:
           ref: chatgpt/deduplicate-directions-seams
           fetch-depth: 0
 
-      - name: Apply atomic runtime and contract change
+      - name: Apply atomic runtime change
         shell: bash
         run: |
           python3 <<'PY'
@@ -51,37 +52,16 @@ jobs:
           if text.count(old) != 1:
               raise SystemExit(f"expected runtime block once, found {text.count(old)}")
           app.write_text(text.replace(old, new))
-
-          workflow = Path(".github/workflows/directions-mixed-geometry-contract.yml")
-          text = workflow.read_text()
-          replacements = [
-              (
-                  "          const fallbackStart = new context.google.maps.LatLng(35.6824, 139.7685);",
-                  "          const fallbackStart = new context.google.maps.LatLng(35.682, 139.768); // shared seam, distinct object",
-              ),
-              (
-                  "          const pointF = new context.google.maps.LatLng(35.6832, 139.7695);",
-                  "          const pointF = new context.google.maps.LatLng(35.6828, 139.769); // shared seam, distinct object",
-              ),
-              ("            fallbackStart,\n", ""),
-              ("            pointF,\n", ""),
-          ]
-          for old_line, new_line in replacements:
-              if text.count(old_line) != 1:
-                  raise SystemExit(f"expected contract fragment once: {old_line!r}; found {text.count(old_line)}")
-              text = text.replace(old_line, new_line)
-          workflow.write_text(text)
           PY
 
           node --check js/app.js
           git diff --check
 
-      - name: Commit branch change and remove helper
+      - name: Commit runtime change
         shell: bash
         run: |
-          git rm .github/workflows/chatgpt-apply-directions-seam-dedupe.yml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add js/app.js .github/workflows/directions-mixed-geometry-contract.yml
+          git add js/app.js
           git commit -m "Deduplicate shared Directions step seams"
           git push origin HEAD:chatgpt/deduplicate-directions-seams
