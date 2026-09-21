@@ -1,0 +1,210 @@
+name: Guard Overpass timeout fallback behavior
+
+on:
+  pull_request:
+    paths:
+      - js/app.js
+      - .github/workflows/overpass-timeout-contract.yml
+  push:
+    branches: [main]
+    paths:
+      - js/app.js
+      - .github/workflows/overpass-timeout-contract.yml
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Exercise Overpass timeout with and without AbortController
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require("fs");
+          const vm = require("vm");
+
+          const source = fs.readFileSync("js/app.js", "utf8");
+          const signalsStart = source.indexOf("  function fetchSignals() {");
+          const signalsEnd = source.indexOf("\n\n  function plotSignals() {", signalsStart);
+          const timeoutMatch = source.match(/^  const OVERPASS_REQUEST_TIMEOUT_MS = (\d+);/m);
+          if (signalsStart < 0 || signalsEnd < 0 || !timeoutMatch) {
+            throw new Error("Overpass timeout implementation could not be located");
+          }
+
+          const signalsSource = source
+            .slice(signalsStart, signalsEnd)
+            .replace(/^  /gm, "");
+          const timeoutMs = Number(timeoutMatch[1]);
+          if (!Number.isFinite(timeoutMs) || timeoutMs < 1000 || timeoutMs > 60000) {
+            throw new Error(`unexpected Overpass timeout: ${timeoutMs}`);
+          }
+
+          function pendingPromise() {
+            let resolve;
+            let reject;
+            const promise = new Promise((res, rej) => {
+              resolve = res;
+              reject = rej;
+            });
+            return { promise, resolve, reject };
+          }
+
+          function createHarness(withAbortController) {
+            const pending = pendingPromise();
+            const calls = {
+              fetch: 0,
+              setTimeout: [],
+              clearTimeout: [],
+              abort: 0,
+              latLng: 0,
+              distance: 0,
+              plotSignals: 0,
+              fetchSignal: null,
+            };
+
+            class MockAbortController {
+              constructor() {
+                this.signal = { owner: this };
+              }
+              abort() {
+                calls.abort += 1;
+              }
+            }
+
+            const context = {
+              fetch(url, options) {
+                calls.fetch += 1;
+                if (url !== "https://overpass-api.de/api/interpreter") {
+                  throw new Error(`unexpected Overpass URL: ${url}`);
+                }
+                if (options?.method !== "POST" || !String(options?.body).startsWith("data=")) {
+                  throw new Error("unexpected Overpass request shape");
+                }
+                calls.fetchSignal = options.signal;
+                return pending.promise;
+              },
+              setTimeout(callback, delay) {
+                const timer = { callback, delay };
+                calls.setTimeout.push(timer);
+                return timer;
+              },
+              clearTimeout(timer) {
+                calls.clearTimeout.push(timer);
+              },
+              google: {
+                maps: {
+                  LatLng: class {
+                    constructor() {
+                      calls.latLng += 1;
+                    }
+                  },
+                },
+              },
+              distanceToSegment() {
+                calls.distance += 1;
+                return 0;
+              },
+              meters() {
+                calls.distance += 1;
+                return 0;
+              },
+              plotSignals() {
+                calls.plotSignals += 1;
+              },
+            };
+            if (withAbortController) context.AbortController = MockAbortController;
+            vm.createContext(context);
+
+            vm.runInContext(`
+              const OVERPASS_REQUEST_TIMEOUT_MS = ${timeoutMs};
+              let signalRequestId = 0;
+              let navMode = true;
+              let navBounds = {
+                getSouthWest: () => ({ lat: () => 35.0, lng: () => 139.0 }),
+                getNorthEast: () => ({ lat: () => 36.0, lng: () => 140.0 }),
+              };
+              let navFullPath = [
+                { lat: () => 35.5, lng: () => 139.5 },
+                { lat: () => 35.6, lng: () => 139.6 },
+              ];
+              let signalData = [{ lat: 35.1, lng: 139.1 }];
+
+              ${signalsSource}
+
+              this.__fetchSignals = fetchSignals;
+              this.__snapshot = () => ({
+                signalRequestId,
+                signalData: signalData.map((signal) => ({ ...signal })),
+              });
+            `, context);
+
+            return { context, pending, calls };
+          }
+
+          async function settleMicrotasks() {
+            await Promise.resolve();
+            await Promise.resolve();
+            await new Promise((resolve) => setImmediate(resolve));
+          }
+
+          async function exercise(withAbortController) {
+            const { context, pending, calls } = createHarness(withAbortController);
+            const before = context.__snapshot();
+            context.__fetchSignals();
+
+            if (calls.fetch !== 1) throw new Error("Overpass fetch was not started exactly once");
+            if (calls.setTimeout.length !== 1 || calls.setTimeout[0].delay !== timeoutMs) {
+              throw new Error("Overpass watchdog was not armed with the configured timeout");
+            }
+            if (context.__snapshot().signalRequestId !== before.signalRequestId + 1) {
+              throw new Error("Overpass request did not claim a fresh generation");
+            }
+            if (withAbortController) {
+              if (!calls.fetchSignal) throw new Error("AbortController signal was not attached to fetch");
+            } else if (calls.fetchSignal !== undefined) {
+              throw new Error("fetch unexpectedly received an AbortController signal");
+            }
+
+            calls.setTimeout[0].callback();
+            const timedOut = context.__snapshot();
+            if (timedOut.signalRequestId !== before.signalRequestId + 2) {
+              throw new Error(`timeout did not invalidate the request generation: ${JSON.stringify(timedOut)}`);
+            }
+            if (calls.abort !== (withAbortController ? 1 : 0)) {
+              throw new Error(`unexpected abort count: ${calls.abort}`);
+            }
+            if (JSON.stringify(timedOut.signalData) !== JSON.stringify(before.signalData)) {
+              throw new Error("timeout mutated existing signal data");
+            }
+
+            pending.resolve({
+              ok: true,
+              json: async () => ({ elements: [{ lat: 35.55, lon: 139.55 }] }),
+            });
+            await settleMicrotasks();
+
+            const after = context.__snapshot();
+            if (JSON.stringify(after) !== JSON.stringify(timedOut)) {
+              throw new Error(`late Overpass completion changed state: ${JSON.stringify(timedOut)} -> ${JSON.stringify(after)}`);
+            }
+            if (calls.latLng !== 0 || calls.distance !== 0 || calls.plotSignals !== 0) {
+              throw new Error("late Overpass completion performed route/Maps side effects after timeout");
+            }
+            if (calls.clearTimeout.length !== 1 || calls.clearTimeout[0] !== calls.setTimeout[0]) {
+              throw new Error("late completion did not clear exactly its own watchdog");
+            }
+          }
+
+          (async () => {
+            await exercise(true);
+            await exercise(false);
+            console.log("Overpass timeout invalidates late completions with and without AbortController");
+          })().catch((error) => {
+            console.error(error);
+            process.exitCode = 1;
+          });
+          NODE
