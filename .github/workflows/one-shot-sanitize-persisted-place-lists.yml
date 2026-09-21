@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   patch:
-    if: github.event.head_commit.message == 'Add one-shot persisted list sanitizer'
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -24,27 +24,31 @@ jobs:
 
           path = Path("js/app.js")
           text = path.read_text()
-          old = '''  function loadList(key) {
-            try { return JSON.parse(localStorage.getItem(key) || "[]"); } catch (e) { return []; }
-          }
-          '''
-          new = '''  function loadList(key) {
-            try {
-              const parsed = JSON.parse(localStorage.getItem(key) || "[]");
-              if (!Array.isArray(parsed)) return [];
-              return parsed.filter((p) =>
-                p &&
-                Number.isFinite(p.lat) && p.lat >= -90 && p.lat <= 90 &&
-                Number.isFinite(p.lng) && p.lng >= -180 && p.lng <= 180
-              );
-            } catch (e) {
-              return [];
-            }
-          }
-          '''
-          if text.count(old) != 1:
-              raise SystemExit(f"expected one loadList target, found {text.count(old)}")
-          path.write_text(text.replace(old, new, 1))
+          start_marker = "  function loadList(key) {"
+          end_marker = "\n  function saveList(key, arr)"
+          start = text.find(start_marker)
+          end = text.find(end_marker, start)
+          if start < 0 or end < 0:
+              raise SystemExit("loadList replacement boundary not found")
+          current = text[start:end]
+          if "try { return JSON.parse(localStorage.getItem(key) || \"[]\"); } catch (e) { return []; }" not in current:
+              raise SystemExit("loadList no longer matches the expected unsanitized implementation")
+          new = "\n".join([
+              "  function loadList(key) {",
+              "    try {",
+              "      const parsed = JSON.parse(localStorage.getItem(key) || \"[]\");",
+              "      if (!Array.isArray(parsed)) return [];",
+              "      return parsed.filter((p) =>",
+              "        p &&",
+              "        Number.isFinite(p.lat) && p.lat >= -90 && p.lat <= 90 &&",
+              "        Number.isFinite(p.lng) && p.lng >= -180 && p.lng <= 180",
+              "      );",
+              "    } catch (e) {",
+              "      return [];",
+              "    }",
+              "  }",
+          ])
+          path.write_text(text[:start] + new + text[end:])
           PY
 
       - name: Validate sanitizer
