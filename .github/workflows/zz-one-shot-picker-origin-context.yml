@@ -1,0 +1,60 @@
+name: One-shot picker origin failure context patch
+
+on:
+  push:
+    branches:
+      - chatgpt/clear-picker-origin-failure-context
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: chatgpt/clear-picker-origin-failure-context
+
+      - name: Apply atomic runtime patch
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path("js/app.js")
+          source = path.read_text()
+          old = '''      if (resumeFollowOnFailure) {
+        followMode = true;
+        setNavBanner(navMode ? routePreviousNavBanner : null);
+        routePreviousNavBanner = null;
+      }
+      if (originIsStale) {'''
+          new = '''      if (resumeFollowOnFailure) {
+        followMode = true;
+        setNavBanner(navMode ? routePreviousNavBanner : null);
+      }
+      routePreviousNavBanner = null;
+      if (originIsStale) {'''
+          if source.count(old) != 1:
+              raise SystemExit(f"expected one picker-origin recovery block, found {source.count(old)}")
+          path.write_text(source.replace(old, new, 1))
+          PY
+
+          node --check js/app.js
+          git diff --check
+          test "$(git diff --name-only)" = "js/app.js"
+          grep -Fq 'routePreviousNavBanner = null;' js/app.js
+
+      - name: Commit runtime patch
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "No runtime change to commit"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add js/app.js
+          git commit -m "Release picker banner context on route origin failure"
+          git push origin HEAD:chatgpt/clear-picker-origin-failure-context
