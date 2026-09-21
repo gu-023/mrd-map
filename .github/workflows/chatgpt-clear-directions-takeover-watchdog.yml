@@ -1,0 +1,66 @@
+name: Apply Directions takeover watchdog cleanup
+
+on:
+  push:
+    branches:
+      - chatgpt/clear-directions-takeover-watchdog
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Clear stale Directions watchdog on D-pad takeover
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("js/app.js")
+          text = path.read_text()
+          replacements = [
+              (
+                  '      routeRequestId++; // 目的地メニューが D-pad を引き継いだら進行中の Directions callback を無効化\n      navRerouting = false;',
+                  '      routeRequestId++; // 目的地メニューが D-pad を引き継いだら進行中の Directions callback を無効化\n      clearDirectionsRequestTimeout();\n      navRerouting = false;',
+              ),
+              (
+                  '      routeRequestId++; // 検索が D-pad を引き継いだら進行中の Directions callback を無効化\n      navRerouting = false;',
+                  '      routeRequestId++; // 検索が D-pad を引き継いだら進行中の Directions callback を無効化\n      clearDirectionsRequestTimeout();\n      navRerouting = false;',
+              ),
+          ]
+          for old, new in replacements:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"expected one exact takeover block, found {count}")
+              text = text.replace(old, new, 1)
+          path.write_text(text)
+          PY
+      - name: Verify JavaScript and diff
+        run: |
+          node --check js/app.js
+          git diff --check
+          python3 - <<'PY'
+          from pathlib import Path
+          text = Path("js/app.js").read_text()
+          expected = [
+              'routeRequestId++; // 目的地メニューが D-pad を引き継いだら進行中の Directions callback を無効化\n      clearDirectionsRequestTimeout();',
+              'routeRequestId++; // 検索が D-pad を引き継いだら進行中の Directions callback を無効化\n      clearDirectionsRequestTimeout();',
+          ]
+          for snippet in expected:
+              if text.count(snippet) != 1:
+                  raise SystemExit("Directions takeover watchdog cleanup missing or duplicated")
+          PY
+          if git grep -nE 'AIza[0-9A-Za-z_-]{20,}' -- ':!js/config.template.js'; then
+            echo 'Tracked Google API key-like value found' >&2
+            exit 1
+          fi
+      - name: Commit runtime fix
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add js/app.js
+          git commit -m 'Clear Directions watchdog on D-pad takeover'
+          git push origin HEAD:${GITHUB_REF_NAME}
