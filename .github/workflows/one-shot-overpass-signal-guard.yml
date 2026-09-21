@@ -1,9 +1,9 @@
 name: One-shot Overpass signal guard
 
 on:
-  push:
+  pull_request:
     branches:
-      - chatgpt/skip-malformed-overpass-signals
+      - main
 
 permissions:
   contents: write
