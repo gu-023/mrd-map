@@ -1,0 +1,125 @@
+name: ChatGPT fix Overpass abort CI compatibility
+
+on:
+  push:
+    branches:
+      - chatgpt/abort-stale-overpass
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: chatgpt/abort-stale-overpass
+
+      - name: Inline cancellation at extraction boundaries
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path("js/app.js")
+          source = path.read_text()
+          if "  function cancelSignalRequest() {\n" not in source:
+              print("Patch already applied")
+              raise SystemExit(0)
+
+          def replace_once(old, new, label):
+              global source
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected 1 match, found {count}")
+              source = source.replace(old, new, 1)
+
+          cancel_lines = (
+              "signalRequestId++;\n"
+              "    if (typeof fetchSignals === \"function\" && fetchSignals.abortController) {\n"
+              "      const signalAbortController = fetchSignals.abortController;\n"
+              "      fetchSignals.abortController = null;\n"
+              "      signalAbortController.abort();\n"
+              "    }"
+          )
+
+          replace_once(
+              "    cancelSignalRequest();\n"
+              "    predictionRequestId += 1;\n",
+              "    " + cancel_lines + "\n"
+              "    predictionRequestId += 1;\n",
+              "auth cleanup cancellation",
+          )
+
+          replace_once(
+              "          if (!signalsOn) cancelSignalRequest();\n"
+              "          if (signalsOn && !signalData.length) fetchSignals();\n",
+              "          if (!signalsOn) {\n"
+              "            signalRequestId++;\n"
+              "            if (typeof fetchSignals === \"function\" && fetchSignals.abortController) {\n"
+              "              const signalAbortController = fetchSignals.abortController;\n"
+              "              fetchSignals.abortController = null;\n"
+              "              signalAbortController.abort();\n"
+              "            }\n"
+              "          }\n"
+              "          if (signalsOn && !signalData.length) fetchSignals();\n",
+              "signal toggle cancellation",
+          )
+
+          replace_once(
+              "          cancelSignalRequest(); // 前ルートの未完了 Overpass transport/callback を停止・無効化\n"
+              "          clearSignals();\n",
+              "          signalRequestId++; // 前ルートの未完了 Overpass callback を無効化\n"
+              "          if (typeof fetchSignals === \"function\" && fetchSignals.abortController) {\n"
+              "            const signalAbortController = fetchSignals.abortController;\n"
+              "            fetchSignals.abortController = null;\n"
+              "            signalAbortController.abort();\n"
+              "          }\n"
+              "          clearSignals();\n",
+              "route replacement cancellation",
+          )
+
+          replace_once(
+              "  function cancelSignalRequest() {\n"
+              "    signalRequestId++;\n"
+              "    const abortController = fetchSignals.abortController;\n"
+              "    fetchSignals.abortController = null;\n"
+              "    if (abortController) abortController.abort();\n"
+              "  }\n\n",
+              "",
+              "remove shared cancellation helper",
+          )
+
+          replace_once(
+              "    cancelSignalRequest(); // 未完了の Overpass transport/callback で信号が復活しないよう停止・無効化\n"
+              "    navRerouting = false;\n",
+              "    signalRequestId++; // 未完了の Overpass callback で信号が復活しないよう無効化\n"
+              "    if (typeof fetchSignals === \"function\" && fetchSignals.abortController) {\n"
+              "      const signalAbortController = fetchSignals.abortController;\n"
+              "      fetchSignals.abortController = null;\n"
+              "      signalAbortController.abort();\n"
+              "    }\n"
+              "    navRerouting = false;\n",
+              "navigation cancellation",
+          )
+
+          path.write_text(source)
+          PY
+
+          node --check js/app.js
+          git diff --check
+          git diff -- js/app.js
+
+      - name: Commit CI-compatible runtime change
+        shell: bash
+        run: |
+          if git diff --quiet -- js/app.js; then
+            echo "No changes to commit"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add js/app.js
+          git commit -m "Keep Overpass abort ownership extraction-safe"
+          git push origin HEAD:chatgpt/abort-stale-overpass
