@@ -306,7 +306,12 @@
     clearDirectionsRequestTimeout();
     routePreviousNavBanner = null;
     navRerouting = false;
-    signalRequestId += 1;
+    signalRequestId++;
+    if (typeof fetchSignals === "function" && fetchSignals.abortController) {
+      const signalAbortController = fetchSignals.abortController;
+      fetchSignals.abortController = null;
+      signalAbortController.abort();
+    }
     predictionRequestId += 1;
     placeDetailsRequestId += 1;
     if (predictionTimeoutId !== null) clearTimeout(predictionTimeoutId);
@@ -904,6 +909,14 @@
         label: `🚥 信号表示: ${signalsOn ? "ON" : "OFF"}`,
         action: () => {
           signalsOn = !signalsOn;
+          if (!signalsOn) {
+            signalRequestId++;
+            if (typeof fetchSignals === "function" && fetchSignals.abortController) {
+              const signalAbortController = fetchSignals.abortController;
+              fetchSignals.abortController = null;
+              signalAbortController.abort();
+            }
+          }
           if (signalsOn && !signalData.length) fetchSignals();
           else plotSignals();
           closeMenuToMap();
@@ -1557,6 +1570,11 @@
             }
           }
           signalRequestId++; // 前ルートの未完了 Overpass callback を無効化
+          if (typeof fetchSignals === "function" && fetchSignals.abortController) {
+            const signalAbortController = fetchSignals.abortController;
+            fetchSignals.abortController = null;
+            signalAbortController.abort();
+          }
           clearSignals();
           signalData = [];
           if (signalsOn) fetchSignals(); // ルート周辺の信号機を取得
@@ -1629,6 +1647,11 @@
     routeRequestId++; // 未完了の Directions callback でナビが復活しないよう無効化
     clearDirectionsRequestTimeout();
     signalRequestId++; // 未完了の Overpass callback で信号が復活しないよう無効化
+    if (typeof fetchSignals === "function" && fetchSignals.abortController) {
+      const signalAbortController = fetchSignals.abortController;
+      fetchSignals.abortController = null;
+      signalAbortController.abort();
+    }
     navRerouting = false;
     navMode = false;
     navArrived = false;
@@ -1662,6 +1685,7 @@
       `[out:json][timeout:20];node["highway"="traffic_signals"]` +
       `(${sw.lat()},${sw.lng()},${ne.lat()},${ne.lng()});out;`;
     const abortController = typeof AbortController === "function" ? new AbortController() : null;
+    fetchSignals.abortController = abortController;
     const requestOptions = {
       method: "POST",
       body: "data=" + encodeURIComponent(q),
@@ -1669,12 +1693,14 @@
     if (abortController) requestOptions.signal = abortController.signal;
     const timeoutId = setTimeout(() => {
       if (requestId === signalRequestId) signalRequestId++;
+      if (fetchSignals.abortController === abortController) fetchSignals.abortController = null;
       if (abortController) abortController.abort();
     }, OVERPASS_REQUEST_TIMEOUT_MS);
     fetch("https://overpass-api.de/api/interpreter", requestOptions)
       .then((r) => (r.ok ? r.json() : null))
       .then((j) => {
         clearTimeout(timeoutId);
+        if (fetchSignals.abortController === abortController) fetchSignals.abortController = null;
         if (requestId !== signalRequestId || !navMode) return;
         if (!j || !j.elements) return;
         const near = [];
@@ -1699,6 +1725,7 @@
       })
       .catch(() => {
         clearTimeout(timeoutId);
+        if (fetchSignals.abortController === abortController) fetchSignals.abortController = null;
       }); // 取得失敗/タイムアウトは無視（ベストエフォート）
   }
 
