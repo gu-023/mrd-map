@@ -46,7 +46,7 @@ jobs:
           );
 
           const bannerCalls = [];
-          let computeRouteCalls = 0;
+          const computeRouteCalls = [];
           const context = {
             els: {
               navBanner: {
@@ -74,8 +74,8 @@ jobs:
             clearError() {},
             disableCompass() {},
             openDestinationMenu() {},
-            computeRoute() {
-              computeRouteCalls += 1;
+            computeRoute(...args) {
+              computeRouteCalls.push(args);
             },
           };
           vm.createContext(context);
@@ -163,11 +163,29 @@ jobs:
           context.__enter();
           context.__confirm();
           state = context.__snapshot();
-          if (state.previousFollowMode !== null || computeRouteCalls !== 1) {
+          if (
+            state.previousFollowMode !== null ||
+            computeRouteCalls.length !== 1 ||
+            computeRouteCalls[0][4] !== true
+          ) {
             throw new Error(
-              `confirmed picker retained cancel-only state: ${JSON.stringify({ state, computeRouteCalls })}`,
+              `follow-on confirm lost failure ownership: ${JSON.stringify({ state, computeRouteCalls })}`,
             );
           }
 
-          console.log("Picker cancel restores exact pre-entry follow state");
+          context.__reset(false);
+          context.__enter();
+          context.__confirm();
+          state = context.__snapshot();
+          if (
+            state.previousFollowMode !== null ||
+            computeRouteCalls.length !== 2 ||
+            computeRouteCalls[1][4] !== false
+          ) {
+            throw new Error(
+              `follow-off confirm lost failure ownership: ${JSON.stringify({ state, computeRouteCalls })}`,
+            );
+          }
+
+          console.log("Picker cancel/confirm preserves exact pre-entry follow ownership");
           NODE
