@@ -201,6 +201,7 @@ jobs:
               navRerouting,
               navMode,
               navArrived,
+              navStepIdx,
               navStepsLength: navSteps.length,
               navLastPosition,
               navLastPositionTimestamp,
@@ -215,6 +216,7 @@ jobs:
               navFullPathLength: navFullPath.length,
               offRouteCount,
               lastOffRouteEvidenceTimestamp,
+              navBounds,
               zoomedForTurn,
               signalRequestId,
               signalDataLength: signalData.length,
@@ -255,6 +257,7 @@ jobs:
             navRerouting: false,
             navMode: false,
             navArrived: false,
+            navStepIdx: 0,
             navStepsLength: 0,
             navLastPosition: null,
             navLastPositionTimestamp: null,
@@ -267,8 +270,9 @@ jobs:
             navStepProgressAccuracy: null,
             navDestination: null,
             navFullPathLength: 0,
-            offRouteCount: 2,
-            lastOffRouteEvidenceTimestamp: 1,
+            offRouteCount: 0,
+            lastOffRouteEvidenceTimestamp: null,
+            navBounds: null,
             zoomedForTurn: false,
             signalRequestId: 1,
             signalDataLength: 0,
@@ -321,6 +325,6 @@ jobs:
           }
 
           console.log(
-            "Navigation cancel releases recovery/watchdog ownership and keeps stale Directions callbacks inert",
+            "Navigation cancel releases route/recovery/watchdog ownership and keeps stale Directions callbacks inert",
           );
           NODE
