@@ -24,80 +24,64 @@ jobs:
 
           app_path = Path("js/app.js")
           app = app_path.read_text()
-          app_anchor = '''    if (errorSource === "directions" &&
-                  ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "].indexOf(e.key) >= 0) {
-          '''
-          app_replacement = '''    if (errorSource === "geolocation") {
-                if (e.key === "Enter" || e.key === " ") doAction("recenter");
-                if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "].indexOf(e.key) >= 0) {
-                  e.preventDefault();
-                }
-                return;
-              }
-
-              if (errorSource === "directions" &&
-                  ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "].indexOf(e.key) >= 0) {
-          '''
-          if app.count(app_anchor) != 1:
-              raise SystemExit(f"expected one directions keydown anchor, found {app.count(app_anchor)}")
-          app = app.replace(app_anchor, app_replacement, 1)
+          app_marker = '    if (errorSource === "directions" &&\n'
+          if app.count(app_marker) != 1:
+              raise SystemExit(f"expected one directions keydown marker, found {app.count(app_marker)}")
+          geolocation_block = "\n".join([
+              '    if (errorSource === "geolocation") {',
+              '      if (e.key === "Enter" || e.key === " ") doAction("recenter");',
+              '      if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "].indexOf(e.key) >= 0) {',
+              '        e.preventDefault();',
+              '      }',
+              '      return;',
+              '    }',
+          ]) + "\n\n"
+          app = app.replace(app_marker, geolocation_block + app_marker, 1)
           app_path.write_text(app)
 
           workflow_path = Path(".github/workflows/geolocation-reload-dpad-contract.yml")
           workflow = workflow_path.read_text()
-          setter_anchor = '''              'this.__setErrorSource = (value) => { errorSource = value; };\\n' +
-              'this.__keydown = (e) => {' + keydownBodySource + '\\n};',
-          '''
-          setter_replacement = '''              'this.__setErrorSource = (value) => { errorSource = value; };\\n' +
-              'this.__setFocusAction = (value) => { focusables[0].dataset.action = value; };\\n' +
-              'this.__keydown = (e) => {' + keydownBodySource + '\\n};',
-          '''
-          if workflow.count(setter_anchor) != 1:
-              raise SystemExit(f"expected one harness setter anchor, found {workflow.count(setter_anchor)}")
-          workflow = workflow.replace(setter_anchor, setter_replacement, 1)
+          keydown_line = "              'this.__keydown = (e) => {' + keydownBodySource + '\\\\n};',"
+          focus_setter_line = "              'this.__setFocusAction = (value) => { focusables[0].dataset.action = value; };\\\\n' +"
+          if workflow.count(keydown_line) != 1:
+              raise SystemExit(f"expected one keydown harness line, found {workflow.count(keydown_line)}")
+          workflow = workflow.replace(keydown_line, focus_setter_line + "\n" + keydown_line, 1)
 
-          test_anchor = '''          context.__setErrorSource("geolocation");
-          const reloadsBeforeRetryableEnter = reloadCalls;
-          if (dispatch("Enter") !== 1) {
-            throw new Error("retryable geolocation Enter was not handled");
-          }
-          if (reloadCalls !== reloadsBeforeRetryableEnter) {
-            throw new Error("retryable geolocation error incorrectly became reload-only");
-          }
-          if (actionCalls.length !== 1 || actionCalls[0] !== "recenter") {
-            throw new Error("retryable geolocation error no longer allows the recenter/retry action");
-          }
-          '''
-          test_replacement = '''          context.__setErrorSource("geolocation");
-          context.__setFocusAction("zoom-in");
-          const reloadsBeforeRetryableInput = reloadCalls;
-          const moveFocusBeforeRetryableInput = context.moveFocusCalls;
-          for (const key of ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"]) {
-            if (dispatch(key) !== 1) {
-              throw new Error(`${key} was not consumed by retryable geolocation recovery`);
-            }
-            if (reloadCalls !== reloadsBeforeRetryableInput || actionCalls.length !== 0 ||
-                context.moveFocusCalls !== moveFocusBeforeRetryableInput) {
-              throw new Error(`${key} leaked through retryable geolocation recovery`);
-            }
-          }
-
-          if (dispatch("Enter") !== 1 || reloadCalls !== reloadsBeforeRetryableInput) {
-            throw new Error("retryable geolocation Enter was not handled without reloading");
-          }
-          if (actionCalls.length !== 1 || actionCalls[0] !== "recenter") {
-            throw new Error("retryable geolocation Enter did not invoke deterministic recenter/retry");
-          }
-          if (dispatch(" ") !== 1 || reloadCalls !== reloadsBeforeRetryableInput) {
-            throw new Error("retryable geolocation Space was not handled without reloading");
-          }
-          if (actionCalls.length !== 2 || actionCalls[1] !== "recenter") {
-            throw new Error("retryable geolocation Space did not invoke deterministic recenter/retry");
-          }
-          '''
-          if workflow.count(test_anchor) != 1:
-              raise SystemExit(f"expected one retryable geolocation test anchor, found {workflow.count(test_anchor)}")
-          workflow = workflow.replace(test_anchor, test_replacement, 1)
+          start_marker = '          context.__setErrorSource("geolocation");'
+          end_marker = '\n\n          console.log("Geolocation reload D-pad recovery contract OK");'
+          start = workflow.find(start_marker)
+          end = workflow.find(end_marker, start)
+          if start < 0 or end < 0:
+              raise SystemExit("retryable geolocation test block could not be located")
+          replacement = "\n".join([
+              '          context.__setErrorSource("geolocation");',
+              '          context.__setFocusAction("zoom-in");',
+              '          const reloadsBeforeRetryableInput = reloadCalls;',
+              '          const moveFocusBeforeRetryableInput = context.moveFocusCalls;',
+              '          for (const key of ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"]) {',
+              '            if (dispatch(key) !== 1) {',
+              '              throw new Error(`${key} was not consumed by retryable geolocation recovery`);',
+              '            }',
+              '            if (reloadCalls !== reloadsBeforeRetryableInput || actionCalls.length !== 0 ||',
+              '                context.moveFocusCalls !== moveFocusBeforeRetryableInput) {',
+              '              throw new Error(`${key} leaked through retryable geolocation recovery`);',
+              '            }',
+              '          }',
+              '',
+              '          if (dispatch("Enter") !== 1 || reloadCalls !== reloadsBeforeRetryableInput) {',
+              '            throw new Error("retryable geolocation Enter was not handled without reloading");',
+              '          }',
+              '          if (actionCalls.length !== 1 || actionCalls[0] !== "recenter") {',
+              '            throw new Error("retryable geolocation Enter did not invoke deterministic recenter/retry");',
+              '          }',
+              '          if (dispatch(" ") !== 1 || reloadCalls !== reloadsBeforeRetryableInput) {',
+              '            throw new Error("retryable geolocation Space was not handled without reloading");',
+              '          }',
+              '          if (actionCalls.length !== 2 || actionCalls[1] !== "recenter") {',
+              '            throw new Error("retryable geolocation Space did not invoke deterministic recenter/retry");',
+              '          }',
+          ])
+          workflow = workflow[:start] + replacement + workflow[end:]
           workflow_path.write_text(workflow)
           PY
 
