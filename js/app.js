@@ -452,7 +452,7 @@
           // Keep a non-null fail-closed sentinel so retries cannot create a duplicate watcher.
           geoWatchId = Number.NaN;
           setGps(false, "GPS監視異常");
-          showError("位置情報の監視を確認できません", "アプリを再読み込みしてください。", "geolocation");
+          showError("位置情報の監視を確認できません", "決定で再読み込みしてください。", "geolocation-reload");
           return;
         }
         geoWatchId = watchId;
@@ -2349,7 +2349,7 @@
         if (watchNeedsRestart) {
           if (hasUnknownGeoWatchOwnership()) {
             setGps(false, "GPS再取得失敗");
-            showError("位置情報の監視を確認できません", "アプリを再読み込みしてください。", "geolocation");
+            showError("位置情報の監視を確認できません", "決定で再読み込みしてください。", "geolocation-reload");
             return;
           }
           try {
@@ -2413,6 +2413,14 @@
     }
 
     if (errorSource === "google-maps-load") {
+      if (e.key === "Enter" || e.key === " ") location.reload();
+      if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "].indexOf(e.key) >= 0) {
+        e.preventDefault();
+      }
+      return;
+    }
+
+    if (errorSource === "geolocation-reload") {
       if (e.key === "Enter" || e.key === " ") location.reload();
       if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "].indexOf(e.key) >= 0) {
         e.preventDefault();
