@@ -1,0 +1,72 @@
+name: One-shot geolocation reload recovery patch
+
+on:
+  push:
+    branches:
+      - chatgpt/geolocation-watch-reload-recovery
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: chatgpt/geolocation-watch-reload-recovery
+
+      - name: Apply focused D-pad reload recovery patch
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("js/app.js")
+          text = path.read_text(encoding="utf-8")
+
+          old_error = 'showError("位置情報の監視を確認できません", "アプリを再読み込みしてください。", "geolocation");'
+          new_error = 'showError("位置情報の監視を確認できません", "決定で再読み込みしてください。", "geolocation-reload");'
+          count = text.count(old_error)
+          if count != 2:
+              raise SystemExit(f"expected exactly 2 unknown-watch reload errors, found {count}")
+          text = text.replace(old_error, new_error)
+
+          anchor = '''    if (errorSource === "google-maps-load") {
+      if (e.key === "Enter" || e.key === " ") location.reload();
+      if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "].indexOf(e.key) >= 0) {
+        e.preventDefault();
+      }
+      return;
+    }
+
+'''
+          if text.count(anchor) != 1:
+              raise SystemExit(f"expected one google-maps-load D-pad block, found {text.count(anchor)}")
+          reload_block = '''    if (errorSource === "geolocation-reload") {
+      if (e.key === "Enter" || e.key === " ") location.reload();
+      if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "].indexOf(e.key) >= 0) {
+        e.preventDefault();
+      }
+      return;
+    }
+
+'''
+          text = text.replace(anchor, anchor + reload_block)
+          path.write_text(text, encoding="utf-8")
+          PY
+
+          node --check js/app.js
+          git diff --check
+          grep -F '"geolocation-reload"' js/app.js
+
+      - name: Commit product patch
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add js/app.js
+          git diff --cached --exit-code && { echo 'No product diff produced'; exit 1; } || true
+          git commit -m 'Make unknown GPS watch state D-pad reloadable'
+          git push origin HEAD:chatgpt/geolocation-watch-reload-recovery
