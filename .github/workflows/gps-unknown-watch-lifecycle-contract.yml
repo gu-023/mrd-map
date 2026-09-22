@@ -1,0 +1,165 @@
+name: GPS unknown watch lifecycle contract guard
+
+on:
+  pull_request:
+    paths:
+      - js/app.js
+      - .github/workflows/gps-unknown-watch-lifecycle-contract.yml
+  push:
+    branches: [main]
+    paths:
+      - js/app.js
+      - .github/workflows/gps-unknown-watch-lifecycle-contract.yml
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check unknown watch ownership across display lifecycle
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require("fs");
+          const vm = require("vm");
+          const assert = require("assert/strict");
+
+          const app = fs.readFileSync("js/app.js", "utf8");
+          const lifecycleStart = app.indexOf("function handleDisplayLifecycle(hidden) {");
+          const lifecycleEnd = app.indexOf('document.addEventListener("visibilitychange"', lifecycleStart);
+          assert.ok(lifecycleStart >= 0 && lifecycleEnd > lifecycleStart,
+            "handleDisplayLifecycle source not found");
+          const lifecycleBody = app.slice(lifecycleStart, lifecycleEnd);
+
+          const acquireStart = app.indexOf("function acquireLocation() {");
+          const acquireEnd = app.indexOf("function onWatchError(err) {", acquireStart);
+          assert.ok(acquireStart >= 0 && acquireEnd > acquireStart,
+            "acquireLocation source not found");
+          const acquireBody = app.slice(acquireStart, acquireEnd);
+
+          const events = {
+            compass: [],
+            clearRecovery: 0,
+            armRecovery: 0,
+            gps: [],
+            clearedErrors: [],
+            getCalls: 0,
+            watchCalls: 0,
+          };
+          const context = {
+            document: { visibilityState: "visible" },
+            navigator: {
+              geolocation: {
+                getCurrentPosition() {
+                  events.getCalls += 1;
+                },
+                watchPosition() {
+                  events.watchCalls += 1;
+                  return -1;
+                },
+              },
+            },
+            recordCompass(hidden) { events.compass.push(hidden); },
+            recordClearRecovery() { events.clearRecovery += 1; },
+            recordArmRecovery() { events.armRecovery += 1; },
+            recordGps(ok, text) { events.gps.push([ok, text]); },
+            recordClearError(source) { events.clearedErrors.push(source); },
+          };
+          vm.createContext(context);
+          vm.runInContext(`
+            const LIVE_POSITION_MAX_AGE_MS = 30000;
+            let geoWatchId = Number.NaN;
+            let lastPositionTimestamp = Date.now() - 1000;
+            let gpsStatusText = "GPS受信・↻再読込";
+            let errorSource = "geolocation-reload";
+            let geoOneShotRequestId = 0;
+            let acceptedGeoFixGeneration = 0;
+            let geoWatchGeneration = 1;
+
+            function hasUnknownGeoWatchOwnership() {
+              return geoWatchId !== null && (!Number.isInteger(geoWatchId) || geoWatchId <= 0);
+            }
+            function handleCompassLifecycle(hidden) { recordCompass(hidden); }
+            function clearGeoWatchRecoveryTimer() { recordClearRecovery(); }
+            function armGeoWatchRecoveryTimer() { recordArmRecovery(); }
+            function setGps(ok, text) {
+              gpsStatusText = text;
+              recordGps(ok, text);
+            }
+            function clearError(source) {
+              recordClearError(source);
+              if (errorSource === source) errorSource = null;
+            }
+            function showError(title, body, source) { errorSource = source; }
+            function onPosition() { return true; }
+            function onGeoError() {}
+            function onWatchError() {}
+
+            ${lifecycleBody}
+            ${acquireBody}
+
+            globalThis.__runLifecycle = handleDisplayLifecycle;
+            globalThis.__runAcquire = acquireLocation;
+            globalThis.__setPositionAge = (ageMs) => { lastPositionTimestamp = Date.now() - ageMs; };
+            globalThis.__readState = () => ({
+              geoWatchId,
+              gpsStatusText,
+              errorSource,
+              geoWatchGeneration,
+            });
+          `, context);
+
+          context.__runLifecycle(true);
+          let state = context.__readState();
+          assert.deepEqual(events.compass, [true], "suspend must flow through compass lifecycle handling");
+          assert.equal(events.clearRecovery, 1, "suspend must clear the GPS recovery timer");
+          assert.equal(events.armRecovery, 0, "suspend must not arm a GPS recovery timer");
+          assert.equal(events.gps.length, 0, "suspend must not rewrite a fresh unknown-watch GPS status");
+          assert.ok(Number.isNaN(state.geoWatchId), "suspend must retain unknown watcher ownership");
+          assert.equal(state.errorSource, "geolocation-reload",
+            "suspend must retain reload-only recovery ownership");
+
+          context.__runLifecycle(false);
+          state = context.__readState();
+          assert.deepEqual(events.compass, [true, false], "resume must flow through compass lifecycle handling");
+          assert.equal(events.armRecovery, 0,
+            "fresh unknown watcher ownership must not arm the retryable GPS watchdog on resume");
+          assert.equal(events.gps.length, 0, "fresh resume must retain the existing GPS reload hint");
+          assert.ok(Number.isNaN(state.geoWatchId), "resume must retain unknown watcher ownership");
+          assert.equal(state.gpsStatusText, "GPS受信・↻再読込",
+            "fresh resume must preserve the explicit reload hint");
+          assert.equal(state.errorSource, "geolocation-reload",
+            "fresh resume must not dismiss reload-only recovery");
+
+          context.__setPositionAge(31000);
+          context.__runLifecycle(false);
+          state = context.__readState();
+          assert.deepEqual(events.gps.at(-1), [false, "GPS監視異常・↻再読込"],
+            "stale resume must report unknown watcher ownership instead of ordinary GPS retry");
+          assert.equal(events.armRecovery, 0,
+            "stale unknown watcher ownership must not arm the retryable GPS watchdog");
+          assert.ok(Number.isNaN(state.geoWatchId), "stale resume must retain the unknown ownership sentinel");
+          assert.equal(state.errorSource, "geolocation-reload",
+            "stale resume must keep reload-only recovery active");
+          assert.deepEqual(events.clearedErrors, [],
+            "display lifecycle must not clear the reload-only GPS error");
+
+          context.__runAcquire();
+          state = context.__readState();
+          assert.equal(events.getCalls, 1,
+            "an explicit acquisition may still request a fresh one-shot position");
+          assert.equal(events.watchCalls, 0,
+            "unknown watcher ownership must prevent duplicate watchPosition registration after resume");
+          assert.ok(Number.isNaN(state.geoWatchId),
+            "explicit acquisition after resume must preserve unknown watcher ownership");
+          assert.equal(state.geoWatchGeneration, 1,
+            "lifecycle recovery must not invalidate a potentially registered unknown watcher");
+          assert.equal(state.errorSource, "geolocation-reload",
+            "explicit acquisition must not make unknown watcher ownership appear recovered");
+
+          console.log("GPS unknown watch lifecycle runtime contract OK");
+          NODE
