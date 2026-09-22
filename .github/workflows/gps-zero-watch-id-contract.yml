@@ -1,4 +1,4 @@
-name: GPS zero watch ID contract guard
+name: GPS watch ID contract guard
 
 on:
   pull_request:
@@ -20,7 +20,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Check zero watch ID recovery contract
+      - name: Check watch ID recovery contract
         shell: bash
         run: |
           node <<'NODE'
@@ -149,5 +149,90 @@ jobs:
           assert.equal(events.positions, 1, "a valid one-shot fix must remain usable after watch ID 0 failure");
           assert.equal(events.geoErrors, 0, "valid one-shot fix must not be converted into a geolocation error");
 
-          console.log("GPS zero watch ID runtime recovery contract OK");
+          function exerciseUnknownWatchId(watchIdValue, label) {
+            let invalidWatchSuccess = null;
+            let invalidOneShotSuccess = null;
+            const invalidEvents = {
+              getCalls: 0,
+              watchCalls: 0,
+              positions: 0,
+              gps: [],
+              overlays: [],
+            };
+            const invalidContext = {
+              navigator: {
+                geolocation: {
+                  getCurrentPosition(success) {
+                    invalidEvents.getCalls += 1;
+                    invalidOneShotSuccess = success;
+                  },
+                  watchPosition(success) {
+                    invalidEvents.watchCalls += 1;
+                    invalidWatchSuccess = success;
+                    return watchIdValue;
+                  },
+                },
+              },
+              clearGeoWatchRecoveryTimer() {},
+              setGps(ok, text) {
+                invalidEvents.gps.push([ok, text]);
+              },
+              onPosition() {
+                invalidEvents.positions += 1;
+                return true;
+              },
+              onGeoError() {},
+              onWatchError() {},
+              showError(title, body, source) {
+                invalidEvents.overlays.push([title, body, source]);
+              },
+            };
+            vm.createContext(invalidContext);
+            vm.runInContext(`
+              let geoOneShotRequestId = 0;
+              let acceptedGeoFixGeneration = 0;
+              const LIVE_POSITION_MAX_AGE_MS = 30000;
+              let geoWatchId = null;
+              let geoWatchGeneration = 0;
+              ${acquireBody}
+              globalThis.__runAcquire = acquireLocation;
+              globalThis.__readGeoWatchId = () => geoWatchId;
+              globalThis.__readGeoWatchGeneration = () => geoWatchGeneration;
+            `, invalidContext);
+
+            invalidContext.__runAcquire();
+            assert.equal(invalidEvents.getCalls, 1, `${label} ID should still allow the one-shot request`);
+            assert.equal(invalidEvents.watchCalls, 1, `${label} ID should attempt watchPosition once`);
+            assert.deepEqual(invalidEvents.gps.at(-1), [false, "GPS監視異常"],
+              `${label} ID must surface unknown watcher ownership`);
+            assert.deepEqual(invalidEvents.overlays.at(-1), [
+              "位置情報の監視を確認できません",
+              "決定で再読み込みしてください。",
+              "geolocation-reload",
+            ], `${label} ID must expose reload-only recovery`);
+            assert.ok(Number.isNaN(invalidContext.__readGeoWatchId()),
+              `${label} ID must retain a non-null unknown-ownership sentinel`);
+            assert.equal(invalidContext.__readGeoWatchGeneration(), 1,
+              `${label} ID must keep the registered watcher generation current`);
+
+            assert.equal(typeof invalidWatchSuccess, "function", `${label} watch success callback was not captured`);
+            invalidWatchSuccess({ coords: { latitude: 35, longitude: 139 }, timestamp: Date.now() });
+            assert.equal(invalidEvents.positions, 1,
+              `${label} watcher callback must remain usable if the host actually registered it`);
+
+            invalidContext.__runAcquire();
+            assert.equal(invalidEvents.getCalls, 2,
+              `${label} recovery may still request a fresh one-shot fix`);
+            assert.equal(invalidEvents.watchCalls, 1,
+              `${label} sentinel must prevent a duplicate un-clearable watcher`);
+            assert.equal(typeof invalidOneShotSuccess, "function", `${label} one-shot callback was not captured`);
+          }
+
+          // Negative and fractional IDs are outside the successful-watch contract.
+          // A non-standard host may nevertheless have registered a watcher, so the
+          // app must fail closed rather than discard ownership and create duplicates.
+          exerciseUnknownWatchId(-1, "negative");
+          exerciseUnknownWatchId(1.5, "fractional");
+
+          console.log("GPS watch ID runtime recovery contract OK");
           NODE
