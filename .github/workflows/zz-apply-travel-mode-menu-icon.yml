@@ -22,26 +22,25 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           path = Path('js/app.js')
-          text = path.read_text()
-          old_fn = '''  function travelLabel() {
-            return { WALKING: "徒歩", DRIVING: "自動車", BICYCLING: "自転車", TRANSIT: "公共交通" }[travelMode];
-          }
-'''
-          new_fn = '''  function travelLabel() {
-            return { WALKING: "徒歩", DRIVING: "自動車", BICYCLING: "自転車", TRANSIT: "公共交通" }[travelMode];
-          }
-          function travelIcon() {
-            return { WALKING: "🚶", DRIVING: "🚗", BICYCLING: "🚲", TRANSIT: "🚆" }[travelMode] || "🚶";
-          }
-'''
-          old_item = '    items.push({ label: `🚶 移動手段: ${travelLabel()}`, action: openTravelMenu });'
-          new_item = '    items.push({ label: `${travelIcon()} 移動手段: ${travelLabel()}`, action: openTravelMenu });'
-          if text.count(old_fn) != 1:
-              raise SystemExit(f'expected one travelLabel block, found {text.count(old_fn)}')
-          if text.count(old_item) != 1:
-              raise SystemExit(f'expected one travel mode menu item, found {text.count(old_item)}')
-          text = text.replace(old_fn, new_fn).replace(old_item, new_item)
-          path.write_text(text)
+          lines = path.read_text().splitlines()
+          fn_line = '  function travelLabel() {'
+          item_line = '    items.push({ label: `🚶 移動手段: ${travelLabel()}`, action: openTravelMenu });'
+          if lines.count(fn_line) != 1:
+              raise SystemExit(f'expected one travelLabel declaration, found {lines.count(fn_line)}')
+          if lines.count(item_line) != 1:
+              raise SystemExit(f'expected one travel mode menu item, found {lines.count(item_line)}')
+          fn_index = lines.index(fn_line)
+          if lines[fn_index + 2] != '  }':
+              raise SystemExit('unexpected travelLabel shape')
+          icon_lines = [
+              '  function travelIcon() {',
+              '    return { WALKING: "🚶", DRIVING: "🚗", BICYCLING: "🚲", TRANSIT: "🚆" }[travelMode] || "🚶";',
+              '  }',
+          ]
+          lines[fn_index + 3:fn_index + 3] = icon_lines
+          item_index = lines.index(item_line)
+          lines[item_index] = '    items.push({ label: `${travelIcon()} 移動手段: ${travelLabel()}`, action: openTravelMenu });'
+          path.write_text('\n'.join(lines) + '\n')
           PY
           node --check js/app.js
           git diff --check
