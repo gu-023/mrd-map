@@ -1,0 +1,115 @@
+name: One-shot geolocation D-pad patch
+
+on:
+  push:
+    branches:
+      - chatgpt/geolocation-error-dpad-retry
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: chatgpt/geolocation-error-dpad-retry
+
+      - name: Patch retryable geolocation D-pad recovery
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          app_path = Path("js/app.js")
+          app = app_path.read_text()
+          app_anchor = '''    if (errorSource === "directions" &&
+                  ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "].indexOf(e.key) >= 0) {
+          '''
+          app_replacement = '''    if (errorSource === "geolocation") {
+                if (e.key === "Enter" || e.key === " ") doAction("recenter");
+                if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "].indexOf(e.key) >= 0) {
+                  e.preventDefault();
+                }
+                return;
+              }
+
+              if (errorSource === "directions" &&
+                  ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "].indexOf(e.key) >= 0) {
+          '''
+          if app.count(app_anchor) != 1:
+              raise SystemExit(f"expected one directions keydown anchor, found {app.count(app_anchor)}")
+          app = app.replace(app_anchor, app_replacement, 1)
+          app_path.write_text(app)
+
+          workflow_path = Path(".github/workflows/geolocation-reload-dpad-contract.yml")
+          workflow = workflow_path.read_text()
+          setter_anchor = '''              'this.__setErrorSource = (value) => { errorSource = value; };\\n' +
+              'this.__keydown = (e) => {' + keydownBodySource + '\\n};',
+          '''
+          setter_replacement = '''              'this.__setErrorSource = (value) => { errorSource = value; };\\n' +
+              'this.__setFocusAction = (value) => { focusables[0].dataset.action = value; };\\n' +
+              'this.__keydown = (e) => {' + keydownBodySource + '\\n};',
+          '''
+          if workflow.count(setter_anchor) != 1:
+              raise SystemExit(f"expected one harness setter anchor, found {workflow.count(setter_anchor)}")
+          workflow = workflow.replace(setter_anchor, setter_replacement, 1)
+
+          test_anchor = '''          context.__setErrorSource("geolocation");
+          const reloadsBeforeRetryableEnter = reloadCalls;
+          if (dispatch("Enter") !== 1) {
+            throw new Error("retryable geolocation Enter was not handled");
+          }
+          if (reloadCalls !== reloadsBeforeRetryableEnter) {
+            throw new Error("retryable geolocation error incorrectly became reload-only");
+          }
+          if (actionCalls.length !== 1 || actionCalls[0] !== "recenter") {
+            throw new Error("retryable geolocation error no longer allows the recenter/retry action");
+          }
+          '''
+          test_replacement = '''          context.__setErrorSource("geolocation");
+          context.__setFocusAction("zoom-in");
+          const reloadsBeforeRetryableInput = reloadCalls;
+          const moveFocusBeforeRetryableInput = context.moveFocusCalls;
+          for (const key of ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"]) {
+            if (dispatch(key) !== 1) {
+              throw new Error(`${key} was not consumed by retryable geolocation recovery`);
+            }
+            if (reloadCalls !== reloadsBeforeRetryableInput || actionCalls.length !== 0 ||
+                context.moveFocusCalls !== moveFocusBeforeRetryableInput) {
+              throw new Error(`${key} leaked through retryable geolocation recovery`);
+            }
+          }
+
+          if (dispatch("Enter") !== 1 || reloadCalls !== reloadsBeforeRetryableInput) {
+            throw new Error("retryable geolocation Enter was not handled without reloading");
+          }
+          if (actionCalls.length !== 1 || actionCalls[0] !== "recenter") {
+            throw new Error("retryable geolocation Enter did not invoke deterministic recenter/retry");
+          }
+          if (dispatch(" ") !== 1 || reloadCalls !== reloadsBeforeRetryableInput) {
+            throw new Error("retryable geolocation Space was not handled without reloading");
+          }
+          if (actionCalls.length !== 2 || actionCalls[1] !== "recenter") {
+            throw new Error("retryable geolocation Space did not invoke deterministic recenter/retry");
+          }
+          '''
+          if workflow.count(test_anchor) != 1:
+              raise SystemExit(f"expected one retryable geolocation test anchor, found {workflow.count(test_anchor)}")
+          workflow = workflow.replace(test_anchor, test_replacement, 1)
+          workflow_path.write_text(workflow)
+          PY
+
+          node --check js/app.js
+          git diff --check
+
+      - name: Commit product and contract changes
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/_one-shot-geolocation-dpad-patch.yml
+          git add js/app.js .github/workflows/geolocation-reload-dpad-contract.yml
+          git commit -m "Make retryable GPS errors D-pad deterministic"
+          git push origin HEAD:chatgpt/geolocation-error-dpad-retry
