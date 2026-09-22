@@ -23,60 +23,131 @@ jobs:
       - name: Check zero watch ID recovery contract
         shell: bash
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
+          node <<'NODE'
+          const fs = require("fs");
+          const vm = require("vm");
+          const assert = require("assert/strict");
 
-          app = Path("js/app.js").read_text(encoding="utf-8")
+          const app = fs.readFileSync("js/app.js", "utf8");
+          const acquireStart = app.indexOf("function acquireLocation() {");
+          const acquireEnd = app.indexOf("function onWatchError(err) {", acquireStart);
+          assert.ok(acquireStart >= 0 && acquireEnd > acquireStart, "acquireLocation source not found");
+          const acquireBody = app.slice(acquireStart, acquireEnd);
 
-          acquire_start = app.index("function acquireLocation() {")
-          acquire_end = app.index("function onWatchError(err) {", acquire_start)
-          acquire_body = app[acquire_start:acquire_end]
+          const watchStart = acquireBody.indexOf("navigator.geolocation.watchPosition(");
+          const zeroStart = acquireBody.indexOf("if (watchId === 0) {", watchStart);
+          const invalidStart = acquireBody.indexOf("if (!Number.isInteger(watchId) || watchId < 0) {", zeroStart);
+          assert.ok(watchStart >= 0 && zeroStart > watchStart && invalidStart > zeroStart,
+            "zero watch ID branch not found in acquireLocation");
+          const zeroBody = acquireBody.slice(zeroStart, invalidStart);
 
-          watch_start = acquire_body.index("navigator.geolocation.watchPosition(")
-          zero_start = acquire_body.index("if (watchId === 0) {", watch_start)
-          invalid_start = acquire_body.index("if (!Number.isInteger(watchId) || watchId < 0) {", zero_start)
-          zero_body = acquire_body[zero_start:invalid_start]
+          // Geolocation defines 0 as the non-active-document failure return; a
+          // successful watcher receives an implementation-defined ID > 0.
+          for (const snippet of [
+            "geoWatchGeneration += 1;",
+            "geoWatchId = null;",
+            'setGps(false, "GPS開始失敗");',
+            'showError("位置情報を開始できません", "◎ を決定で再試行してください。", "geolocation");',
+            "return;",
+          ]) {
+            assert.ok(zeroBody.includes(snippet), `Zero watch ID recovery contract changed; missing: ${snippet}`);
+          }
+          assert.ok(!zeroBody.includes("geoWatchId = watchId;") && !zeroBody.includes("Number.NaN"),
+            "watchPosition() ID 0 must never be retained as active/unknown watch ownership");
 
-          # Geolocation defines 0 as the non-active-document failure return; a
-          # successful watcher receives an implementation-defined ID > 0.
-          required_zero = (
-              "geoWatchGeneration += 1;",
-              "geoWatchId = null;",
-              'setGps(false, "GPS開始失敗");',
-              'showError("位置情報を開始できません", "◎ を決定で再試行してください。", "geolocation");',
-              "return;",
-          )
-          for snippet in required_zero:
-              if snippet not in zero_body:
-                  raise SystemExit(f"Zero watch ID recovery contract changed; missing: {snippet}")
+          const onPositionStart = app.indexOf("function onPosition(pos) {");
+          const onPositionEnd = app.indexOf("function onGeoError(err) {", onPositionStart);
+          assert.ok(onPositionStart >= 0 && onPositionEnd > onPositionStart, "onPosition source not found");
+          const onPositionBody = app.slice(onPositionStart, onPositionEnd);
+          for (const snippet of [
+            'hasUnknownGeoWatchOwnership()\n        ? "GPS受信・↻再読込"',
+            'geoWatchId === null\n          ? "GPS受信・◎で監視再試行"',
+            ': "GPS"',
+          ]) {
+            assert.ok(onPositionBody.includes(snippet), `GPS fix/watch ownership status contract changed; missing: ${snippet}`);
+          }
 
-          if "geoWatchId = watchId;" in zero_body or "Number.NaN" in zero_body:
-              raise SystemExit("watchPosition() ID 0 must never be retained as active/unknown watch ownership")
+          let oneShotSuccess = null;
+          let watchSuccess = null;
+          const events = {
+            clearRecovery: 0,
+            getCalls: 0,
+            watchCalls: 0,
+            positions: 0,
+            geoErrors: 0,
+            watchErrors: 0,
+            gps: [],
+            overlays: [],
+          };
+          const context = {
+            navigator: {
+              geolocation: {
+                getCurrentPosition(success) {
+                  events.getCalls += 1;
+                  oneShotSuccess = success;
+                },
+                watchPosition(success) {
+                  events.watchCalls += 1;
+                  watchSuccess = success;
+                  return 0;
+                },
+              },
+            },
+            clearGeoWatchRecoveryTimer() {
+              events.clearRecovery += 1;
+            },
+            setGps(ok, text) {
+              events.gps.push([ok, text]);
+            },
+            onPosition() {
+              events.positions += 1;
+              return true;
+            },
+            onGeoError() {
+              events.geoErrors += 1;
+            },
+            onWatchError() {
+              events.watchErrors += 1;
+            },
+            showError(title, body, source) {
+              events.overlays.push([title, body, source]);
+            },
+          };
+          vm.createContext(context);
+          vm.runInContext(`
+            let geoOneShotRequestId = 0;
+            let acceptedGeoFixGeneration = 0;
+            const LIVE_POSITION_MAX_AGE_MS = 30000;
+            let geoWatchId = null;
+            let geoWatchGeneration = 0;
+            ${acquireBody}
+            globalThis.__runAcquire = acquireLocation;
+            globalThis.__readGeoState = () => ({ geoWatchId, geoWatchGeneration });
+          `, context);
 
-          invalidate_pos = zero_body.index("geoWatchGeneration += 1;")
-          release_pos = zero_body.index("geoWatchId = null;")
-          retry_status_pos = zero_body.index('setGps(false, "GPS開始失敗");')
-          retry_error_pos = zero_body.index('showError("位置情報を開始できません"')
-          return_pos = zero_body.index("return;", retry_error_pos)
-          if not invalidate_pos < release_pos < retry_status_pos < retry_error_pos < return_pos:
-              raise SystemExit("Zero watch ID must invalidate callbacks, release ownership, report retry state, then return")
+          context.__runAcquire();
+          assert.equal(events.clearRecovery, 1, "acquireLocation must clear stale recovery timer first");
+          assert.equal(events.getCalls, 1, "one-shot geolocation should still start");
+          assert.equal(events.watchCalls, 1, "watchPosition should be attempted once");
+          assert.deepEqual(events.gps.at(-1), [false, "GPS開始失敗"],
+            "ID 0 must surface a retryable GPS start failure");
+          assert.deepEqual(events.overlays.at(-1), [
+            "位置情報を開始できません",
+            "◎ を決定で再試行してください。",
+            "geolocation",
+          ], "ID 0 must expose the retryable geolocation error source");
+          const geoState = context.__readGeoState();
+          assert.equal(geoState.geoWatchId, null, "ID 0 must release watch ownership");
+          assert.equal(geoState.geoWatchGeneration, 2, "ID 0 must invalidate the watcher callback generation");
 
-          on_position_start = app.index("function onPosition(pos) {")
-          on_position_end = app.index("function onGeoError(err) {", on_position_start)
-          on_position_body = app[on_position_start:on_position_end]
+          assert.equal(typeof watchSuccess, "function", "watch success callback was not captured");
+          watchSuccess({ coords: { latitude: 35, longitude: 139 }, timestamp: Date.now() });
+          assert.equal(events.positions, 0, "callback from the failed ID 0 watcher must be ignored");
 
-          unknown_hint = 'hasUnknownGeoWatchOwnership()\n        ? "GPS受信・↻再読込"'
-          no_watch_hint = 'geoWatchId === null\n          ? "GPS受信・◎で監視再試行"'
-          healthy_status = ': "GPS"'
-          for snippet in (unknown_hint, no_watch_hint, healthy_status):
-              if snippet not in on_position_body:
-                  raise SystemExit(f"GPS fix/watch ownership status contract changed; missing: {snippet}")
+          assert.equal(typeof oneShotSuccess, "function", "one-shot success callback was not captured");
+          oneShotSuccess({ coords: { latitude: 35, longitude: 139 }, timestamp: Date.now() });
+          assert.equal(events.positions, 1, "a valid one-shot fix must remain usable after watch ID 0 failure");
+          assert.equal(events.geoErrors, 0, "valid one-shot fix must not be converted into a geolocation error");
 
-          unknown_pos = on_position_body.index(unknown_hint)
-          no_watch_pos = on_position_body.index(no_watch_hint, unknown_pos)
-          healthy_pos = on_position_body.index(healthy_status, no_watch_pos)
-          if not unknown_pos < no_watch_pos < healthy_pos:
-              raise SystemExit("A valid one-shot fix without an active watcher must keep the explicit ◎ monitor-retry hint")
-
-          print("GPS zero watch ID and no-watcher fix recovery contract OK")
-          PY
+          console.log("GPS zero watch ID runtime recovery contract OK");
+          NODE
