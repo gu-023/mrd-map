@@ -830,8 +830,8 @@
 
   function saveRecent(dest, name) {
     const lat = dest.lat(), lng = dest.lng();
-    addToList("mrd.recents", { name: name || placeKey(lat, lng), lat, lng }, 8);
-    if (!name) resolvePlaceName(lat, lng); // 名前未指定なら住所を後付け
+    const saved = addToList("mrd.recents", { name: name || placeKey(lat, lng), lat, lng }, 8);
+    if (saved && !name) resolvePlaceName(lat, lng); // 保存できた履歴だけ住所を後付け
   }
 
   function isFav(lat, lng) {
