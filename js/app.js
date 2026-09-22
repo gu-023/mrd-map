@@ -2428,6 +2428,13 @@
       return;
     }
 
+    if (errorSource === "directions" &&
+        ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "].indexOf(e.key) >= 0) {
+      clearError("directions");
+      e.preventDefault();
+      return;
+    }
+
     if (errorSource === "storage") {
       if (e.key === "Enter" || e.key === " ") clearError("storage");
       if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "].indexOf(e.key) >= 0) {
