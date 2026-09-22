@@ -35,35 +35,28 @@ jobs:
               raise SystemExit("Maps load error source already present")
           text = text.replace(auth_constant, auth_constant + load_constant, 1)
 
-          storage_guard = '''    if (errorSource === "storage") {
-              if (e.key === "Enter" || e.key === " ") clearError("storage");
-              if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "].indexOf(e.key) >= 0) {
-                e.preventDefault();
-              }
-              return;
-            }
-          '''
-          load_guard = '''    if (errorSource === GOOGLE_MAPS_LOAD_ERROR_SOURCE) {
-              if (e.key === "Enter" || e.key === " ") location.reload();
-              if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "].indexOf(e.key) >= 0) {
-                e.preventDefault();
-              }
-              return;
-            }
+          storage_marker = '    if (errorSource === "storage") {'
+          load_guard = (
+              '    if (errorSource === GOOGLE_MAPS_LOAD_ERROR_SOURCE) {\n'
+              '      if (e.key === "Enter" || e.key === " ") location.reload();\n'
+              '      if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "].indexOf(e.key) >= 0) {\n'
+              '        e.preventDefault();\n'
+              '      }\n'
+              '      return;\n'
+              '    }\n\n'
+          )
+          if text.count(storage_marker) != 1:
+              raise SystemExit("expected exactly one storage error D-pad guard marker")
+          text = text.replace(storage_marker, load_guard + storage_marker, 1)
 
-          '''
-          if text.count(storage_guard) != 1:
-              raise SystemExit("expected exactly one storage error D-pad guard")
-          text = text.replace(storage_guard, load_guard + storage_guard, 1)
-
-          old_catch = '''      showError("地図の読み込みに失敗", String(err.message || err));
-          '''
-          new_catch = '''      showError(
-                "地図の読み込みに失敗",
-                escapeHtml(String(err.message || err)) + "<br><br>決定で再読み込みできます。",
-                GOOGLE_MAPS_LOAD_ERROR_SOURCE
-              );
-          '''
+          old_catch = '      showError("地図の読み込みに失敗", String(err.message || err));'
+          new_catch = (
+              '      showError(\n'
+              '        "地図の読み込みに失敗",\n'
+              '        escapeHtml(String(err.message || err)) + "<br><br>決定で再読み込みできます。",\n'
+              '        GOOGLE_MAPS_LOAD_ERROR_SOURCE\n'
+              '      );'
+          )
           if text.count(old_catch) != 1:
               raise SystemExit("expected exactly one generic Google Maps load error call")
           text = text.replace(old_catch, new_catch, 1)
