@@ -918,6 +918,9 @@
   function travelLabel() {
     return { WALKING: "徒歩", DRIVING: "自動車", BICYCLING: "自転車", TRANSIT: "公共交通" }[travelMode];
   }
+  function travelIcon() {
+    return { WALKING: "🚶", DRIVING: "🚗", BICYCLING: "🚲", TRANSIT: "🚆" }[travelMode] || "🚶";
+  }
 
   function openDestinationMenu() {
     if (navRerouting) {
@@ -935,7 +938,7 @@
     const rec = loadList("mrd.recents");
     if (fav.length) items.push({ label: `⭐ お気に入り (${fav.length})`, action: () => openListMenu("mrd.favorites", "お気に入り") });
     if (rec.length) items.push({ label: `🕘 最近の目的地 (${rec.length})`, action: () => openListMenu("mrd.recents", "最近の目的地") });
-    items.push({ label: `🚶 移動手段: ${travelLabel()}`, action: openTravelMenu });
+    items.push({ label: `${travelIcon()} 移動手段: ${travelLabel()}`, action: openTravelMenu });
     if (navMode && navDestination) {
       items.push({ label: "🗺 ルート全体を表示", action: () => { if (navBounds) map.fitBounds(navBounds); followMode = false; closeMenu(); } });
       items.push({ label: "📋 ルート一覧", action: openStepList });
