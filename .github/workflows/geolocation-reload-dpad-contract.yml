@@ -84,6 +84,7 @@ jobs:
               'function moveFocus() { moveFocusCalls += 1; }\n' +
               'function doAction(action) { actionCalls.push(action); }\n' +
               'this.__setErrorSource = (value) => { errorSource = value; };\n' +
+              'this.__setFocusAction = (value) => { focusables[0].dataset.action = value; };\n' +
               'this.__keydown = (e) => {' + keydownBodySource + '\n};',
             Object.assign(context, {
               actionCalls,
@@ -122,15 +123,30 @@ jobs:
           }
 
           context.__setErrorSource("geolocation");
-          const reloadsBeforeRetryableEnter = reloadCalls;
-          if (dispatch("Enter") !== 1) {
-            throw new Error("retryable geolocation Enter was not handled");
+          context.__setFocusAction("zoom-in");
+          const reloadsBeforeRetryableInput = reloadCalls;
+          const moveFocusBeforeRetryableInput = context.moveFocusCalls;
+          for (const key of ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"]) {
+            if (dispatch(key) !== 1) {
+              throw new Error(`${key} was not consumed by retryable geolocation recovery`);
+            }
+            if (reloadCalls !== reloadsBeforeRetryableInput || actionCalls.length !== 0 ||
+                context.moveFocusCalls !== moveFocusBeforeRetryableInput) {
+              throw new Error(`${key} leaked through retryable geolocation recovery`);
+            }
           }
-          if (reloadCalls !== reloadsBeforeRetryableEnter) {
-            throw new Error("retryable geolocation error incorrectly became reload-only");
+
+          if (dispatch("Enter") !== 1 || reloadCalls !== reloadsBeforeRetryableInput) {
+            throw new Error("retryable geolocation Enter was not handled without reloading");
           }
           if (actionCalls.length !== 1 || actionCalls[0] !== "recenter") {
-            throw new Error("retryable geolocation error no longer allows the recenter/retry action");
+            throw new Error("retryable geolocation Enter did not invoke deterministic recenter/retry");
+          }
+          if (dispatch(" ") !== 1 || reloadCalls !== reloadsBeforeRetryableInput) {
+            throw new Error("retryable geolocation Space was not handled without reloading");
+          }
+          if (actionCalls.length !== 2 || actionCalls[1] !== "recenter") {
+            throw new Error("retryable geolocation Space did not invoke deterministic recenter/retry");
           }
 
           console.log("Geolocation reload D-pad recovery contract OK");

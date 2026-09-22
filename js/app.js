@@ -2428,6 +2428,14 @@
       return;
     }
 
+    if (errorSource === "geolocation") {
+      if (e.key === "Enter" || e.key === " ") doAction("recenter");
+      if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "].indexOf(e.key) >= 0) {
+        e.preventDefault();
+      }
+      return;
+    }
+
     if (errorSource === "directions" &&
         ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "].indexOf(e.key) >= 0) {
       clearError("directions");
