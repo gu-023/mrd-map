@@ -28,59 +28,59 @@ jobs:
 
           path = Path("js/app.js")
           text = path.read_text()
-          old = '''  function resolvePlaceName(lat, lng) {
-            if (!geocoder || googleMapsAuthFailed) return;
-            geocoder.geocode({ location: { lat, lng } }, (results, status) => {
-              if (googleMapsAuthFailed) return;
-              if (status !== "OK" || !results || !results[0]) return; // 失敗時は座標表示のまま
-              const name = shortenAddr(results[0].formatted_address);
-              ["mrd.recents", "mrd.favorites"].forEach((key) => {
-                const list = loadList(key);
-                let changed = false;
-                list.forEach((p) => {
-                  if (placeKey(p.lat, p.lng) === placeKey(lat, lng)) { p.name = name; changed = true; }
-                });
-                if (changed) saveList(key, list);
-              });
-            });
-          }
-          '''
-          new = '''  function resolvePlaceName(lat, lng) {
-            if (!geocoder || googleMapsAuthFailed) return;
-            try {
-              geocoder.geocode({ location: { lat, lng } }, (results, status) => {
-                if (googleMapsAuthFailed) return;
-                if (status !== "OK" || !results || !results[0]) return; // 失敗時は座標表示のまま
-                const name = shortenAddr(results[0].formatted_address);
-                ["mrd.recents", "mrd.favorites"].forEach((key) => {
-                  const list = loadList(key);
-                  let changed = false;
-                  list.forEach((p) => {
-                    if (placeKey(p.lat, p.lng) === placeKey(lat, lng)) { p.name = name; changed = true; }
-                  });
-                  if (changed) saveList(key, list);
-                });
-              });
-            } catch (_) {
-              // Name enrichment is optional; keep the saved coordinate fallback if the SDK throws synchronously.
-            }
-          }
-          '''
-          if text.count(old) != 1:
-              raise SystemExit(f"expected resolvePlaceName block exactly once, found {text.count(old)}")
-          path.write_text(text.replace(old, new, 1))
+          start_marker = "  function resolvePlaceName(lat, lng) {"
+          end_marker = "\n\n  /* ---------- メニュー"
+          start = text.index(start_marker)
+          end = text.index(end_marker, start)
+          current = text[start:end]
+          if current.count("geocoder.geocode") != 1 or "catch (_)" in current:
+              raise SystemExit("unexpected resolvePlaceName source before patch")
+
+          replacement = "\n".join([
+              "  function resolvePlaceName(lat, lng) {",
+              "    if (!geocoder || googleMapsAuthFailed) return;",
+              "    try {",
+              "      geocoder.geocode({ location: { lat, lng } }, (results, status) => {",
+              "        if (googleMapsAuthFailed) return;",
+              "        if (status !== \"OK\" || !results || !results[0]) return; // 失敗時は座標表示のまま",
+              "        const name = shortenAddr(results[0].formatted_address);",
+              "        [\"mrd.recents\", \"mrd.favorites\"].forEach((key) => {",
+              "          const list = loadList(key);",
+              "          let changed = false;",
+              "          list.forEach((p) => {",
+              "            if (placeKey(p.lat, p.lng) === placeKey(lat, lng)) { p.name = name; changed = true; }",
+              "          });",
+              "          if (changed) saveList(key, list);",
+              "        });",
+              "      });",
+              "    } catch (_) {",
+              "      // Name enrichment is optional; keep the saved coordinate fallback if the SDK throws synchronously.",
+              "    }",
+              "  }",
+          ])
+          path.write_text(text[:start] + replacement + text[end:])
           PY
           node --check js/app.js
           git diff --check
-          python3 - <<'PY'
-          from pathlib import Path
-          text = Path("js/app.js").read_text()
-          block = text.split("  function resolvePlaceName(lat, lng) {", 1)[1].split("\n  /* ---------- メニュー", 1)[0]
-          assert "try {" in block
-          assert "geocoder.geocode" in block
-          assert "catch (_)" in block
-          assert "keep the saved coordinate fallback" in block
-          PY
+          node <<'NODE'
+          const fs = require("fs");
+          const source = fs.readFileSync("js/app.js", "utf8");
+          const start = source.indexOf("  function resolvePlaceName(lat, lng) {");
+          const end = source.indexOf("\n\n  /* ---------- メニュー", start);
+          if (start < 0 || end < 0) throw new Error("resolvePlaceName source not found");
+          const fnSource = source.slice(start, end);
+          let geocodeCalls = 0;
+          const geocoder = { geocode() { geocodeCalls++; throw new Error("sync SDK failure"); } };
+          const googleMapsAuthFailed = false;
+          function shortenAddr() { throw new Error("callback must not run"); }
+          function loadList() { throw new Error("callback must not run"); }
+          function saveList() { throw new Error("callback must not run"); }
+          function placeKey() { throw new Error("callback must not run"); }
+          eval(fnSource);
+          resolvePlaceName(35.0, 139.0);
+          if (geocodeCalls !== 1) throw new Error(`expected one geocoder call, got ${geocodeCalls}`);
+          console.log("sync geocoder throw is contained");
+          NODE
       - name: Commit product change
         run: |
           git config user.name "github-actions[bot]"
