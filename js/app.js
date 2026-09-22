@@ -2459,6 +2459,13 @@
       return;
     }
 
+    if (errorSource === "places" && searchOpen &&
+        ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "].indexOf(e.key) >= 0) {
+      clearError("places");
+      e.preventDefault();
+      return;
+    }
+
     if (errorSource === "places" && menuOpen) clearError("places");
 
     // 検索画面: キーボード/候補を操作

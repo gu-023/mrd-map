@@ -1,0 +1,143 @@
+name: Guard Places error D-pad recovery
+
+on:
+  pull_request:
+    paths:
+      - js/app.js
+      - .github/workflows/places-error-dpad-contract.yml
+  push:
+    branches: [main]
+    paths:
+      - js/app.js
+      - .github/workflows/places-error-dpad-contract.yml
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Exercise Places error D-pad recovery
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require("fs");
+          const vm = require("vm");
+
+          const source = fs.readFileSync("js/app.js", "utf8");
+          const keydownStart = source.indexOf('  document.addEventListener("keydown", (e) => {');
+          const keydownBodyStart = source.indexOf("{", keydownStart) + 1;
+          const keydownEnd = source.indexOf(
+            "\n  });\n\n  // マウス/タップでも動くようにしておく",
+            keydownBodyStart,
+          );
+
+          if (keydownStart < 0 || keydownBodyStart <= 0 || keydownEnd < 0) {
+            throw new Error("keydown handler could not be located");
+          }
+
+          const keydownBodySource = source
+            .slice(keydownBodyStart, keydownEnd)
+            .replace(/^    /gm, "");
+
+          const context = {};
+          vm.createContext(context);
+          vm.runInContext(
+            'let googleMapsAuthFailed = false;\n' +
+              'let errorSource = "places";\n' +
+              'let searchOpen = true;\n' +
+              'let menuOpen = false;\n' +
+              'let pickMode = false;\n' +
+              'let panMode = false;\n' +
+              'let searchZone = "keys";\n' +
+              'let focusIdx = 0;\n' +
+              'const focusables = [{ dataset: { action: "zoom-in" } }];\n' +
+              'const els = { searchQuery: {} };\n' +
+              'const document = { activeElement: null };\n' +
+              'let clearCalls = [];\n' +
+              'let searchCalls = [];\n' +
+              'let menuMoves = [];\n' +
+              'let menuBackCalls = 0;\n' +
+              'let menuActivateCalls = 0;\n' +
+              'let actionCalls = [];\n' +
+              'let focusMoves = [];\n' +
+              'function clearError(source) { clearCalls.push(source); if (errorSource === source) errorSource = null; }\n' +
+              'function searchKeydown(key) { searchCalls.push(key); }\n' +
+              'function menuMove(delta) { menuMoves.push(delta); }\n' +
+              'function menuBack() { menuBackCalls += 1; }\n' +
+              'function menuActivate() { menuActivateCalls += 1; }\n' +
+              'function doAction(action) { actionCalls.push(action); }\n' +
+              'function moveFocus(delta) { focusMoves.push(delta); }\n' +
+              'this.__keydown = (e) => {' + keydownBodySource + '\n};\n' +
+              'this.__searchReset = () => { errorSource = "places"; searchOpen = true; menuOpen = false; clearCalls = []; searchCalls = []; menuMoves = []; menuBackCalls = 0; menuActivateCalls = 0; actionCalls = []; focusMoves = []; };\n' +
+              'this.__menuReset = () => { errorSource = "places"; searchOpen = false; menuOpen = true; clearCalls = []; searchCalls = []; menuMoves = []; menuBackCalls = 0; menuActivateCalls = 0; actionCalls = []; focusMoves = []; };\n' +
+              'this.__state = () => ({ errorSource, clearCalls: Array.from(clearCalls), searchCalls: Array.from(searchCalls), menuMoves: Array.from(menuMoves), menuBackCalls, menuActivateCalls, actionCalls: Array.from(actionCalls), focusMoves: Array.from(focusMoves) });',
+            context,
+          );
+
+          for (const key of ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "]) {
+            context.__searchReset();
+            let preventDefaultCalls = 0;
+            context.__keydown({
+              key,
+              isComposing: false,
+              keyCode: 0,
+              preventDefault() {
+                preventDefaultCalls += 1;
+              },
+            });
+            const state = context.__state();
+            if (state.errorSource !== null || state.clearCalls.length !== 1 || state.clearCalls[0] !== "places") {
+              throw new Error(`${JSON.stringify(key)} did not dismiss the active Places search error exactly once`);
+            }
+            if (state.searchCalls.length !== 0 || state.menuMoves.length !== 0 || state.menuBackCalls !== 0 ||
+                state.menuActivateCalls !== 0 || state.actionCalls.length !== 0 || state.focusMoves.length !== 0) {
+              throw new Error(`${JSON.stringify(key)} leaked through the Places search error overlay`);
+            }
+            if (preventDefaultCalls !== 1) {
+              throw new Error(`${JSON.stringify(key)} was not consumed exactly once`);
+            }
+          }
+
+          const menuCases = [
+            ["ArrowUp", { move: -1 }],
+            ["ArrowDown", { move: 1 }],
+            ["ArrowLeft", { back: 1 }],
+            ["Enter", { activate: 1 }],
+            [" ", { activate: 1 }],
+          ];
+          for (const [key, expected] of menuCases) {
+            context.__menuReset();
+            let preventDefaultCalls = 0;
+            context.__keydown({
+              key,
+              preventDefault() {
+                preventDefaultCalls += 1;
+              },
+            });
+            const state = context.__state();
+            if (state.errorSource !== null || state.clearCalls.length !== 1 || state.clearCalls[0] !== "places") {
+              throw new Error(`${JSON.stringify(key)} did not clear the menu-level Places initialization error`);
+            }
+            if (expected.move !== undefined && (state.menuMoves.length !== 1 || state.menuMoves[0] !== expected.move)) {
+              throw new Error(`${key} no longer reaches the visible menu after initialization failure`);
+            }
+            if (expected.back && state.menuBackCalls !== 1) {
+              throw new Error("ArrowLeft no longer reaches menuBack after initialization failure");
+            }
+            if (expected.activate && state.menuActivateCalls !== 1) {
+              throw new Error(`${JSON.stringify(key)} no longer retries the menu action after initialization failure`);
+            }
+            if (state.searchCalls.length !== 0 || state.actionCalls.length !== 0 || state.focusMoves.length !== 0) {
+              throw new Error(`${JSON.stringify(key)} escaped the visible menu recovery path`);
+            }
+            if (preventDefaultCalls !== 1) {
+              throw new Error(`${JSON.stringify(key)} menu recovery was not consumed exactly once`);
+            }
+          }
+
+          console.log("Places error D-pad recovery contract OK");
+          NODE
