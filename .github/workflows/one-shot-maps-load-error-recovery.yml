@@ -1,0 +1,84 @@
+name: One-shot Maps load recovery patch
+
+on:
+  push:
+    branches:
+      - chatgpt/maps-load-error-recovery
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: chatgpt/maps-load-error-recovery
+
+      - name: Patch Maps load failure recovery
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("js/app.js")
+          text = path.read_text()
+
+          auth_constant = '  const GOOGLE_MAPS_AUTH_ERROR_SOURCE = "google-maps-auth";\n'
+          load_constant = '  const GOOGLE_MAPS_LOAD_ERROR_SOURCE = "google-maps-load";\n'
+          if text.count(auth_constant) != 1:
+              raise SystemExit("expected exactly one Google Maps auth error source constant")
+          if load_constant in text:
+              raise SystemExit("Maps load error source already present")
+          text = text.replace(auth_constant, auth_constant + load_constant, 1)
+
+          storage_guard = '''    if (errorSource === "storage") {
+              if (e.key === "Enter" || e.key === " ") clearError("storage");
+              if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "].indexOf(e.key) >= 0) {
+                e.preventDefault();
+              }
+              return;
+            }
+          '''
+          load_guard = '''    if (errorSource === GOOGLE_MAPS_LOAD_ERROR_SOURCE) {
+              if (e.key === "Enter" || e.key === " ") location.reload();
+              if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "].indexOf(e.key) >= 0) {
+                e.preventDefault();
+              }
+              return;
+            }
+
+          '''
+          if text.count(storage_guard) != 1:
+              raise SystemExit("expected exactly one storage error D-pad guard")
+          text = text.replace(storage_guard, load_guard + storage_guard, 1)
+
+          old_catch = '''      showError("地図の読み込みに失敗", String(err.message || err));
+          '''
+          new_catch = '''      showError(
+                "地図の読み込みに失敗",
+                escapeHtml(String(err.message || err)) + "<br><br>決定で再読み込みできます。",
+                GOOGLE_MAPS_LOAD_ERROR_SOURCE
+              );
+          '''
+          if text.count(old_catch) != 1:
+              raise SystemExit("expected exactly one generic Google Maps load error call")
+          text = text.replace(old_catch, new_catch, 1)
+
+          path.write_text(text)
+          PY
+
+          node --check js/app.js
+          git diff --check
+          grep -Fq 'const GOOGLE_MAPS_LOAD_ERROR_SOURCE = "google-maps-load";' js/app.js
+          grep -Fq 'errorSource === GOOGLE_MAPS_LOAD_ERROR_SOURCE' js/app.js
+          grep -Fq 'escapeHtml(String(err.message || err)) + "<br><br>決定で再読み込みできます。"' js/app.js
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add js/app.js
+          git commit -m 'Make Maps load failures D-pad recoverable'
+          git push origin HEAD:chatgpt/maps-load-error-recovery
