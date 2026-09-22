@@ -18,7 +18,7 @@ jobs:
         with:
           ref: chatgpt/guard-places-search-init
 
-      - name: Guard synchronous Places search initialization failures
+      - name: Keep Places initialization errors recoverable by D-pad
         shell: bash
         run: |
           python3 <<'PY'
@@ -26,10 +26,10 @@ jobs:
 
           path = Path('js/app.js')
           source = path.read_text()
-          old = "    closeMenu();\n    if (!placesSearchApi) placesSearchApi = createPlacesSearchApi();\n    placesSearchApi.startSession();\n    searchOpen = true;\n"
-          new = "    try {\n      if (!placesSearchApi) placesSearchApi = createPlacesSearchApi();\n      placesSearchApi.startSession();\n    } catch (_) {\n      placesSearchApi = null;\n      showError(\"場所検索を開始できません\", placesErrorDetail(null), \"places\");\n      return;\n    }\n    clearError(\"places\");\n    closeMenu();\n    searchOpen = true;\n"
+          old = "      return;\n    }\n\n    // 検索画面: キーボード/候補を操作\n"
+          new = "      return;\n    }\n\n    if (errorSource === \"places\" && menuOpen) clearError(\"places\");\n\n    // 検索画面: キーボード/候補を操作\n"
           if source.count(old) != 1:
-              raise SystemExit(f'expected exactly one openSearch initialization block, found {source.count(old)}')
+              raise SystemExit(f'expected exactly one D-pad insertion point, found {source.count(old)}')
           path.write_text(source.replace(old, new, 1))
           PY
 
@@ -45,11 +45,12 @@ jobs:
               '      placesSearchApi = null;',
               '      showError("場所検索を開始できません", placesErrorDetail(null), "places");',
               '    clearError("places");\n    closeMenu();\n    searchOpen = true;',
+              '    if (errorSource === "places" && menuOpen) clearError("places");',
           ]
           missing = [needle for needle in required if needle not in source]
           if missing:
               raise SystemExit(f'missing Places init guard fragments: {missing}')
-          print('Places init sync-throw guard is present')
+          print('Places init failure remains recoverable from the D-pad menu')
           PY
 
       - name: Commit product change
@@ -62,5 +63,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add js/app.js
-          git commit -m "Guard Places search initialization failures"
+          git commit -m "Keep Places init errors D-pad recoverable"
           git push origin HEAD:chatgpt/guard-places-search-init
