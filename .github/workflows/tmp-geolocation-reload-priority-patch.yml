@@ -22,19 +22,12 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
-
           path = Path("js/app.js")
           source = path.read_text()
-          old = '''  function showError(titleHtml, bodyHtml, source = null) {
-            errorSource = source;
-'''
-          new = '''  function showError(titleHtml, bodyHtml, source = null) {
-            if (errorSource === "geolocation-reload" &&
-                source !== GOOGLE_MAPS_AUTH_ERROR_SOURCE) return;
-            errorSource = source;
-'''
+          old = '  function showError(titleHtml, bodyHtml, source = null) {\n    errorSource = source;\n'
+          new = '  function showError(titleHtml, bodyHtml, source = null) {\n    if (errorSource === "geolocation-reload" &&\n        source !== GOOGLE_MAPS_AUTH_ERROR_SOURCE) return;\n    errorSource = source;\n'
           if source.count(old) != 1:
-            raise SystemExit(f"expected one showError anchor, found {source.count(old)}")
+              raise SystemExit(f"expected one showError anchor, found {source.count(old)}")
           path.write_text(source.replace(old, new, 1))
           PY
           node --check js/app.js
