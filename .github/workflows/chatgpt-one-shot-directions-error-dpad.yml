@@ -26,36 +26,19 @@ jobs:
 
           path = Path("js/app.js")
           source = path.read_text()
-          anchor = '''    if (errorSource === "storage") {
-              if (e.key === "Enter" || e.key === " ") clearError("storage");
-              if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "].indexOf(e.key) >= 0) {
-                e.preventDefault();
-              }
-              return;
-            }
-
-            if (errorSource === "places" && menuOpen) clearError("places");'''
-          replacement = '''    if (errorSource === "directions" &&
+          anchor = '    if (errorSource === "storage") {'
+          insert = '''    if (errorSource === "directions" &&
                 ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "].indexOf(e.key) >= 0) {
               clearError("directions");
               e.preventDefault();
               return;
             }
 
-            if (errorSource === "storage") {
-              if (e.key === "Enter" || e.key === " ") clearError("storage");
-              if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "].indexOf(e.key) >= 0) {
-                e.preventDefault();
-              }
-              return;
-            }
-
-            if (errorSource === "places" && menuOpen) clearError("places");'''
-          if anchor not in source:
-              raise SystemExit("expected keydown anchor not found")
+            '''
           if source.count(anchor) != 1:
-              raise SystemExit("keydown anchor was not unique")
-          path.write_text(source.replace(anchor, replacement, 1))
+              raise SystemExit(f"expected one storage keydown anchor, found {source.count(anchor)}")
+          source = source.replace(anchor, insert + anchor, 1)
+          path.write_text(source)
           PY
 
           node --check js/app.js
