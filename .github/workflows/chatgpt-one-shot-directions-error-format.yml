@@ -1,0 +1,60 @@
+name: ChatGPT one-shot Directions error D-pad formatting
+
+on:
+  push:
+    branches:
+      - chatgpt/directions-error-dpad-dismiss
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: chatgpt/directions-error-dpad-dismiss
+          fetch-depth: 0
+
+      - name: Normalize focused D-pad error block
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("js/app.js")
+          source = path.read_text()
+          anchor = (
+              '    if (errorSource === "directions" &&\n'
+              '      ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "].indexOf(e.key) >= 0) {\n'
+              '    clearError("directions");\n'
+              '    e.preventDefault();\n'
+              '    return;\n'
+              '  }\n\n'
+              '      if (errorSource === "storage") {'
+          )
+          replacement = (
+              '    if (errorSource === "directions" &&\n'
+              '        ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "].indexOf(e.key) >= 0) {\n'
+              '      clearError("directions");\n'
+              '      e.preventDefault();\n'
+              '      return;\n'
+              '    }\n\n'
+              '    if (errorSource === "storage") {'
+          )
+          if source.count(anchor) != 1:
+              raise SystemExit(f"expected one malformed Directions block, found {source.count(anchor)}")
+          path.write_text(source.replace(anchor, replacement, 1))
+          PY
+
+          node --check js/app.js
+          git diff --check
+
+          git rm .github/workflows/chatgpt-one-shot-directions-error-format.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add js/app.js
+          git commit -m "Normalize Directions D-pad dismissal block"
+          git push origin HEAD:chatgpt/directions-error-dpad-dismiss
