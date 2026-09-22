@@ -1,0 +1,33 @@
+name: One-shot travel icon test harness fix
+
+on:
+  push:
+    branches:
+      - chatgpt/travel-mode-menu-icon
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chatgpt/travel-mode-menu-icon
+          fetch-depth: 0
+      - name: Patch takeover harness
+        run: |
+          echo 'ZnJvbSBwYXRobGliIGltcG9ydCBQYXRoCnBhdGggPSBQYXRoKCIuZ2l0aHViL3dvcmtmbG93cy9kaXJlY3Rpb25zLXRha2VvdmVyLXJ1bnRpbWUtY29udHJhY3QueW1sIikKdGV4dCA9IHBhdGgucmVhZF90ZXh0KCkKbmVlZGxlID0gJyAgICAgICAgICAgICAgdHJhdmVsTGFiZWwoKSB7XG4gICAgICAgICAgICAgICAgcmV0dXJuICLlvpLmrakiO1xuICAgICAgICAgICAgICB9LFxuJwpyZXBsYWNlbWVudCA9ICcgICAgICAgICAgICAgIHRyYXZlbExhYmVsKCkge1xuICAgICAgICAgICAgICAgIHJldHVybiAi5b6S5q2pIjtcbiAgICAgICAgICAgICAgfSxcbiAgICAgICAgICAgICAgdHJhdmVsSWNvbigpIHtcbiAgICAgICAgICAgICAgICByZXR1cm4gIvCfmrYiO1xuICAgICAgICAgICAgICB9LFxuJwppZiB0ZXh0LmNvdW50KG5lZWRsZSkgIT0gMToKICAgIHJhaXNlIFN5c3RlbUV4aXQoZiJleHBlY3RlZCBvbmUgdHJhdmVsTGFiZWwgc3R1YiwgZm91bmQge3RleHQuY291bnQobmVlZGxlKX0iKQpwYXRoLndyaXRlX3RleHQodGV4dC5yZXBsYWNlKG5lZWRsZSwgcmVwbGFjZW1lbnQpKQo=' | base64 -d > /tmp/patch.py
+          python3 /tmp/patch.py
+          node --check js/app.js
+          git diff --check
+          grep -F 'travelIcon() {' .github/workflows/directions-takeover-runtime-contract.yml
+      - name: Commit patch
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add .github/workflows/directions-takeover-runtime-contract.yml
+          git commit -m "Update Directions takeover harness for travel icon"
+          git push origin HEAD:chatgpt/travel-mode-menu-icon
