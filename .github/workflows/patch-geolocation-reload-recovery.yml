@@ -32,26 +32,26 @@ jobs:
               raise SystemExit(f"expected exactly 2 unknown-watch reload errors, found {count}")
           text = text.replace(old_error, new_error)
 
-          anchor = '''    if (errorSource === "google-maps-load") {
-      if (e.key === "Enter" || e.key === " ") location.reload();
-      if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "].indexOf(e.key) >= 0) {
-        e.preventDefault();
-      }
-      return;
-    }
-
-'''
+          anchor = (
+              '    if (errorSource === "google-maps-load") {\n'
+              '      if (e.key === "Enter" || e.key === " ") location.reload();\n'
+              '      if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "].indexOf(e.key) >= 0) {\n'
+              '        e.preventDefault();\n'
+              '      }\n'
+              '      return;\n'
+              '    }\n\n'
+          )
           if text.count(anchor) != 1:
               raise SystemExit(f"expected one google-maps-load D-pad block, found {text.count(anchor)}")
-          reload_block = '''    if (errorSource === "geolocation-reload") {
-      if (e.key === "Enter" || e.key === " ") location.reload();
-      if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "].indexOf(e.key) >= 0) {
-        e.preventDefault();
-      }
-      return;
-    }
-
-'''
+          reload_block = (
+              '    if (errorSource === "geolocation-reload") {\n'
+              '      if (e.key === "Enter" || e.key === " ") location.reload();\n'
+              '      if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "].indexOf(e.key) >= 0) {\n'
+              '        e.preventDefault();\n'
+              '      }\n'
+              '      return;\n'
+              '    }\n\n'
+          )
           text = text.replace(anchor, anchor + reload_block)
           path.write_text(text, encoding="utf-8")
           PY
