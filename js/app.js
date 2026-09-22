@@ -1135,9 +1135,16 @@
       if (navMode) setNavBanner(routePreviousNavBanner);
       routePreviousNavBanner = null;
     }
+    try {
+      if (!placesSearchApi) placesSearchApi = createPlacesSearchApi();
+      placesSearchApi.startSession();
+    } catch (_) {
+      placesSearchApi = null;
+      showError("場所検索を開始できません", placesErrorDetail(null), "places");
+      return;
+    }
+    clearError("places");
     closeMenu();
-    if (!placesSearchApi) placesSearchApi = createPlacesSearchApi();
-    placesSearchApi.startSession();
     searchOpen = true;
     searchQuery = "";
     searchPredictions = [];
