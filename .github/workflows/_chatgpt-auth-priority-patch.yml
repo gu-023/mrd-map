@@ -30,24 +30,13 @@ jobs:
           if text.count(old) != 1:
               raise SystemExit(f'app anchor count was {text.count(old)}, expected 1')
           app.write_text(text.replace(old, new, 1))
-
-          workflow = Path('.github/workflows/geolocation-reload-error-priority-contract.yml')
-          text = workflow.read_text()
-          text = text.replace('name: Guard geolocation reload error priority', 'name: Guard terminal error priority', 1)
-          old = "          assert.match(errorEl.innerHTML, /Auth terminal/);\n\n          console.log('Geolocation reload error priority contract OK');\n"
-          new = "          assert.match(errorEl.innerHTML, /Auth terminal/);\n          const authHtml = errorEl.innerHTML;\n\n          for (const laterSource of ['geolocation-reload', 'geolocation', 'compass', 'directions', 'storage', 'places', null]) {\n            context.__showError(`late ${laterSource}`, 'must not replace auth recovery', laterSource);\n            assert.strictEqual(\n              context.__getErrorSource(),\n              'google-maps-auth',\n              `${laterSource} replaced terminal auth error ownership`,\n            );\n            assert.strictEqual(\n              errorEl.innerHTML,\n              authHtml,\n              `${laterSource} replaced the reload-only auth message`,\n            );\n          }\n\n          console.log('Terminal error priority contract OK');\n"
-          if text.count(old) != 1:
-              raise SystemExit(f'workflow anchor count was {text.count(old)}, expected 1')
-          workflow.write_text(text.replace(old, new, 1))
           PY
 
           node --check js/app.js
           git diff --check
           grep -F 'errorSource === GOOGLE_MAPS_AUTH_ERROR_SOURCE' js/app.js
-          grep -F "'geolocation-reload', 'geolocation', 'compass', 'directions', 'storage', 'places', null" .github/workflows/geolocation-reload-error-priority-contract.yml
-          git rm .github/workflows/_chatgpt-auth-priority-patch.yml
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add js/app.js .github/workflows/geolocation-reload-error-priority-contract.yml
+          git add js/app.js
           git commit -m 'Keep Google Maps auth errors terminal'
           git push origin HEAD:chatgpt/guard-google-maps-auth-priority
