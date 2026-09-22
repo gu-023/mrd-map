@@ -152,12 +152,14 @@ jobs:
           function exerciseUnknownWatchId(watchIdValue, label) {
             let invalidWatchSuccess = null;
             let invalidOneShotSuccess = null;
+            let activeOverlay = null;
             const invalidEvents = {
               getCalls: 0,
               watchCalls: 0,
-              positions: 0,
               gps: [],
               overlays: [],
+              clearedErrors: [],
+              markerPositions: [],
             };
             const invalidContext = {
               navigator: {
@@ -174,18 +176,33 @@ jobs:
                 },
               },
               clearGeoWatchRecoveryTimer() {},
+              clearError(source) {
+                invalidEvents.clearedErrors.push(source);
+                if (activeOverlay && activeOverlay.source === source) activeOverlay = null;
+              },
               setGps(ok, text) {
                 invalidEvents.gps.push([ok, text]);
-              },
-              onPosition() {
-                invalidEvents.positions += 1;
-                return true;
               },
               onGeoError() {},
               onWatchError() {},
               showError(title, body, source) {
+                activeOverlay = { title, body, source };
                 invalidEvents.overlays.push([title, body, source]);
               },
+              userMarker: {
+                setPosition(position) {
+                  invalidEvents.markerPositions.push(position);
+                },
+              },
+              accuracyCircle: {
+                setCenter() {},
+                setRadius() {},
+              },
+              updateAccuracyCircleVisibility() {},
+              els: { accText: { textContent: "" } },
+              fmtDist(value) { return `${value}m`; },
+              map: { panTo() {} },
+              updateNav() {},
             };
             vm.createContext(invalidContext);
             vm.runInContext(`
@@ -194,6 +211,18 @@ jobs:
               const LIVE_POSITION_MAX_AGE_MS = 30000;
               let geoWatchId = null;
               let geoWatchGeneration = 0;
+              let lastPositionTimestamp = null;
+              let lastPositionAccuracy = null;
+              let followMode = false;
+              let pickMode = false;
+              let searchOpen = false;
+              let menuOpen = false;
+              let navMode = false;
+              let navRerouting = false;
+              function hasUnknownGeoWatchOwnership() {
+                return geoWatchId !== null && (!Number.isInteger(geoWatchId) || geoWatchId <= 0);
+              }
+              ${onPositionBody}
               ${acquireBody}
               globalThis.__runAcquire = acquireLocation;
               globalThis.__readGeoWatchId = () => geoWatchId;
@@ -210,22 +239,44 @@ jobs:
               "決定で再読み込みしてください。",
               "geolocation-reload",
             ], `${label} ID must expose reload-only recovery`);
+            assert.equal(activeOverlay && activeOverlay.source, "geolocation-reload",
+              `${label} ID must keep the reload-only overlay active`);
             assert.ok(Number.isNaN(invalidContext.__readGeoWatchId()),
               `${label} ID must retain a non-null unknown-ownership sentinel`);
             assert.equal(invalidContext.__readGeoWatchGeneration(), 1,
               `${label} ID must keep the registered watcher generation current`);
 
+            assert.equal(typeof invalidOneShotSuccess, "function", `${label} one-shot success callback was not captured`);
+            const firstFixTimestamp = Date.now() - 1000;
+            invalidOneShotSuccess({
+              coords: { latitude: 35, longitude: 139, accuracy: 5 },
+              timestamp: firstFixTimestamp,
+            });
+            assert.equal(invalidEvents.markerPositions.length, 1,
+              `${label} one-shot fix must still update the current position`);
+            assert.deepEqual(invalidEvents.gps.at(-1), [true, "GPS受信・↻再読込"],
+              `${label} one-shot fix must retain an explicit reload hint`);
+            assert.ok(invalidEvents.clearedErrors.includes("geolocation"),
+              `${label} one-shot fix should clear only retryable geolocation errors`);
+            assert.equal(activeOverlay && activeOverlay.source, "geolocation-reload",
+              `${label} one-shot fix must not dismiss unknown watcher reload recovery`);
+
             assert.equal(typeof invalidWatchSuccess, "function", `${label} watch success callback was not captured`);
-            invalidWatchSuccess({ coords: { latitude: 35, longitude: 139 }, timestamp: Date.now() });
-            assert.equal(invalidEvents.positions, 1,
+            invalidWatchSuccess({
+              coords: { latitude: 35.0001, longitude: 139.0001, accuracy: 5 },
+              timestamp: Date.now(),
+            });
+            assert.equal(invalidEvents.markerPositions.length, 2,
               `${label} watcher callback must remain usable if the host actually registered it`);
+            assert.equal(activeOverlay && activeOverlay.source, "geolocation-reload",
+              `${label} watcher fix must not dismiss unknown watcher reload recovery`);
 
             invalidContext.__runAcquire();
             assert.equal(invalidEvents.getCalls, 2,
               `${label} recovery may still request a fresh one-shot fix`);
             assert.equal(invalidEvents.watchCalls, 1,
               `${label} sentinel must prevent a duplicate un-clearable watcher`);
-            assert.equal(typeof invalidOneShotSuccess, "function", `${label} one-shot callback was not captured`);
+            assert.equal(typeof invalidOneShotSuccess, "function", `${label} retry one-shot callback was not captured`);
           }
 
           // Negative and fractional IDs are outside the successful-watch contract.
