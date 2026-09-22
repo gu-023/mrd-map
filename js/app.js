@@ -2436,7 +2436,15 @@
       return;
     }
 
-    if (errorSource === "directions" &&
+    if (errorSource === "compass") {
+    if (e.key === "Enter" || e.key === " ") doAction("toggle-compass");
+    if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "].indexOf(e.key) >= 0) {
+      e.preventDefault();
+    }
+    return;
+  }
+
+  if (errorSource === "directions" &&
         ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "].indexOf(e.key) >= 0) {
       clearError("directions");
       e.preventDefault();
