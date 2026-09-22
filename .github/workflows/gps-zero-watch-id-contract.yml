@@ -136,8 +136,9 @@ jobs:
             "◎ を決定で再試行してください。",
             "geolocation",
           ], "ID 0 must expose the retryable geolocation error source");
-          assert.deepEqual(context.__readGeoState(), { geoWatchId: null, geoWatchGeneration: 2 },
-            "ID 0 must release watch ownership and invalidate the watcher callback generation");
+          const geoState = context.__readGeoState();
+          assert.equal(geoState.geoWatchId, null, "ID 0 must release watch ownership");
+          assert.equal(geoState.geoWatchGeneration, 2, "ID 0 must invalidate the watcher callback generation");
 
           assert.equal(typeof watchSuccess, "function", "watch success callback was not captured");
           watchSuccess({ coords: { latitude: 35, longitude: 139 }, timestamp: Date.now() });
