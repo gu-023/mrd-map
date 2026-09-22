@@ -1,0 +1,166 @@
+name: Favorite storage failure UX contract
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - js/app.js
+      - .github/workflows/favorite-storage-failure-contract.yml
+  pull_request:
+    paths:
+      - js/app.js
+      - .github/workflows/favorite-storage-failure-contract.yml
+
+permissions:
+  contents: read
+
+jobs:
+  favorite-storage-failure:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Exercise favorite storage failure and D-pad modal behavior
+        shell: bash
+        run: |
+          node <<'NODE'
+          const assert = require('assert');
+          const fs = require('fs');
+          const vm = require('vm');
+
+          const source = fs.readFileSync('js/app.js', 'utf8');
+
+          function extractFunction(name) {
+            const marker = `  function ${name}(`;
+            const start = source.indexOf(marker);
+            assert.notStrictEqual(start, -1, `${name}() not found`);
+            const brace = source.indexOf('{', start);
+            assert.notStrictEqual(brace, -1, `${name}() body not found`);
+            let depth = 0;
+            for (let i = brace; i < source.length; i += 1) {
+              if (source[i] === '{') depth += 1;
+              else if (source[i] === '}') {
+                depth -= 1;
+                if (depth === 0) return source.slice(start, i + 1).replace(/^  /gm, '');
+              }
+            }
+            throw new Error(`${name}() body is unbalanced`);
+          }
+
+          function extractKeydownRegistration() {
+            const marker = '  document.addEventListener("keydown", (e) => {';
+            const start = source.indexOf(marker);
+            assert.notStrictEqual(start, -1, 'keydown registration not found');
+            const brace = source.indexOf('{', start);
+            let depth = 0;
+            for (let i = brace; i < source.length; i += 1) {
+              if (source[i] === '{') depth += 1;
+              else if (source[i] === '}') {
+                depth -= 1;
+                if (depth === 0) {
+                  const end = source.indexOf(');', i);
+                  assert.notStrictEqual(end, -1, 'keydown registration terminator not found');
+                  return source.slice(start, end + 2).replace(/^  /gm, '');
+                }
+              }
+            }
+            throw new Error('keydown registration body is unbalanced');
+          }
+
+          const storageData = {
+            'mrd.favorites': JSON.stringify([
+              { name: 'Saved place', lat: 35.0, lng: 139.0 },
+            ]),
+          };
+          let setItemAttempts = 0;
+          const localStorage = {
+            getItem(key) {
+              return Object.prototype.hasOwnProperty.call(storageData, key) ? storageData[key] : null;
+            },
+            setItem() {
+              setItemAttempts += 1;
+              throw new Error('quota exceeded');
+            },
+          };
+
+          const classes = new Set(['hidden']);
+          const errorEl = {
+            innerHTML: '',
+            classList: {
+              add(name) { classes.add(name); },
+              remove(name) { classes.delete(name); },
+            },
+          };
+
+          let keydownHandler = null;
+          const context = {
+            localStorage,
+            __errorEl: errorEl,
+            document: {
+              addEventListener(type, handler) {
+                if (type === 'keydown') keydownHandler = handler;
+              },
+            },
+          };
+          vm.createContext(context);
+          vm.runInContext(
+            'let errorSource = null; let googleMapsAuthFailed = false; const els = { error: __errorEl };',
+            context
+          );
+
+          for (const name of [
+            'showError',
+            'clearError',
+            'placeKey',
+            'loadList',
+            'saveList',
+            'showFavoriteStorageError',
+            'addToList',
+            'addFav',
+            'removeFav',
+          ]) {
+            vm.runInContext(extractFunction(name), context);
+          }
+
+          const addSaved = vm.runInContext(
+            "addFav({ name: 'New place', lat: 35.1, lng: 139.1 })",
+            context
+          );
+          assert.strictEqual(addSaved, false, 'favorite add must report failed persistence');
+
+          const removeSaved = vm.runInContext('removeFav(35.0, 139.0)', context);
+          assert.strictEqual(removeSaved, false, 'favorite removal must report failed persistence');
+          assert.strictEqual(setItemAttempts, 2, 'each favorite mutation must attempt persistence exactly once');
+          assert.strictEqual(
+            storageData['mrd.favorites'],
+            JSON.stringify([{ name: 'Saved place', lat: 35.0, lng: 139.0 }]),
+            'failed writes must not mutate the persisted fixture'
+          );
+
+          vm.runInContext('showFavoriteStorageError()', context);
+          assert.strictEqual(vm.runInContext('errorSource', context), 'storage');
+          assert.strictEqual(classes.has('hidden'), false, 'storage failure overlay must be visible');
+          assert.match(errorEl.innerHTML, /お気に入りを更新できません/);
+          assert.match(errorEl.innerHTML, /端末ストレージへの保存に失敗しました/);
+
+          vm.runInContext(extractKeydownRegistration(), context);
+          assert.strictEqual(typeof keydownHandler, 'function', 'keydown handler must be registered');
+
+          let arrowPrevented = false;
+          keydownHandler({
+            key: 'ArrowRight',
+            preventDefault() { arrowPrevented = true; },
+          });
+          assert.strictEqual(arrowPrevented, true, 'D-pad arrows must be consumed by the storage modal');
+          assert.strictEqual(vm.runInContext('errorSource', context), 'storage');
+          assert.strictEqual(classes.has('hidden'), false, 'arrow input must not dismiss the storage modal');
+
+          let enterPrevented = false;
+          keydownHandler({
+            key: 'Enter',
+            preventDefault() { enterPrevented = true; },
+          });
+          assert.strictEqual(enterPrevented, true, 'Enter must be consumed while dismissing the storage modal');
+          assert.strictEqual(vm.runInContext('errorSource', context), null);
+          assert.strictEqual(classes.has('hidden'), true, 'Enter must dismiss the storage modal');
+          NODE
