@@ -1,0 +1,116 @@
+name: Guard Google Maps load D-pad recovery
+
+on:
+  pull_request:
+    paths:
+      - js/app.js
+      - .github/workflows/google-maps-load-recovery-contract.yml
+  push:
+    branches: [main]
+    paths:
+      - js/app.js
+      - .github/workflows/google-maps-load-recovery-contract.yml
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Exercise Google Maps load error D-pad recovery
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require("fs");
+          const vm = require("vm");
+
+          const source = fs.readFileSync("js/app.js", "utf8");
+
+          const catchStart = source.lastIndexOf("    .catch((err) => {");
+          const catchBodyStart = source.indexOf("{", catchStart) + 1;
+          const catchEnd = source.indexOf("\n    });", catchBodyStart);
+          const keydownStart = source.indexOf('  document.addEventListener("keydown", (e) => {');
+          const keydownBodyStart = source.indexOf("{", keydownStart) + 1;
+          const keydownEnd = source.indexOf(
+            "\n  });\n\n  // マウス/タップでも動くようにしておく",
+            keydownBodyStart,
+          );
+
+          if (
+            catchStart < 0 ||
+            catchBodyStart <= 0 ||
+            catchEnd < 0 ||
+            keydownStart < 0 ||
+            keydownBodyStart <= 0 ||
+            keydownEnd < 0
+          ) {
+            throw new Error("Google Maps load recovery blocks could not be located");
+          }
+
+          const catchBodySource = source
+            .slice(catchBodyStart, catchEnd)
+            .replace(/^      /gm, "");
+          const keydownBodySource = source
+            .slice(keydownBodyStart, keydownEnd)
+            .replace(/^    /gm, "");
+
+          let reloadCalls = 0;
+          const context = {
+            location: {
+              reload() {
+                reloadCalls += 1;
+              },
+            },
+          };
+          vm.createContext(context);
+          vm.runInContext(
+            'let errorSource = null;\n' +
+              'const GOOGLE_MAPS_AUTH_ERROR_SOURCE = "google-maps-auth";\n' +
+              'let googleMapsAuthFailed = false;\n' +
+              'function showError(_title, _body, source = null) { errorSource = source; }\n' +
+              'this.__handleGoogleMapsLoadError = () => {' + catchBodySource + '\n};\n' +
+              'this.__keydown = (e) => {' + keydownBodySource + '\n};\n' +
+              'this.__getErrorSource = () => errorSource;',
+            context,
+          );
+
+          context.__handleGoogleMapsLoadError();
+          if (context.__getErrorSource() !== "google-maps-load") {
+            throw new Error("generic Maps startup failure did not enter load-error ownership");
+          }
+
+          function dispatch(key) {
+            let preventDefaultCalls = 0;
+            context.__keydown({
+              key,
+              preventDefault() {
+                preventDefaultCalls += 1;
+              },
+            });
+            if (preventDefaultCalls !== 1) {
+              throw new Error(`${JSON.stringify(key)} was not consumed exactly once`);
+            }
+          }
+
+          for (const key of ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"]) {
+            dispatch(key);
+            if (reloadCalls !== 0) {
+              throw new Error(`${key} unexpectedly reloaded the app`);
+            }
+          }
+
+          dispatch("Enter");
+          if (reloadCalls !== 1) {
+            throw new Error("Enter did not reload exactly once from the Maps load error");
+          }
+
+          dispatch(" ");
+          if (reloadCalls !== 2) {
+            throw new Error("Space did not reload exactly once from the Maps load error");
+          }
+
+          console.log("Google Maps load D-pad recovery contract OK");
+          NODE
