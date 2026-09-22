@@ -2420,6 +2420,8 @@
       return;
     }
 
+    if (errorSource === "places" && menuOpen) clearError("places");
+
     // 検索画面: キーボード/候補を操作
     if (searchOpen) {
       if (e.isComposing || e.keyCode === 229) return;
