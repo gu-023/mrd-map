@@ -1,0 +1,110 @@
+name: Guard compass error D-pad recovery
+
+on:
+  pull_request:
+    paths:
+      - js/app.js
+      - .github/workflows/compass-error-dpad-contract.yml
+  push:
+    branches: [main]
+    paths:
+      - js/app.js
+      - .github/workflows/compass-error-dpad-contract.yml
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Exercise compass error D-pad recovery
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require("fs");
+          const vm = require("vm");
+
+          const source = fs.readFileSync("js/app.js", "utf8");
+          const keydownStart = source.indexOf('  document.addEventListener("keydown", (e) => {');
+          const keydownBodyStart = source.indexOf("{", keydownStart) + 1;
+          const keydownEnd = source.indexOf(
+            "\n  });\n\n  // マウス/タップでも動くようにしておく",
+            keydownBodyStart,
+          );
+
+          if (keydownStart < 0 || keydownBodyStart <= 0 || keydownEnd < 0) {
+            throw new Error("keydown handler could not be located");
+          }
+
+          const keydownBodySource = source
+            .slice(keydownBodyStart, keydownEnd)
+            .replace(/^    /gm, "");
+
+          const context = {};
+          vm.createContext(context);
+          vm.runInContext(
+            'let googleMapsAuthFailed = false;\n' +
+              'let errorSource = "compass";\n' +
+              'let searchOpen = false;\n' +
+              'let menuOpen = false;\n' +
+              'let pickMode = false;\n' +
+              'let panMode = false;\n' +
+              'let focusIdx = 0;\n' +
+              'const focusables = [{ dataset: { action: "zoom-in" } }];\n' +
+              'let actionCalls = [];\n' +
+              'let focusMoves = [];\n' +
+              'function doAction(action) { actionCalls.push(action); }\n' +
+              'function moveFocus(delta) { focusMoves.push(delta); }\n' +
+              'this.__keydown = (e) => {' + keydownBodySource + '\n};\n' +
+              'this.__reset = () => { errorSource = "compass"; actionCalls = []; focusMoves = []; };\n' +
+              'this.__state = () => ({ errorSource, actionCalls: Array.from(actionCalls), focusMoves: Array.from(focusMoves) });',
+            context,
+          );
+
+          for (const key of ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"]) {
+            context.__reset();
+            let preventDefaultCalls = 0;
+            context.__keydown({
+              key,
+              preventDefault() {
+                preventDefaultCalls += 1;
+              },
+            });
+            const state = context.__state();
+            if (state.errorSource !== "compass") {
+              throw new Error(`${key} unexpectedly dismissed the compass error`);
+            }
+            if (state.actionCalls.length !== 0 || state.focusMoves.length !== 0) {
+              throw new Error(`${key} leaked into hidden main controls`);
+            }
+            if (preventDefaultCalls !== 1) {
+              throw new Error(`${key} was not consumed exactly once`);
+            }
+          }
+
+          for (const key of ["Enter", " "]) {
+            context.__reset();
+            let preventDefaultCalls = 0;
+            context.__keydown({
+              key,
+              preventDefault() {
+                preventDefaultCalls += 1;
+              },
+            });
+            const state = context.__state();
+            if (state.actionCalls.length !== 1 || state.actionCalls[0] !== "toggle-compass") {
+              throw new Error(`${JSON.stringify(key)} did not retry compass deterministically`);
+            }
+            if (state.focusMoves.length !== 0) {
+              throw new Error(`${JSON.stringify(key)} moved hidden focus`);
+            }
+            if (preventDefaultCalls !== 1) {
+              throw new Error(`${JSON.stringify(key)} was not consumed exactly once`);
+            }
+          }
+
+          console.log("Compass error D-pad recovery contract OK");
+          NODE
