@@ -1,4 +1,4 @@
-name: GPS unknown watch permission contract guard
+name: GPS unknown watch error contract guard
 
 on:
   pull_request:
@@ -20,7 +20,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Check unknown watch permission-denied recovery
+      - name: Check unknown watch error recovery semantics
         shell: bash
         run: |
           node <<'NODE'
@@ -114,6 +114,34 @@ jobs:
             "non-standard watch ID must enter unknown-ownership fail-closed state");
           assert.equal(state.geoWatchGeneration, 1,
             "unknown watcher must keep its callback generation current until termination evidence arrives");
+          assert.equal(events.overlays.length, 1,
+            "unknown ownership should create exactly one reload-only overlay");
+          assert.equal(events.overlays[0][2], "geolocation-reload",
+            "unknown ownership must require reload-only recovery");
+
+          // POSITION_UNAVAILABLE and TIMEOUT do not prove that the browser terminated
+          // the watcher. Preserve unknown ownership, the reload-only overlay and the
+          // current callback generation so a non-standard host cannot create duplicates.
+          for (const code of [2, 3]) {
+            watchErrorCallbacks[0]({ code });
+            state = context.__readState();
+            assert.ok(Number.isNaN(state.geoWatchId),
+              `recoverable error ${code} must preserve unknown watcher ownership`);
+            assert.equal(state.geoWatchGeneration, 1,
+              `recoverable error ${code} must keep the current watcher generation`);
+            assert.equal(events.watchCalls, 1,
+              `recoverable error ${code} must not auto-register a replacement watcher`);
+            assert.equal(events.geoErrors.length, 0,
+              `recoverable error ${code} must not enter the terminal geolocation error path`);
+            assert.equal(events.overlays.length, 1,
+              `recoverable error ${code} must not replace the reload-only overlay`);
+            assert.equal(events.overlays[0][2], "geolocation-reload",
+              `recoverable error ${code} must keep reload-only recovery visible`);
+            assert.deepEqual(events.gps.at(-1), [false, "GPS監視異常・↻再読込"],
+              `recoverable error ${code} must retain the unknown-watch reload status`);
+          }
+          assert.equal(events.armRecovery, 2,
+            "recoverable errors should still pass through the watchdog gate");
 
           // Geolocation's request-position algorithm removes a watch ID before
           // reporting PERMISSION_DENIED. Treat that callback as termination evidence
@@ -128,12 +156,12 @@ jobs:
             "permission denial must flow through the normal geolocation error path");
           assert.equal(events.watchCalls, 1,
             "permission denial must not auto-register a replacement watcher");
-          assert.equal(events.armRecovery, 0,
-            "permission denial must not arm the recoverable watch watchdog");
+          assert.equal(events.armRecovery, 2,
+            "permission denial must not arm an additional recoverable-watch watchdog");
 
           // A delayed callback from the terminated watcher must be ignored.
           watchErrorCallbacks[0]({ code: 2 });
-          assert.equal(events.armRecovery, 0,
+          assert.equal(events.armRecovery, 2,
             "stale callback after permission denial must remain generation-guarded");
 
           // Explicit user retry may now create one fresh watcher because the browser
@@ -149,14 +177,14 @@ jobs:
           assert.equal(watchErrorCallbacks.length, 2, "replacement watcher error callback was not captured");
 
           watchErrorCallbacks[0]({ code: 2 });
-          assert.equal(events.armRecovery, 0,
+          assert.equal(events.armRecovery, 2,
             "old watcher callback must stay ignored after replacement registration");
 
           watchErrorCallbacks[1]({ code: 2 });
-          assert.equal(events.armRecovery, 1,
+          assert.equal(events.armRecovery, 3,
             "current watcher recoverable errors must still arm the recovery watchdog");
           assert.deepEqual(events.gps.at(-1), [false, "GPS更新待ち…"],
             "current watcher recoverable error should retain ordinary retryable status");
 
-          console.log("GPS unknown watch permission-denied runtime contract OK");
+          console.log("GPS unknown watch recoverable/permission error runtime contract OK");
           NODE
