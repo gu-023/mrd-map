@@ -125,6 +125,7 @@
   let errorSource = null;
   let googleMapsAuthFailed = false;
   const GOOGLE_MAPS_AUTH_ERROR_SOURCE = "google-maps-auth";
+  const GOOGLE_MAPS_LOAD_ERROR_SOURCE = "google-maps-load";
 
   function showError(titleHtml, bodyHtml, source = null) {
     errorSource = source;
@@ -2412,6 +2413,14 @@
       return;
     }
 
+    if (errorSource === GOOGLE_MAPS_LOAD_ERROR_SOURCE) {
+      if (e.key === "Enter" || e.key === " ") location.reload();
+      if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "].indexOf(e.key) >= 0) {
+        e.preventDefault();
+      }
+      return;
+    }
+
     if (errorSource === "storage") {
       if (e.key === "Enter" || e.key === " ") clearError("storage");
       if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "].indexOf(e.key) >= 0) {
@@ -2500,6 +2509,10 @@
     .then(initMap)
     .catch((err) => {
       if (errorSource === GOOGLE_MAPS_AUTH_ERROR_SOURCE) return;
-      showError("地図の読み込みに失敗", String(err.message || err));
+      showError(
+        "地図の読み込みに失敗",
+        escapeHtml(String(err.message || err)) + "<br><br>決定で再読み込みできます。",
+        GOOGLE_MAPS_LOAD_ERROR_SOURCE
+      );
     });
 })();
