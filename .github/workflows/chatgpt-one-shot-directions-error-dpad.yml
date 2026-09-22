@@ -1,0 +1,71 @@
+name: ChatGPT one-shot Directions error D-pad patch
+
+on:
+  push:
+    branches:
+      - chatgpt/directions-error-dpad-dismiss
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: chatgpt/directions-error-dpad-dismiss
+          fetch-depth: 0
+
+      - name: Apply focused D-pad error recovery patch
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("js/app.js")
+          source = path.read_text()
+          anchor = '''    if (errorSource === "storage") {
+              if (e.key === "Enter" || e.key === " ") clearError("storage");
+              if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "].indexOf(e.key) >= 0) {
+                e.preventDefault();
+              }
+              return;
+            }
+
+            if (errorSource === "places" && menuOpen) clearError("places");'''
+          replacement = '''    if (errorSource === "directions" &&
+                ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "].indexOf(e.key) >= 0) {
+              clearError("directions");
+              e.preventDefault();
+              return;
+            }
+
+            if (errorSource === "storage") {
+              if (e.key === "Enter" || e.key === " ") clearError("storage");
+              if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "].indexOf(e.key) >= 0) {
+                e.preventDefault();
+              }
+              return;
+            }
+
+            if (errorSource === "places" && menuOpen) clearError("places");'''
+          if anchor not in source:
+              raise SystemExit("expected keydown anchor not found")
+          if source.count(anchor) != 1:
+              raise SystemExit("keydown anchor was not unique")
+          path.write_text(source.replace(anchor, replacement, 1))
+          PY
+
+          node --check js/app.js
+          git diff --check
+          grep -F 'if (errorSource === "directions" &&' js/app.js
+          grep -F 'clearError("directions");' js/app.js
+
+          git rm .github/workflows/chatgpt-one-shot-directions-error-dpad.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add js/app.js
+          git commit -m "Make Directions errors D-pad dismissible"
+          git push origin HEAD:chatgpt/directions-error-dpad-dismiss
