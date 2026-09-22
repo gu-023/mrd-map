@@ -24,21 +24,16 @@ jobs:
 
           path = Path('js/app.js')
           source = path.read_text()
-          old = '''  function saveRecent(dest, name) {
-            const lat = dest.lat(), lng = dest.lng();
-            addToList("mrd.recents", { name: name || placeKey(lat, lng), lat, lng }, 8);
-            if (!name) resolvePlaceName(lat, lng); // 名前未指定なら住所を後付け
-          }
-          '''
-          new = '''  function saveRecent(dest, name) {
-            const lat = dest.lat(), lng = dest.lng();
-            const saved = addToList("mrd.recents", { name: name || placeKey(lat, lng), lat, lng }, 8);
-            if (saved && !name) resolvePlaceName(lat, lng); // 保存できた履歴だけ住所を後付け
-          }
-          '''
-          if source.count(old) != 1:
-              raise SystemExit(f'expected one saveRecent block, found {source.count(old)}')
-          path.write_text(source.replace(old, new))
+          old_write = '    addToList("mrd.recents", { name: name || placeKey(lat, lng), lat, lng }, 8);'
+          new_write = '    const saved = addToList("mrd.recents", { name: name || placeKey(lat, lng), lat, lng }, 8);'
+          old_resolve = '    if (!name) resolvePlaceName(lat, lng); // 名前未指定なら住所を後付け'
+          new_resolve = '    if (saved && !name) resolvePlaceName(lat, lng); // 保存できた履歴だけ住所を後付け'
+          if source.count(old_write) != 1 or source.count(old_resolve) != 1:
+              raise SystemExit(
+                  f'expected one target line each, found write={source.count(old_write)} resolve={source.count(old_resolve)}'
+              )
+          source = source.replace(old_write, new_write).replace(old_resolve, new_resolve)
+          path.write_text(source)
           PY
           node --check js/app.js
           git diff --check
