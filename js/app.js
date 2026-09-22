@@ -2510,7 +2510,7 @@
       if (errorSource === GOOGLE_MAPS_AUTH_ERROR_SOURCE) return;
       showError(
         "地図の読み込みに失敗",
-        escapeHtml(String(err.message || err)) + "<br><br>決定で再読み込みできます。",
+        "通信状態を確認して、決定で再読み込みしてください。",
         "google-maps-load"
       );
     });
