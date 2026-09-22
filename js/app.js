@@ -803,7 +803,19 @@
     }
   }
   function saveList(key, arr) {
-    try { localStorage.setItem(key, JSON.stringify(arr)); } catch (e) {}
+    try {
+      localStorage.setItem(key, JSON.stringify(arr));
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+  function showFavoriteStorageError() {
+    showError(
+      "お気に入りを更新できません",
+      "端末ストレージへの保存に失敗しました。<br><br>決定で閉じる",
+      "storage"
+    );
   }
   function placeKey(lat, lng) { return lat.toFixed(4) + "," + lng.toFixed(4); }
 
@@ -813,7 +825,7 @@
     );
     list.unshift(place);
     if (list.length > cap) list.length = cap;
-    saveList(key, list);
+    return saveList(key, list);
   }
 
   function saveRecent(dest, name) {
@@ -825,9 +837,9 @@
   function isFav(lat, lng) {
     return loadList("mrd.favorites").some((p) => placeKey(p.lat, p.lng) === placeKey(lat, lng));
   }
-  function addFav(place) { addToList("mrd.favorites", place, 30); }
+  function addFav(place) { return addToList("mrd.favorites", place, 30); }
   function removeFav(lat, lng) {
-    saveList("mrd.favorites", loadList("mrd.favorites").filter(
+    return saveList("mrd.favorites", loadList("mrd.favorites").filter(
       (p) => placeKey(p.lat, p.lng) !== placeKey(lat, lng)
     ));
   }
@@ -946,9 +958,24 @@
       });
       const lat = navDestination.lat(), lng = navDestination.lng();
       if (isFav(lat, lng)) {
-        items.push({ label: "⭐ お気に入りから削除", action: () => { removeFav(lat, lng); closeMenuToMap(); } });
+        items.push({
+          label: "⭐ お気に入りから削除",
+          action: () => {
+            const saved = removeFav(lat, lng);
+            closeMenuToMap();
+            if (!saved) showFavoriteStorageError();
+          },
+        });
       } else {
-        items.push({ label: "⭐ この目的地をお気に入り登録", action: () => { addFav({ name: placeKey(lat, lng), lat, lng }); resolvePlaceName(lat, lng); closeMenuToMap(); } });
+        items.push({
+          label: "⭐ この目的地をお気に入り登録",
+          action: () => {
+            const saved = addFav({ name: placeKey(lat, lng), lat, lng });
+            if (saved) resolvePlaceName(lat, lng);
+            closeMenuToMap();
+            if (!saved) showFavoriteStorageError();
+          },
+        });
       }
       items.push({ label: "⏹ ナビを終了", action: () => { cancelNav(); closeMenuToMap(); } });
     }
@@ -2367,6 +2394,14 @@
   document.addEventListener("keydown", (e) => {
     if (googleMapsAuthFailed) {
       if (e.key === "Enter" || e.key === " ") location.reload();
+      if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "].indexOf(e.key) >= 0) {
+        e.preventDefault();
+      }
+      return;
+    }
+
+    if (errorSource === "storage") {
+      if (e.key === "Enter" || e.key === " ") clearError("storage");
       if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "].indexOf(e.key) >= 0) {
         e.preventDefault();
       }
