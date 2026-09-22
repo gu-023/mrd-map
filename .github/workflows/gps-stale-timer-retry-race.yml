@@ -124,6 +124,23 @@ jobs:
             lastPositionTimestamp: 69999,
           };
 
+          // Unknown watcher ownership is reload-only. Even if every other condition would
+          // arm the retryable stall timer, there is no clearable watcher to recover safely.
+          {
+            const h = makeHarness(base);
+            h.api.setState({ geoWatchId: Number.NaN });
+            h.api.arm();
+            if (h.getScheduled() !== null) {
+              throw new Error('Unknown watcher ownership armed a retryable GPS recovery timer');
+            }
+            if (h.api.getState().geoWatchRecoveryTimer !== null) {
+              throw new Error('Unknown watcher ownership retained GPS recovery timer ownership');
+            }
+            if (h.gpsCalls.length !== 0) {
+              throw new Error('Unknown watcher ownership rewrote GPS status from the timer helper');
+            }
+          }
+
           // The explicit retry path calls this clear helper before entering GPS取得中….
           // Exercise the helper to ensure it clears the actual timeout and releases timer ownership.
           {
