@@ -1,0 +1,162 @@
+name: GPS unknown watch permission contract guard
+
+on:
+  pull_request:
+    paths:
+      - js/app.js
+      - .github/workflows/gps-unknown-watch-permission-contract.yml
+  push:
+    branches: [main]
+    paths:
+      - js/app.js
+      - .github/workflows/gps-unknown-watch-permission-contract.yml
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check unknown watch permission-denied recovery
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require("fs");
+          const vm = require("vm");
+          const assert = require("assert/strict");
+
+          const app = fs.readFileSync("js/app.js", "utf8");
+          const unknownStart = app.indexOf("function hasUnknownGeoWatchOwnership() {");
+          const unknownEnd = app.indexOf("function clearGeoWatchRecoveryTimer()", unknownStart);
+          assert.ok(unknownStart >= 0 && unknownEnd > unknownStart,
+            "hasUnknownGeoWatchOwnership source not found");
+          const unknownBody = app.slice(unknownStart, unknownEnd);
+
+          const acquireStart = app.indexOf("function acquireLocation() {");
+          const acquireEnd = app.indexOf("function onWatchError(err) {", acquireStart);
+          assert.ok(acquireStart >= 0 && acquireEnd > acquireStart,
+            "acquireLocation source not found");
+          const acquireBody = app.slice(acquireStart, acquireEnd);
+
+          const watchErrorStart = acquireEnd;
+          const watchErrorEnd = app.indexOf("/* ---------- コンパス", watchErrorStart);
+          assert.ok(watchErrorEnd > watchErrorStart, "onWatchError source not found");
+          const watchErrorBody = app.slice(watchErrorStart, watchErrorEnd);
+
+          const watchErrorCallbacks = [];
+          const watchReturnValues = [-1, 7];
+          const events = {
+            getCalls: 0,
+            watchCalls: 0,
+            clearRecovery: 0,
+            armRecovery: 0,
+            gps: [],
+            overlays: [],
+            geoErrors: [],
+          };
+          const context = {
+            navigator: {
+              geolocation: {
+                getCurrentPosition() {
+                  events.getCalls += 1;
+                },
+                watchPosition(success, error) {
+                  events.watchCalls += 1;
+                  watchErrorCallbacks.push(error);
+                  return watchReturnValues.shift();
+                },
+              },
+            },
+            clearGeoWatchRecoveryTimer() {
+              events.clearRecovery += 1;
+            },
+            armGeoWatchRecoveryTimer() {
+              events.armRecovery += 1;
+            },
+            setGps(ok, text) {
+              events.gps.push([ok, text]);
+            },
+            showError(title, body, source) {
+              events.overlays.push([title, body, source]);
+            },
+            onPosition() {
+              return true;
+            },
+            onGeoError(err) {
+              events.geoErrors.push(err && err.code);
+            },
+          };
+          vm.createContext(context);
+          vm.runInContext(`
+            const LIVE_POSITION_MAX_AGE_MS = 30000;
+            let geoWatchId = null;
+            let geoOneShotRequestId = 0;
+            let acceptedGeoFixGeneration = 0;
+            let geoWatchGeneration = 0;
+
+            ${unknownBody}
+            ${acquireBody}
+            ${watchErrorBody}
+
+            globalThis.__runAcquire = acquireLocation;
+            globalThis.__readState = () => ({ geoWatchId, geoWatchGeneration });
+          `, context);
+
+          context.__runAcquire();
+          let state = context.__readState();
+          assert.equal(events.getCalls, 1, "initial acquisition should start one one-shot request");
+          assert.equal(events.watchCalls, 1, "initial acquisition should attempt one watcher");
+          assert.equal(watchErrorCallbacks.length, 1, "initial watcher error callback was not captured");
+          assert.ok(Number.isNaN(state.geoWatchId),
+            "non-standard watch ID must enter unknown-ownership fail-closed state");
+          assert.equal(state.geoWatchGeneration, 1,
+            "unknown watcher must keep its callback generation current until termination evidence arrives");
+
+          // Geolocation's request-position algorithm removes a watch ID before
+          // reporting PERMISSION_DENIED. Treat that callback as termination evidence
+          // even when a non-standard host did not return a clearable watch ID.
+          watchErrorCallbacks[0]({ code: 1 });
+          state = context.__readState();
+          assert.equal(state.geoWatchId, null,
+            "permission denial must release unknown watcher ownership");
+          assert.equal(state.geoWatchGeneration, 2,
+            "permission denial must invalidate callbacks from the terminated watcher");
+          assert.deepEqual(events.geoErrors, [1],
+            "permission denial must flow through the normal geolocation error path");
+          assert.equal(events.watchCalls, 1,
+            "permission denial must not auto-register a replacement watcher");
+          assert.equal(events.armRecovery, 0,
+            "permission denial must not arm the recoverable watch watchdog");
+
+          // A delayed callback from the terminated watcher must be ignored.
+          watchErrorCallbacks[0]({ code: 2 });
+          assert.equal(events.armRecovery, 0,
+            "stale callback after permission denial must remain generation-guarded");
+
+          // Explicit user retry may now create one fresh watcher because the browser
+          // has already terminated the denied watch. A normal positive ID restores
+          // clearable ownership without creating duplicates.
+          context.__runAcquire();
+          state = context.__readState();
+          assert.equal(events.getCalls, 2, "explicit retry should request a fresh one-shot position");
+          assert.equal(events.watchCalls, 2, "explicit retry should create exactly one replacement watcher");
+          assert.equal(state.geoWatchId, 7, "replacement watcher should retain its valid positive ID");
+          assert.equal(state.geoWatchGeneration, 3,
+            "replacement watcher must advance to a fresh callback generation");
+          assert.equal(watchErrorCallbacks.length, 2, "replacement watcher error callback was not captured");
+
+          watchErrorCallbacks[0]({ code: 2 });
+          assert.equal(events.armRecovery, 0,
+            "old watcher callback must stay ignored after replacement registration");
+
+          watchErrorCallbacks[1]({ code: 2 });
+          assert.equal(events.armRecovery, 1,
+            "current watcher recoverable errors must still arm the recovery watchdog");
+          assert.deepEqual(events.gps.at(-1), [false, "GPS更新待ち…"],
+            "current watcher recoverable error should retain ordinary retryable status");
+
+          console.log("GPS unknown watch permission-denied runtime contract OK");
+          NODE
