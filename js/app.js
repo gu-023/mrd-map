@@ -2412,6 +2412,14 @@
       return;
     }
 
+    if (errorSource === "google-maps-load") {
+      if (e.key === "Enter" || e.key === " ") location.reload();
+      if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "].indexOf(e.key) >= 0) {
+        e.preventDefault();
+      }
+      return;
+    }
+
     if (errorSource === "storage") {
       if (e.key === "Enter" || e.key === " ") clearError("storage");
       if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "].indexOf(e.key) >= 0) {
@@ -2500,6 +2508,10 @@
     .then(initMap)
     .catch((err) => {
       if (errorSource === GOOGLE_MAPS_AUTH_ERROR_SOURCE) return;
-      showError("地図の読み込みに失敗", String(err.message || err));
+      showError(
+        "地図の読み込みに失敗",
+        "通信状態を確認して、決定で再読み込みしてください。",
+        "google-maps-load"
+      );
     });
 })();
