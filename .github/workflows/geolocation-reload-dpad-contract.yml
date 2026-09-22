@@ -1,0 +1,137 @@
+name: Guard geolocation reload D-pad recovery
+
+on:
+  pull_request:
+    paths:
+      - js/app.js
+      - .github/workflows/geolocation-reload-dpad-contract.yml
+  push:
+    branches: [main]
+    paths:
+      - js/app.js
+      - .github/workflows/geolocation-reload-dpad-contract.yml
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Exercise terminal geolocation D-pad recovery
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require("fs");
+          const vm = require("vm");
+
+          const source = fs.readFileSync("js/app.js", "utf8");
+          const keydownStart = source.indexOf('  document.addEventListener("keydown", (e) => {');
+          const keydownBodyStart = source.indexOf("{", keydownStart) + 1;
+          const keydownEnd = source.indexOf(
+            "\n  });\n\n  // マウス/タップでも動くようにしておく",
+            keydownBodyStart,
+          );
+
+          if (keydownStart < 0 || keydownBodyStart <= 0 || keydownEnd < 0) {
+            throw new Error("D-pad keydown handler could not be located");
+          }
+
+          const reloadOwnership = source.match(
+            /showError\("位置情報の監視を確認できません", "決定で再読み込みしてください。", "geolocation-reload"\);/g,
+          ) || [];
+          if (reloadOwnership.length < 2) {
+            throw new Error("invalid/unknown watcher paths no longer enter terminal geolocation-reload ownership");
+          }
+
+          const keydownBodySource = source
+            .slice(keydownBodyStart, keydownEnd)
+            .replace(/^    /gm, "");
+
+          let reloadCalls = 0;
+          let actionCalls = [];
+          let moveFocusCalls = 0;
+          const context = {
+            location: {
+              reload() {
+                reloadCalls += 1;
+              },
+            },
+            document: { activeElement: null },
+          };
+          vm.createContext(context);
+          vm.runInContext(
+            'let googleMapsAuthFailed = false;\n' +
+              'let errorSource = null;\n' +
+              'let menuOpen = false;\n' +
+              'let searchOpen = false;\n' +
+              'let searchZone = "input";\n' +
+              'let pickMode = false;\n' +
+              'let panMode = false;\n' +
+              'let focusIdx = 0;\n' +
+              'const focusables = [{ dataset: { action: "recenter" } }];\n' +
+              'const els = { searchQuery: {} };\n' +
+              'const map = null;\n' +
+              'function clearError() {}\n' +
+              'function searchKeydown() {}\n' +
+              'function menuMove() {}\n' +
+              'function menuBack() {}\n' +
+              'function menuActivate() {}\n' +
+              'function confirmDestination() {}\n' +
+              'function setPanMode() {}\n' +
+              'function moveFocus() { moveFocusCalls += 1; }\n' +
+              'function doAction(action) { actionCalls.push(action); }\n' +
+              'this.__setErrorSource = (value) => { errorSource = value; };\n' +
+              'this.__keydown = (e) => {' + keydownBodySource + '\n};',
+            Object.assign(context, {
+              actionCalls,
+              get moveFocusCalls() { return moveFocusCalls; },
+            }),
+          );
+
+          function dispatch(key) {
+            let preventDefaultCalls = 0;
+            context.__keydown({
+              key,
+              isComposing: false,
+              keyCode: 0,
+              preventDefault() {
+                preventDefaultCalls += 1;
+              },
+            });
+            return preventDefaultCalls;
+          }
+
+          context.__setErrorSource("geolocation-reload");
+          for (const key of ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"]) {
+            if (dispatch(key) !== 1) {
+              throw new Error(`${key} was not consumed by terminal geolocation recovery`);
+            }
+            if (reloadCalls !== 0 || actionCalls.length !== 0) {
+              throw new Error(`${key} leaked through terminal geolocation recovery`);
+            }
+          }
+
+          if (dispatch("Enter") !== 1 || reloadCalls !== 1 || actionCalls.length !== 0) {
+            throw new Error("Enter did not reload exactly once from terminal geolocation recovery");
+          }
+          if (dispatch(" ") !== 1 || reloadCalls !== 2 || actionCalls.length !== 0) {
+            throw new Error("Space did not reload exactly once from terminal geolocation recovery");
+          }
+
+          context.__setErrorSource("geolocation");
+          const reloadsBeforeRetryableEnter = reloadCalls;
+          if (dispatch("Enter") !== 1) {
+            throw new Error("retryable geolocation Enter was not handled");
+          }
+          if (reloadCalls !== reloadsBeforeRetryableEnter) {
+            throw new Error("retryable geolocation error incorrectly became reload-only");
+          }
+          if (actionCalls.length !== 1 || actionCalls[0] !== "recenter") {
+            throw new Error("retryable geolocation error no longer allows the recenter/retry action");
+          }
+
+          console.log("Geolocation reload D-pad recovery contract OK");
+          NODE
