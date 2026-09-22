@@ -1,0 +1,83 @@
+name: Geocoder sync throw contract
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - js/app.js
+      - .github/workflows/geocoder-sync-throw-contract.yml
+  pull_request:
+    paths:
+      - js/app.js
+      - .github/workflows/geocoder-sync-throw-contract.yml
+
+permissions:
+  contents: read
+
+jobs:
+  geocoder-sync-throw:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Exercise reverse-geocoder sync-throw fail-soft behavior
+        shell: bash
+        run: |
+          node <<'NODE'
+          const assert = require('assert');
+          const fs = require('fs');
+          const vm = require('vm');
+
+          const source = fs.readFileSync('js/app.js', 'utf8');
+
+          function extractFunction(name) {
+            const marker = `  function ${name}(`;
+            const start = source.indexOf(marker);
+            assert.notStrictEqual(start, -1, `${name}() not found`);
+            const brace = source.indexOf('{', start);
+            assert.notStrictEqual(brace, -1, `${name}() body not found`);
+            let depth = 0;
+            for (let i = brace; i < source.length; i += 1) {
+              if (source[i] === '{') depth += 1;
+              else if (source[i] === '}') {
+                depth -= 1;
+                if (depth === 0) return source.slice(start, i + 1).replace(/^  /gm, '');
+              }
+            }
+            throw new Error(`${name}() body is unbalanced`);
+          }
+
+          function makeHarness({ authFailed = false, geocoderPresent = true } = {}) {
+            let geocodeCalls = 0;
+            const context = {
+              googleMapsAuthFailed: authFailed,
+              geocoder: geocoderPresent ? {
+                geocode() {
+                  geocodeCalls += 1;
+                  throw new Error('simulated synchronous SDK failure');
+                },
+              } : null,
+            };
+            vm.createContext(context);
+            vm.runInContext(extractFunction('resolvePlaceName'), context);
+            return {
+              context,
+              getGeocodeCalls: () => geocodeCalls,
+            };
+          }
+
+          const active = makeHarness();
+          assert.doesNotThrow(
+            () => vm.runInContext('resolvePlaceName(35.681236, 139.767125)', active.context),
+            'synchronous geocoder failures must stay fail-soft'
+          );
+          assert.strictEqual(active.getGeocodeCalls(), 1, 'active reverse geocoding must attempt the SDK call once');
+
+          const authFailed = makeHarness({ authFailed: true });
+          assert.doesNotThrow(() => vm.runInContext('resolvePlaceName(35, 139)', authFailed.context));
+          assert.strictEqual(authFailed.getGeocodeCalls(), 0, 'Maps auth failure must suppress reverse geocoding');
+
+          const missing = makeHarness({ geocoderPresent: false });
+          assert.doesNotThrow(() => vm.runInContext('resolvePlaceName(35, 139)', missing.context));
+          assert.strictEqual(missing.getGeocodeCalls(), 0, 'missing geocoder must stay a no-op');
+          NODE
