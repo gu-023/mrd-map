@@ -22,12 +22,12 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
 
-          app_path = Path("js/app.js")
-          app = app_path.read_text()
-          app_marker = '    if (errorSource === "directions" &&\n'
-          if app.count(app_marker) != 1:
-              raise SystemExit(f"expected one directions keydown marker, found {app.count(app_marker)}")
-          geolocation_block = "\n".join([
+          path = Path("js/app.js")
+          source = path.read_text()
+          marker = '    if (errorSource === "directions" &&\n'
+          if source.count(marker) != 1:
+              raise SystemExit(f"expected one directions keydown marker, found {source.count(marker)}")
+          block = "\n".join([
               '    if (errorSource === "geolocation") {',
               '      if (e.key === "Enter" || e.key === " ") doAction("recenter");',
               '      if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "].indexOf(e.key) >= 0) {',
@@ -36,64 +36,18 @@ jobs:
               '      return;',
               '    }',
           ]) + "\n\n"
-          app = app.replace(app_marker, geolocation_block + app_marker, 1)
-          app_path.write_text(app)
-
-          workflow_path = Path(".github/workflows/geolocation-reload-dpad-contract.yml")
-          workflow = workflow_path.read_text()
-          keydown_line = "              'this.__keydown = (e) => {' + keydownBodySource + '\\\\n};',"
-          focus_setter_line = "              'this.__setFocusAction = (value) => { focusables[0].dataset.action = value; };\\\\n' +"
-          if workflow.count(keydown_line) != 1:
-              raise SystemExit(f"expected one keydown harness line, found {workflow.count(keydown_line)}")
-          workflow = workflow.replace(keydown_line, focus_setter_line + "\n" + keydown_line, 1)
-
-          start_marker = '          context.__setErrorSource("geolocation");'
-          end_marker = '\n\n          console.log("Geolocation reload D-pad recovery contract OK");'
-          start = workflow.find(start_marker)
-          end = workflow.find(end_marker, start)
-          if start < 0 or end < 0:
-              raise SystemExit("retryable geolocation test block could not be located")
-          replacement = "\n".join([
-              '          context.__setErrorSource("geolocation");',
-              '          context.__setFocusAction("zoom-in");',
-              '          const reloadsBeforeRetryableInput = reloadCalls;',
-              '          const moveFocusBeforeRetryableInput = context.moveFocusCalls;',
-              '          for (const key of ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"]) {',
-              '            if (dispatch(key) !== 1) {',
-              '              throw new Error(`${key} was not consumed by retryable geolocation recovery`);',
-              '            }',
-              '            if (reloadCalls !== reloadsBeforeRetryableInput || actionCalls.length !== 0 ||',
-              '                context.moveFocusCalls !== moveFocusBeforeRetryableInput) {',
-              '              throw new Error(`${key} leaked through retryable geolocation recovery`);',
-              '            }',
-              '          }',
-              '',
-              '          if (dispatch("Enter") !== 1 || reloadCalls !== reloadsBeforeRetryableInput) {',
-              '            throw new Error("retryable geolocation Enter was not handled without reloading");',
-              '          }',
-              '          if (actionCalls.length !== 1 || actionCalls[0] !== "recenter") {',
-              '            throw new Error("retryable geolocation Enter did not invoke deterministic recenter/retry");',
-              '          }',
-              '          if (dispatch(" ") !== 1 || reloadCalls !== reloadsBeforeRetryableInput) {',
-              '            throw new Error("retryable geolocation Space was not handled without reloading");',
-              '          }',
-              '          if (actionCalls.length !== 2 || actionCalls[1] !== "recenter") {',
-              '            throw new Error("retryable geolocation Space did not invoke deterministic recenter/retry");',
-              '          }',
-          ])
-          workflow = workflow[:start] + replacement + workflow[end:]
-          workflow_path.write_text(workflow)
+          path.write_text(source.replace(marker, block + marker, 1))
           PY
 
           node --check js/app.js
           git diff --check
 
-      - name: Commit product and contract changes
+      - name: Commit runtime change
         shell: bash
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git rm .github/workflows/_one-shot-geolocation-dpad-patch.yml
-          git add js/app.js .github/workflows/geolocation-reload-dpad-contract.yml
+          git add js/app.js
           git commit -m "Make retryable GPS errors D-pad deterministic"
           git push origin HEAD:chatgpt/geolocation-error-dpad-retry
