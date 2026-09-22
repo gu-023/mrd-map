@@ -1,0 +1,81 @@
+name: One-shot Places init guard patch
+
+on:
+  push:
+    branches:
+      - chatgpt/guard-places-search-init
+    paths:
+      - .github/workflows/_chatgpt_places_init_patch.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: chatgpt/guard-places-search-init
+
+      - name: Guard synchronous Places search initialization failures
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path('js/app.js')
+          source = path.read_text()
+          old = '''    closeMenu();
+    if (!placesSearchApi) placesSearchApi = createPlacesSearchApi();
+    placesSearchApi.startSession();
+    searchOpen = true;
+'''
+          new = '''    try {
+      if (!placesSearchApi) placesSearchApi = createPlacesSearchApi();
+      placesSearchApi.startSession();
+    } catch (_) {
+      placesSearchApi = null;
+      showError("場所検索を開始できません", placesErrorDetail(null), "places");
+      return;
+    }
+    clearError("places");
+    closeMenu();
+    searchOpen = true;
+'''
+          if source.count(old) != 1:
+              raise SystemExit(f'expected exactly one openSearch initialization block, found {source.count(old)}')
+          path.write_text(source.replace(old, new, 1))
+          PY
+
+          node --check js/app.js
+          git diff --check
+
+          python3 <<'PY'
+          from pathlib import Path
+          source = Path('js/app.js').read_text()
+          required = [
+              '    try {\n      if (!placesSearchApi) placesSearchApi = createPlacesSearchApi();',
+              '      placesSearchApi.startSession();\n    } catch (_) {',
+              '      placesSearchApi = null;',
+              '      showError("場所検索を開始できません", placesErrorDetail(null), "places");',
+              '    clearError("places");\n    closeMenu();\n    searchOpen = true;',
+          ]
+          missing = [needle for needle in required if needle not in source]
+          if missing:
+              raise SystemExit(f'missing Places init guard fragments: {missing}')
+          print('Places init sync-throw guard is present')
+          PY
+
+      - name: Commit product change
+        shell: bash
+        run: |
+          if git diff --quiet -- js/app.js; then
+            echo "No product change produced" >&2
+            exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add js/app.js
+          git commit -m "Guard Places search initialization failures"
+          git push origin HEAD:chatgpt/guard-places-search-init
