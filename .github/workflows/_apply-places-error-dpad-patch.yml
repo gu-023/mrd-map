@@ -26,17 +26,17 @@ jobs:
 
           path = Path("js/app.js")
           text = path.read_text()
-          old = '''    if (errorSource === "places" && menuOpen) clearError("places");
-'''
-          new = '''    if (errorSource === "places" && searchOpen &&
-        ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "].indexOf(e.key) >= 0) {
-      clearError("places");
-      e.preventDefault();
-      return;
-    }
-
-    if (errorSource === "places" && menuOpen) clearError("places");
-'''
+          old = '    if (errorSource === "places" && menuOpen) clearError("places");\n'
+          new = (
+              '    if (errorSource === "places" && searchOpen &&\n'
+              '        ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "].indexOf(e.key) >= 0) {\n'
+              '      clearError("places");\n'
+              '      e.preventDefault();\n'
+              '      return;\n'
+              '    }\n'
+              '\n'
+              '    if (errorSource === "places" && menuOpen) clearError("places");\n'
+          )
           if text.count(old) != 1:
               raise SystemExit(f"expected Places keydown anchor exactly once, found {text.count(old)}")
           path.write_text(text.replace(old, new, 1))
