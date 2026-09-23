@@ -1556,11 +1556,11 @@
       if (originIsStale) {
         showError(
           "現在地が古いため経路を開始できません",
-          "◎ で現在地を更新してから、目的地をもう一度選んでください。",
+          "決定で現在地を更新してから、目的地をもう一度選んでください。",
           "geolocation"
         );
       } else {
-        showError("現在地が未取得", "先に ◎ で現在地を取得してください。", "geolocation");
+        showError("現在地が未取得", "先に決定で現在地を取得してください。", "geolocation");
       }
       return;
     }
