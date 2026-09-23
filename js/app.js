@@ -139,6 +139,7 @@
 
   function clearError(source) {
     if (errorSource === GOOGLE_MAPS_AUTH_ERROR_SOURCE) return;
+    if (errorSource === "geolocation-reload") return;
     if (errorSource !== source) return;
     errorSource = null;
     els.error.classList.add("hidden");
