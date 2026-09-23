@@ -88,6 +88,15 @@ jobs:
             );
           }
 
+          context.__clearError('geolocation-reload');
+          assert.strictEqual(
+            context.__getErrorSource(),
+            'geolocation-reload',
+            'matching clearError() must not release terminal GPS ownership',
+          );
+          assert.strictEqual(errorEl.innerHTML, terminalHtml, 'clearError() changed terminal GPS content');
+          assert.strictEqual(classes.has('hidden'), false, 'clearError() hid terminal GPS recovery');
+
           context.__showError('Auth terminal', 'global auth recovery', 'google-maps-auth');
           assert.strictEqual(
             context.__getErrorSource(),
