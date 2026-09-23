@@ -1545,7 +1545,7 @@
         setNavBanner(navMode ? routePreviousNavBanner : null);
       }
       routePreviousNavBanner = null;
-      showError("目的地が無効です", "目的地をもう一度選択してください。", "directions");
+      showError("目的地が無効です", "目的地をもう一度選択してください。<br><br>矢印または決定で閉じられます。", "directions");
       return;
     }
     const routeDestination = new google.maps.LatLng(destination.lat, destination.lng);
@@ -1595,7 +1595,7 @@
       }
       showError(
         "経路の取得がタイムアウトしました",
-        "通信状態を確認して、もう一度お試しください。",
+        "通信状態を確認して、もう一度お試しください。<br><br>矢印または決定で閉じられます。",
         "directions"
       );
       setNavBanner(previousNavBanner);
@@ -1703,17 +1703,18 @@
             showError(
               "経路を取得できません",
               "ステータス: <code>REQUEST_DENIED</code><br>" +
-              "APIキーの「APIの制限」に <b>Directions API</b> を追加してください。",
+              "APIキーの「APIの制限」に <b>Directions API</b> を追加してください。<br><br>" +
+              "矢印または決定で閉じられます。",
               "directions"
             );
           } else if (status === "OK") {
             showError(
               "経路を取得できません",
-              "経路データが不完全です。もう一度お試しください。",
+              "経路データが不完全です。もう一度お試しください。<br><br>矢印または決定で閉じられます。",
               "directions"
             );
           } else {
-            showError("経路を取得できません", `ステータス: <code>${status}</code>`, "directions");
+            showError("経路を取得できません", `ステータス: <code>${status}</code><br><br>矢印または決定で閉じられます。`, "directions");
           }
           setNavBanner(previousNavBanner);
         }
@@ -1735,7 +1736,7 @@
       }
       showError(
         "経路を開始できません",
-        "もう一度お試しください。続く場合は決定で閉じて、←→で ↻ 再読み込みを選んでください。",
+        "もう一度お試しください。<br><br>矢印または決定で閉じられます。続く場合は、閉じた後に ←→ で ↻ 再読み込みを選んでください。",
         "directions"
       );
       setNavBanner(previousNavBanner);
