@@ -1,0 +1,60 @@
+name: Temporary auth clear terminal patch
+
+on:
+  push:
+    branches:
+      - chatgpt/guard-auth-clear-terminal
+    paths:
+      - .github/workflows/tmp-auth-clear-terminal-patch.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chatgpt/guard-auth-clear-terminal
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Patch clearError terminal auth guard
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require('fs');
+          const path = 'js/app.js';
+          let source = fs.readFileSync(path, 'utf8');
+          const before = `  function clearError(source) {
+            if (errorSource !== source) return;
+            errorSource = null;
+            els.error.classList.add("hidden");
+          }`.replace(/^            /gm, '');
+          const after = `  function clearError(source) {
+            if (errorSource === GOOGLE_MAPS_AUTH_ERROR_SOURCE) return;
+            if (errorSource !== source) return;
+            errorSource = null;
+            els.error.classList.add("hidden");
+          }`.replace(/^            /gm, '');
+          const occurrences = source.split(before).length - 1;
+          if (occurrences !== 1) {
+            throw new Error(`expected one clearError anchor, found ${occurrences}`);
+          }
+          source = source.replace(before, after);
+          fs.writeFileSync(path, source);
+          NODE
+          node --check js/app.js
+          git diff --check
+          test "$(git diff --name-only)" = "js/app.js"
+      - name: Commit product patch
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add js/app.js
+          git commit -m "Keep Google Maps auth errors uncleared"
+          git push origin HEAD:chatgpt/guard-auth-clear-terminal
