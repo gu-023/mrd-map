@@ -43,6 +43,19 @@ jobs:
             throw new Error("unsupported compass dismiss contract missing");
           }
 
+          const retryableCompassErrors = Array.from(
+            source.matchAll(/showError\(\s*"[^"]+"\s*,\s*"([^"]*)"\s*,\s*"compass"\s*\)/g),
+            (match) => match[1],
+          );
+          if (retryableCompassErrors.length !== 6) {
+            throw new Error(`expected 6 retryable compass errors, found ${retryableCompassErrors.length}`);
+          }
+          for (const guidance of retryableCompassErrors) {
+            if (!guidance.startsWith("決定")) {
+              throw new Error(`retryable compass guidance must describe direct confirm recovery: ${guidance}`);
+            }
+          }
+
           const keydownBodySource = source
             .slice(keydownBodyStart, keydownEnd)
             .replace(/^    /gm, "");
