@@ -1171,7 +1171,12 @@
       placesSearchApi.startSession();
     } catch (_) {
       placesSearchApi = null;
-      showError("場所検索を開始できません", placesErrorDetail(null), "places");
+      showError(
+  "場所検索を開始できません",
+  "Places API を利用できません。API の有効化と読み込み状態を確認してください。<br><br>" +
+  "決定で再試行、矢印でメニューを操作できます。",
+  "places"
+);
       return;
     }
     clearError("places");
