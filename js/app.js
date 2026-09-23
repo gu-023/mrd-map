@@ -127,6 +127,8 @@
   const GOOGLE_MAPS_AUTH_ERROR_SOURCE = "google-maps-auth";
 
   function showError(titleHtml, bodyHtml, source = null) {
+    if (errorSource === GOOGLE_MAPS_AUTH_ERROR_SOURCE &&
+        source !== GOOGLE_MAPS_AUTH_ERROR_SOURCE) return;
     if (errorSource === "geolocation-reload" &&
         source !== GOOGLE_MAPS_AUTH_ERROR_SOURCE) return;
     errorSource = source;

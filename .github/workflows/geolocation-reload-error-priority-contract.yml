@@ -1,4 +1,4 @@
-name: Guard geolocation reload error priority
+name: Guard terminal error priority
 
 on:
   pull_request:
@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Exercise terminal geolocation error ownership
+      - name: Exercise terminal error ownership
         shell: bash
         run: |
           node <<'NODE'
@@ -93,6 +93,21 @@ jobs:
             'global Google Maps auth failure must supersede GPS terminal ownership',
           );
           assert.match(errorEl.innerHTML, /Auth terminal/);
+          const authHtml = errorEl.innerHTML;
 
-          console.log('Geolocation reload error priority contract OK');
+          for (const laterSource of ['geolocation-reload', 'geolocation', 'compass', 'directions', 'storage', 'places', null]) {
+            context.__showError(`late ${laterSource}`, 'must not replace auth recovery', laterSource);
+            assert.strictEqual(
+              context.__getErrorSource(),
+              'google-maps-auth',
+              `${laterSource} replaced terminal auth error ownership`,
+            );
+            assert.strictEqual(
+              errorEl.innerHTML,
+              authHtml,
+              `${laterSource} replaced the reload-only auth message`,
+            );
+          }
+
+          console.log('Terminal error priority contract OK');
           NODE

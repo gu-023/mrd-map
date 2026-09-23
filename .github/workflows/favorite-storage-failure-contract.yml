@@ -104,7 +104,7 @@ jobs:
           };
           vm.createContext(context);
           vm.runInContext(
-            'let errorSource = null; let googleMapsAuthFailed = false; const els = { error: __errorEl };',
+            'let errorSource = null; let googleMapsAuthFailed = false; const GOOGLE_MAPS_AUTH_ERROR_SOURCE = "google-maps-auth"; const els = { error: __errorEl };',
             context
           );
 
