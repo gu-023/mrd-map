@@ -38,28 +38,16 @@ jobs:
               raise SystemExit(f"unsupported compass showError anchor count={text.count(old)}")
           text = text.replace(old, new, 1)
 
-          old = '''    if (errorSource === "compass") {
-              if (e.key === "Enter" || e.key === " ") doAction("toggle-compass");
-              if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "].indexOf(e.key) >= 0) {
-                e.preventDefault();
-              }
-              return;
-            }'''
+          old = '    if (errorSource === "compass") {'
           new = '''    if (errorSource === "compass-unsupported") {
-              if (e.key === "Enter" || e.key === " ") clearError("compass-unsupported");
-              if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "].indexOf(e.key) >= 0) {
-                e.preventDefault();
-              }
-              return;
+            if (e.key === "Enter" || e.key === " ") clearError("compass-unsupported");
+            if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "].indexOf(e.key) >= 0) {
+              e.preventDefault();
             }
+            return;
+          }
 
-            if (errorSource === "compass") {
-              if (e.key === "Enter" || e.key === " ") doAction("toggle-compass");
-              if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "].indexOf(e.key) >= 0) {
-                e.preventDefault();
-              }
-              return;
-            }'''
+          if (errorSource === "compass") {'''
           if text.count(old) != 1:
               raise SystemExit(f"compass keydown anchor count={text.count(old)}")
           text = text.replace(old, new, 1)
