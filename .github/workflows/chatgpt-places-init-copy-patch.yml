@@ -1,0 +1,50 @@
+name: ChatGPT patch Places init copy
+
+on:
+  push:
+    branches: [chatgpt/clarify-places-init-recovery]
+    paths:
+      - .github/workflows/chatgpt-places-init-copy-patch.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: chatgpt/clarify-places-init-recovery
+
+      - name: Clarify menu-level Places recovery guidance
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path("js/app.js")
+          text = path.read_text()
+          old = '      showError("場所検索を開始できません", placesErrorDetail(null), "places");'
+          new = '''      showError(
+            "場所検索を開始できません",
+            "Places API を利用できません。API の有効化と読み込み状態を確認してください。<br><br>" +
+            "決定で再試行、矢印でメニューを操作できます。",
+            "places"
+          );'''
+          if text.count(old) != 1:
+              raise SystemExit(f"expected exactly one Places initialization error call, found {text.count(old)}")
+          path.write_text(text.replace(old, new, 1))
+          PY
+          node --check js/app.js
+          git diff --check
+          git diff -- js/app.js
+
+      - name: Commit runtime change
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add js/app.js
+          git commit -m "Clarify Places initialization recovery"
+          git push origin HEAD:chatgpt/clarify-places-init-recovery
