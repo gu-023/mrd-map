@@ -1,0 +1,79 @@
+name: Guard error overlay ownership
+
+on:
+  pull_request:
+    paths:
+      - js/app.js
+      - .github/workflows/error-overlay-ownership-contract.yml
+  push:
+    branches: [main]
+    paths:
+      - js/app.js
+      - .github/workflows/error-overlay-ownership-contract.yml
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Guard centralized error overlay ownership
+        shell: bash
+        run: |
+          node <<'NODE'
+          const assert = require("assert");
+          const fs = require("fs");
+
+          const source = fs.readFileSync("js/app.js", "utf8");
+
+          function functionRange(name) {
+            const marker = `  function ${name}(`;
+            const start = source.indexOf(marker);
+            assert.notStrictEqual(start, -1, `${name}() not found`);
+            const brace = source.indexOf("{", start);
+            assert.notStrictEqual(brace, -1, `${name}() body not found`);
+            let depth = 0;
+            for (let i = brace; i < source.length; i += 1) {
+              if (source[i] === "{") depth += 1;
+              else if (source[i] === "}") {
+                depth -= 1;
+                if (depth === 0) return { start, end: i + 1 };
+              }
+            }
+            throw new Error(`${name}() body is unbalanced`);
+          }
+
+          const ownershipRanges = [functionRange("showError"), functionRange("clearError")];
+          const isOwned = (index) => ownershipRanges.some(
+            ({ start, end }) => index >= start && index < end,
+          );
+
+          const overlayAccesses = [...source.matchAll(/\bels\.error\./g)];
+          assert.ok(overlayAccesses.length > 0, "error overlay access disappeared unexpectedly");
+          for (const match of overlayAccesses) {
+            assert.ok(
+              isOwned(match.index),
+              `error overlay DOM access escaped showError()/clearError() at offset ${match.index}`,
+            );
+          }
+
+          const sourceAssignments = [...source.matchAll(/\berrorSource\s*=(?!=)/g)];
+          const initializationIndex = source.indexOf("errorSource = null;");
+          assert.notStrictEqual(initializationIndex, -1, "errorSource initialization not found");
+          assert.ok(sourceAssignments.length >= 3, "errorSource ownership assignments disappeared unexpectedly");
+          for (const match of sourceAssignments) {
+            if (match.index === initializationIndex) continue;
+            assert.ok(
+              isOwned(match.index),
+              `errorSource assignment escaped showError()/clearError() at offset ${match.index}`,
+            );
+          }
+
+          console.log(
+            `Error overlay ownership contract OK (${overlayAccesses.length} DOM accesses, ` +
+              `${sourceAssignments.length} state assignments)`,
+          );
+          NODE
