@@ -1790,12 +1790,20 @@
 
   /* ---------- 信号機（OpenStreetMap Overpass・無料/キー不要） ---------- */
   function fetchSignals() {
-    if (!navBounds || !navFullPath.length) return;
+    if (!navFullPath.length) return;
+    const routeLine = navFullPath
+      .map((point) => {
+        const lat = typeof point.lat === "function" ? point.lat() : point.lat;
+        const lng = typeof point.lng === "function" ? point.lng() : point.lng;
+        return Number.isFinite(lat) && Number.isFinite(lng) ? `${lat},${lng}` : null;
+      })
+      .filter(Boolean)
+      .join(",");
+    if (!routeLine) return;
     const requestId = ++signalRequestId;
-    const sw = navBounds.getSouthWest(), ne = navBounds.getNorthEast();
     const q =
       `[out:json][timeout:20];node["highway"="traffic_signals"]` +
-      `(${sw.lat()},${sw.lng()},${ne.lat()},${ne.lng()});out;`;
+      `(around:25,${routeLine});out;`;
     const abortController = typeof AbortController === "function" ? new AbortController() : null;
     fetchSignals.abortController = abortController;
     const requestOptions = {
