@@ -1,0 +1,45 @@
+name: Temporary geolocation recovery copy patch
+
+on:
+  push:
+    branches:
+      - chatgpt/align-geolocation-error-recovery-copy
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Align retryable geolocation copy with D-pad behavior
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path('js/app.js')
+          text = path.read_text()
+          old = '    showError("位置情報を取得できません", body + "<br><br>◎ 再取得 / ↻ 再読み込み", "geolocation");'
+          new = '    showError("位置情報を取得できません", body, "geolocation");'
+          if text.count(old) != 1:
+              raise SystemExit(f'expected exactly one geolocation recovery hint anchor, found {text.count(old)}')
+          path.write_text(text.replace(old, new, 1))
+          PY
+
+          node --check js/app.js
+          git diff --check
+          if grep -Fq '◎ 再取得 / ↻ 再読み込み' js/app.js; then
+            echo 'stale unreachable reload hint remains' >&2
+            exit 1
+          fi
+
+          rm .github/workflows/_chatgpt-geolocation-copy-patch.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add js/app.js .github/workflows/_chatgpt-geolocation-copy-patch.yml
+          git commit -m 'Align geolocation error recovery hint with D-pad'
+          git push origin HEAD:${GITHUB_REF_NAME}
