@@ -1,4 +1,4 @@
-name: ChatGPT patch Places init copy
+name: ChatGPT finalize Places init copy
 
 on:
   push:
@@ -17,7 +17,7 @@ jobs:
         with:
           ref: chatgpt/clarify-places-init-recovery
 
-      - name: Clarify menu-level Places recovery guidance
+      - name: Normalize Places initialization copy indentation
         shell: bash
         run: |
           python3 <<'PY'
@@ -25,26 +25,36 @@ jobs:
 
           path = Path("js/app.js")
           text = path.read_text()
-          old = '      showError("場所検索を開始できません", placesErrorDetail(null), "places");'
-          new = '''      showError(
-            "場所検索を開始できません",
-            "Places API を利用できません。API の有効化と読み込み状態を確認してください。<br><br>" +
-            "決定で再試行、矢印でメニューを操作できます。",
-            "places"
-          );'''
+          old = (
+              '      showError(\n'
+              '  "場所検索を開始できません",\n'
+              '  "Places API を利用できません。API の有効化と読み込み状態を確認してください。<br><br>" +\n'
+              '  "決定で再試行、矢印でメニューを操作できます。",\n'
+              '  "places"\n'
+              ');'
+          )
+          new = (
+              '      showError(\n'
+              '        "場所検索を開始できません",\n'
+              '        "Places API を利用できません。API の有効化と読み込み状態を確認してください。<br><br>" +\n'
+              '        "決定で再試行、矢印でメニューを操作できます。",\n'
+              '        "places"\n'
+              '      );'
+          )
           if text.count(old) != 1:
-              raise SystemExit(f"expected exactly one Places initialization error call, found {text.count(old)}")
+              raise SystemExit(f"expected exactly one unindented Places initialization block, found {text.count(old)}")
           path.write_text(text.replace(old, new, 1))
           PY
           node --check js/app.js
           git diff --check
           git diff -- js/app.js
 
-      - name: Commit runtime change
+      - name: Commit runtime change and remove helper
         shell: bash
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add js/app.js
-          git commit -m "Clarify Places initialization recovery"
+          git rm .github/workflows/chatgpt-places-init-copy-patch.yml
+          git commit -m "Polish Places initialization recovery"
           git push origin HEAD:chatgpt/clarify-places-init-recovery
