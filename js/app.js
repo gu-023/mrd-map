@@ -149,10 +149,18 @@
   }
 
   if (!cfg.GOOGLE_MAPS_API_KEY || cfg.GOOGLE_MAPS_API_KEY === "__GOOGLE_MAPS_API_KEY__") {
+    const handleMissingApiKeyDpad = (e) => {
+      if (e.key === "Enter" || e.key === " ") location.reload();
+      if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "].indexOf(e.key) >= 0) {
+        e.preventDefault();
+      }
+    };
+    document.addEventListener("keydown", handleMissingApiKeyDpad);
     showError(
       "APIキー未設定",
       "ローカル: <code>cp js/config.template.js js/config.js</code> してキーを設定。<br>" +
-      "本番: GitHub Secret <code>GOOGLE_MAPS_API_KEY</code> を設定。<br>(README 参照)"
+      "本番: GitHub Secret <code>GOOGLE_MAPS_API_KEY</code> を設定。<br>(README 参照)<br><br>" +
+      "設定反映後、決定で再読み込みできます。"
     );
     return;
   }

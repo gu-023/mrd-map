@@ -1,0 +1,88 @@
+name: Guard missing API key D-pad recovery
+
+on:
+  pull_request:
+    paths:
+      - js/app.js
+      - .github/workflows/missing-api-key-dpad-contract.yml
+  push:
+    branches:
+      - main
+    paths:
+      - js/app.js
+      - .github/workflows/missing-api-key-dpad-contract.yml
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Exercise missing-key D-pad recovery
+        shell: bash
+        run: |
+          node <<'NODE'
+          const assert = require('assert');
+          const fs = require('fs');
+          const vm = require('vm');
+
+          const source = fs.readFileSync('js/app.js', 'utf8');
+          const classes = new Set(['hidden']);
+          const errorEl = {
+            innerHTML: '',
+            classList: {
+              add(name) { classes.add(name); },
+              remove(name) { classes.delete(name); },
+            },
+          };
+          const listeners = new Map();
+          let reloads = 0;
+          const context = {
+            window: { CONFIG: {} },
+            document: {
+              querySelector() { return errorEl; },
+              addEventListener(type, listener) {
+                assert.strictEqual(listeners.has(type), false, `${type} listener registered twice`);
+                listeners.set(type, listener);
+              },
+            },
+            location: {
+              reload() { reloads += 1; },
+            },
+          };
+          vm.createContext(context);
+          vm.runInContext(source, context);
+
+          assert.strictEqual(classes.has('hidden'), false, 'missing-key error must be visible');
+          assert.match(errorEl.innerHTML, /APIキー未設定/);
+          assert.match(errorEl.innerHTML, /設定反映後、決定で再読み込みできます/);
+          assert.strictEqual(listeners.size, 1, 'startup failure must only install its D-pad listener');
+          const keydown = listeners.get('keydown');
+          assert.strictEqual(typeof keydown, 'function', 'missing-key keydown listener not installed');
+
+          function press(key) {
+            let prevented = 0;
+            keydown({ key, preventDefault() { prevented += 1; } });
+            return prevented;
+          }
+
+          for (const key of ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown']) {
+            const before = reloads;
+            assert.strictEqual(press(key), 1, `${key} was not consumed`);
+            assert.strictEqual(reloads, before, `${key} unexpectedly reloaded the page`);
+          }
+
+          for (const key of ['Enter', ' ']) {
+            const before = reloads;
+            assert.strictEqual(press(key), 1, `${JSON.stringify(key)} was not consumed`);
+            assert.strictEqual(reloads, before + 1, `${JSON.stringify(key)} did not reload exactly once`);
+          }
+
+          const beforeOther = reloads;
+          assert.strictEqual(press('a'), 0, 'non-D-pad input was consumed');
+          assert.strictEqual(reloads, beforeOther, 'non-D-pad input reloaded the page');
+
+          console.log('Missing API key D-pad recovery contract OK');
+          NODE
