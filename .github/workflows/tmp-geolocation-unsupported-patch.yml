@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   patch:
-    if: github.event.head_commit.message == 'Add temporary geolocation unsupported patch helper'
+    if: github.event.head_commit.message == 'Fix temporary geolocation unsupported patch helper'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -22,85 +22,20 @@ jobs:
         shell: bash
         run: |
           python3 - <<'PY'
+          import base64
           from pathlib import Path
           p = Path('js/app.js')
           text = p.read_text()
-
-          old = '''  function startGeolocation() {
-    if (!("geolocation" in navigator)) {
-      setGps(false, "GPS非対応");
-      return;
-    }
-    setGps(false, "◎ を決定で現在地取得");
-  }
-
-  // ◎ボタンの click/keydown ハンドラ内（＝ユーザー操作中）から呼ぶこと
-  function acquireLocation() {
-    if (!("geolocation" in navigator)) {
-      setGps(false, "GPS非対応");
-      return;
-    }
-'''
-          new = '''  function showGeolocationUnsupported() {
-    setGps(false, "GPS非対応");
-    showError(
-      "位置情報を利用できません",
-      "この端末のブラウザは位置情報APIに対応していません。<br><br>" +
-      "決定で閉じた後、←→で他の操作を選べます。",
-      "geolocation-unsupported"
-    );
-  }
-
-  function startGeolocation() {
-    if (!("geolocation" in navigator)) {
-      showGeolocationUnsupported();
-      return;
-    }
-    setGps(false, "◎ を決定で現在地取得");
-  }
-
-  // ◎ボタンの click/keydown ハンドラ内（＝ユーザー操作中）から呼ぶこと
-  function acquireLocation() {
-    if (!("geolocation" in navigator)) {
-      showGeolocationUnsupported();
-      return;
-    }
-'''
-          if text.count(old) != 1:
-              raise SystemExit(f'geolocation anchor count was {text.count(old)}, expected 1')
-          text = text.replace(old, new, 1)
-
-          old = '''    if (errorSource === "geolocation") {
-      if (e.key === "Enter" || e.key === " ") doAction("recenter");
-      if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "].indexOf(e.key) >= 0) {
-        e.preventDefault();
-      }
-      return;
-    }
-
-    if (errorSource === "compass") {
-'''
-          new = '''    if (errorSource === "geolocation") {
-      if (e.key === "Enter" || e.key === " ") doAction("recenter");
-      if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "].indexOf(e.key) >= 0) {
-        e.preventDefault();
-      }
-      return;
-    }
-
-    if (errorSource === "geolocation-unsupported") {
-      if (e.key === "Enter" || e.key === " ") clearError("geolocation-unsupported");
-      if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "].indexOf(e.key) >= 0) {
-        e.preventDefault();
-      }
-      return;
-    }
-
-    if (errorSource === "compass") {
-'''
-          if text.count(old) != 1:
-              raise SystemExit(f'D-pad anchor count was {text.count(old)}, expected 1')
-          text = text.replace(old, new, 1)
+          old1 = base64.b64decode('ICBmdW5jdGlvbiBzdGFydEdlb2xvY2F0aW9uKCkgewogICAgaWYgKCEoImdlb2xvY2F0aW9uIiBpbiBuYXZpZ2F0b3IpKSB7CiAgICAgIHNldEdwcyhmYWxzZSwgIkdQU+mdnuWvvuW/nCIpOwogICAgICByZXR1cm47CiAgICB9CiAgICBzZXRHcHMoZmFsc2UsICLil44g44KS5rG65a6a44Gn54++5Zyo5Zyw5Y+W5b6XIik7CiAgfQoKICAvLyDil47jg5zjgr/jg7Pjga4gY2xpY2sva2V5ZG93biDjg4/jg7Pjg4njg6nlhoXvvIjvvJ3jg6bjg7zjgrbjg7zmk43kvZzkuK3vvInjgYvjgonlkbzjgbbjgZPjgagKICBmdW5jdGlvbiBhY3F1aXJlTG9jYXRpb24oKSB7CiAgICBpZiAoISgiZ2VvbG9jYXRpb24iIGluIG5hdmlnYXRvcikpIHsKICAgICAgc2V0R3BzKGZhbHNlLCAiR1BT6Z2e5a++5b+cIik7CiAgICAgIHJldHVybjsKICAgIH0K').decode()
+          new1 = base64.b64decode('ICBmdW5jdGlvbiBzaG93R2VvbG9jYXRpb25VbnN1cHBvcnRlZCgpIHsKICAgIHNldEdwcyhmYWxzZSwgIkdQU+mdnuWvvuW/nCIpOwogICAgc2hvd0Vycm9yKAogICAgICAi5L2N572u5oOF5aCx44KS5Yip55So44Gn44GN44G+44Gb44KTIiwKICAgICAgIuOBk+OBruerr+acq+OBruODluODqeOCpuOCtuOBr+S9jee9ruaDheWgsUFQSeOBq+WvvuW/nOOBl+OBpuOBhOOBvuOBm+OCk+OAgjxicj48YnI+IiArCiAgICAgICLmsbrlrprjgafplonjgZjjgZ/lvozjgIHihpDihpLjgafku5bjga7mk43kvZzjgpLpgbjjgbnjgb7jgZnjgIIiLAogICAgICAiZ2VvbG9jYXRpb24tdW5zdXBwb3J0ZWQiCiAgICApOwogIH0KCiAgZnVuY3Rpb24gc3RhcnRHZW9sb2NhdGlvbigpIHsKICAgIGlmICghKCJnZW9sb2NhdGlvbiIgaW4gbmF2aWdhdG9yKSkgewogICAgICBzaG93R2VvbG9jYXRpb25VbnN1cHBvcnRlZCgpOwogICAgICByZXR1cm47CiAgICB9CiAgICBzZXRHcHMoZmFsc2UsICLil44g44KS5rG65a6a44Gn54++5Zyo5Zyw5Y+W5b6XIik7CiAgfQoKICAvLyDil47jg5zjgr/jg7Pjga4gY2xpY2sva2V5ZG93biDjg4/jg7Pjg4njg6nlhoXvvIjvvJ3jg6bjg7zjgrbjg7zmk43kvZzkuK3vvInjgYvjgonlkbzjgbbjgZPjgagKICBmdW5jdGlvbiBhY3F1aXJlTG9jYXRpb24oKSB7CiAgICBpZiAoISgiZ2VvbG9jYXRpb24iIGluIG5hdmlnYXRvcikpIHsKICAgICAgc2hvd0dlb2xvY2F0aW9uVW5zdXBwb3J0ZWQoKTsKICAgICAgcmV0dXJuOwogICAgfQo=').decode()
+          old2 = base64.b64decode('ICAgIGlmIChlcnJvclNvdXJjZSA9PT0gImdlb2xvY2F0aW9uIikgewogICAgICBpZiAoZS5rZXkgPT09ICJFbnRlciIgfHwgZS5rZXkgPT09ICIgIikgZG9BY3Rpb24oInJlY2VudGVyIik7CiAgICAgIGlmIChbIkFycm93TGVmdCIsICJBcnJvd1JpZ2h0IiwgIkFycm93VXAiLCAiQXJyb3dEb3duIiwgIkVudGVyIiwgIiAiXS5pbmRleE9mKGUua2V5KSA+PSAwKSB7CiAgICAgICAgZS5wcmV2ZW50RGVmYXVsdCgpOwogICAgICB9CiAgICAgIHJldHVybjsKICAgIH0KCiAgICBpZiAoZXJyb3JTb3VyY2UgPT09ICJjb21wYXNzIikgewo=').decode()
+          new2 = base64.b64decode('ICAgIGlmIChlcnJvclNvdXJjZSA9PT0gImdlb2xvYXRpb24iKSB7CiAgICAgIGlmIChlLmtleSA9PT0gIkVudGVyIiB8fCBlLmtleSA9PT0gIiAiKSBkb0FjdGlvbigicmVjZW50ZXIiKTsKICAgICAgaWYgKFsiQXJyb3dMZWZ0IiwgIkFycm93UmlnaHQiLCAiQXJyb3dVcCIsICJBcnJvd0Rvd24iLCAiRW50ZXIiLCAiICJdLmluZGV4T2YoZS5rZXkpID49IDApIHsKICAgICAgICBlLnByZXZlbnREZWZhdWx0KCk7CiAgICAgIH0KICAgICAgcmV0dXJuOwogICAgfQoKICAgIGlmIChlcnJvclNvdXJjZSA9PT0gImdlb2xvY2F0aW9uLXVuc3VwcG9ydGVkIikgewogICAgICBpZiAoZS5rZXkgPT09ICJFbnRlciIgfHwgZS5rZXkgPT09ICIgIikgY2xlYXJFcnJvcigiZ2VvbG9jYXRpb24tdW5zdXBwb3J0ZWQiKTsKICAgICAgaWYgKFsiQXJyb3dMZWZ0IiwgIkFycm93UmlnaHQiLCAiQXJyb3dVcCIsICJBcnJvd0Rvd24iLCAiRW50ZXIiLCAiICJdLmluZGV4T2YoZS5rZXkpID49IDApIHsKICAgICAgICBlLnByZXZlbnREZWZhdWx0KCk7CiAgICAgIH0KICAgICAgcmV0dXJuOwogICAgfQoKICAgIGlmIChlcnJvclNvdXJjZSA9PT0gImNvbXBhc3MiKSB7Cg==').decode()
+          if text.count(old1) != 1:
+              raise SystemExit(f'geolocation anchor count was {text.count(old1)}, expected 1')
+          text = text.replace(old1, new1, 1)
+          if text.count(old2) != 1:
+              raise SystemExit(f'D-pad anchor count was {text.count(old2)}, expected 1')
+          text = text.replace(old2, new2, 1)
           p.write_text(text)
           PY
           node --check js/app.js
