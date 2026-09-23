@@ -129,6 +129,8 @@
   function showError(titleHtml, bodyHtml, source = null) {
     if (errorSource === GOOGLE_MAPS_AUTH_ERROR_SOURCE &&
         source !== GOOGLE_MAPS_AUTH_ERROR_SOURCE) return;
+    if (errorSource === "google-maps-load" &&
+        source !== GOOGLE_MAPS_AUTH_ERROR_SOURCE) return;
     if (errorSource === "geolocation-reload" &&
         source !== GOOGLE_MAPS_AUTH_ERROR_SOURCE) return;
     errorSource = source;
@@ -139,6 +141,7 @@
 
   function clearError(source) {
     if (errorSource === GOOGLE_MAPS_AUTH_ERROR_SOURCE) return;
+    if (errorSource === "google-maps-load") return;
     if (errorSource === "geolocation-reload") return;
     if (errorSource !== source) return;
     errorSource = null;
