@@ -395,9 +395,19 @@
     accuracyCircle.setVisible(!coversViewport);
   }
 
+  function showGeolocationUnsupported() {
+    setGps(false, "GPS非対応");
+    showError(
+      "位置情報を利用できません",
+      "この端末のブラウザは位置情報APIに対応していません。<br><br>" +
+      "決定で閉じた後、←→で他の操作を選べます。",
+      "geolocation-unsupported"
+    );
+  }
+
   function startGeolocation() {
     if (!("geolocation" in navigator)) {
-      setGps(false, "GPS非対応");
+      showGeolocationUnsupported();
       return;
     }
     setGps(false, "◎ を決定で現在地取得");
@@ -406,7 +416,7 @@
   // ◎ボタンの click/keydown ハンドラ内（＝ユーザー操作中）から呼ぶこと
   function acquireLocation() {
     if (!("geolocation" in navigator)) {
-      setGps(false, "GPS非対応");
+      showGeolocationUnsupported();
       return;
     }
     clearGeoWatchRecoveryTimer();
@@ -2445,8 +2455,16 @@
       return;
     }
 
-    if (errorSource === "geolocation") {
+    if (errorSource === "geoloation") {
       if (e.key === "Enter" || e.key === " ") doAction("recenter");
+      if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "].indexOf(e.key) >= 0) {
+        e.preventDefault();
+      }
+      return;
+    }
+
+    if (errorSource === "geolocation-unsupported") {
+      if (e.key === "Enter" || e.key === " ") clearError("geolocation-unsupported");
       if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "].indexOf(e.key) >= 0) {
         e.preventDefault();
       }
