@@ -84,11 +84,11 @@ jobs:
           catch_body = recenter_body[clear_catch:next_reacquire]
           clear_fail_status = catch_body.find('setGps(false, "GPS再取得失敗");')
           clear_fail_error = catch_body.find(
-              'showError("位置情報を再取得できません", "◎ を決定で再試行してください。", "geolocation");'
+              'showError("位置情報を再取得できません", "決定で再試行してください。", "geolocation");'
           )
           clear_fail_return = catch_body.find('return;', clear_fail_error)
           if min(clear_fail_status, clear_fail_error, clear_fail_return) < 0:
-              raise SystemExit("clearWatch failure must surface an explicit ◎ retry state before returning")
+              raise SystemExit("clearWatch failure must surface an explicit retry state before returning")
           if not clear_fail_status < clear_fail_error < clear_fail_return:
               raise SystemExit("clearWatch failure must report the retryable state before returning")
           if 'geoWatchId = null;' in catch_body or 'geoWatchGeneration += 1;' in catch_body:
@@ -117,7 +117,7 @@ jobs:
           release_watch_pos = watch_sync_body.find('geoWatchId = null;')
           report_watch_status_pos = watch_sync_body.find('setGps(false, "GPS開始失敗");')
           report_watch_error_pos = watch_sync_body.find(
-              'showError("位置情報を開始できません", "◎ を決定で再試行してください。", "geolocation");'
+              'showError("位置情報を開始できません", "決定で再試行してください。", "geolocation");'
           )
           if min(invalidate_watch_pos, release_watch_pos, report_watch_status_pos, report_watch_error_pos) < 0:
               raise SystemExit("Synchronous watchPosition failure must leave an explicit retryable GPS error state")

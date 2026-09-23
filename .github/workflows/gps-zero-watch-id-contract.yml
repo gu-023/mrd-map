@@ -47,7 +47,7 @@ jobs:
             "geoWatchGeneration += 1;",
             "geoWatchId = null;",
             'setGps(false, "GPS開始失敗");',
-            'showError("位置情報を開始できません", "◎ を決定で再試行してください。", "geolocation");',
+            'showError("位置情報を開始できません", "決定で再試行してください。", "geolocation");',
             "return;",
           ]) {
             assert.ok(zeroBody.includes(snippet), `Zero watch ID recovery contract changed; missing: ${snippet}`);
@@ -133,7 +133,7 @@ jobs:
             "ID 0 must surface a retryable GPS start failure");
           assert.deepEqual(events.overlays.at(-1), [
             "位置情報を開始できません",
-            "◎ を決定で再試行してください。",
+            "決定で再試行してください。",
             "geolocation",
           ], "ID 0 must expose the retryable geolocation error source");
           const geoState = context.__readGeoState();
