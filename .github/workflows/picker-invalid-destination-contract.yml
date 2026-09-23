@@ -77,7 +77,7 @@ jobs:
             assert.strictEqual(errors.length, 1);
             assert.deepStrictEqual(
               Array.from(errors[0]),
-              ['目的地が無効です', '目的地をもう一度選択してください。', 'directions']
+              ['目的地が無効です', '目的地をもう一度選択してください。<br><br>矢印または決定で閉じられます。', 'directions']
             );
           }
 
