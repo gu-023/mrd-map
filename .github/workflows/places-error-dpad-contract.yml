@@ -161,3 +161,133 @@ jobs:
 
           console.log("Places error D-pad recovery contract OK");
           NODE
+
+      - name: Exercise synchronous Places initialization retry
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require("fs");
+          const vm = require("vm");
+
+          const source = fs.readFileSync("js/app.js", "utf8");
+          const openSearchStart = source.indexOf("  function openSearch() {");
+          const openSearchEnd = source.indexOf("\n  function closeSearch() {", openSearchStart + 1);
+          if (openSearchStart < 0 || openSearchEnd < 0) {
+            throw new Error("openSearch helper could not be located");
+          }
+          const openSearchSource = source.slice(openSearchStart, openSearchEnd);
+
+          const keydownStart = source.indexOf('  document.addEventListener("keydown", (e) => {');
+          const keydownBodyStart = source.indexOf("{", keydownStart) + 1;
+          const keydownEnd = source.indexOf(
+            "\n  });\n\n  // マウス/タップでも動くようにしておく",
+            keydownBodyStart,
+          );
+          if (keydownStart < 0 || keydownBodyStart <= 0 || keydownEnd < 0) {
+            throw new Error("keydown handler could not be located");
+          }
+          const keydownBodySource = source
+            .slice(keydownBodyStart, keydownEnd)
+            .replace(/^    /gm, "");
+
+          for (const retryKey of ["Enter", " "]) {
+            const context = {};
+            vm.createContext(context);
+            vm.runInContext(
+              'let googleMapsAuthFailed = false;\n' +
+                'let errorSource = null;\n' +
+                'let navRerouting = false;\n' +
+                'let routeRequestId = 0;\n' +
+                'let navMode = false;\n' +
+                'let routePreviousNavBanner = null;\n' +
+                'let placesSearchApi = null;\n' +
+                'let searchOpen = false;\n' +
+                'let menuOpen = true;\n' +
+                'let pickMode = false;\n' +
+                'let panMode = false;\n' +
+                'let searchQuery = "stale";\n' +
+                'let searchPredictions = [{ id: "stale" }];\n' +
+                'let searchLoading = true;\n' +
+                'let searchEmpty = true;\n' +
+                'let placeDetailsLoading = true;\n' +
+                'let searchZone = "preds";\n' +
+                'let keyIdx = 4;\n' +
+                'let predIdx = 3;\n' +
+                'let predictionBackZone = "keys";\n' +
+                'let searchReturnPrediction = { id: "stale" };\n' +
+                'let focusIdx = 0;\n' +
+                'const focusables = [{ dataset: { action: "zoom-in" } }];\n' +
+                'const document = { activeElement: null };\n' +
+                'let createAttempts = 0;\n' +
+                'let startSessionCalls = 0;\n' +
+                'let closeMenuCalls = 0;\n' +
+                'let renderSearchCalls = 0;\n' +
+                'let focusCalls = 0;\n' +
+                'let menuActivateCalls = 0;\n' +
+                'let showErrorCalls = [];\n' +
+                'let clearCalls = [];\n' +
+                'const els = { search: { classList: { remove() {} } }, searchQuery: { focus() { focusCalls += 1; } } };\n' +
+                'function createPlacesSearchApi() { createAttempts += 1; if (createAttempts === 1) throw new Error("sync init failure"); return { startSession() { startSessionCalls += 1; } }; }\n' +
+                'function showError(title, body, source) { errorSource = source; showErrorCalls.push({ title, body, source }); }\n' +
+                'function clearError(source) { clearCalls.push(source); if (errorSource === source) errorSource = null; }\n' +
+                'function closeMenu() { closeMenuCalls += 1; menuOpen = false; }\n' +
+                'function renderSearch() { renderSearchCalls += 1; }\n' +
+                'function clearDirectionsRequestTimeout() {}\n' +
+                'function setNavBanner() {}\n' +
+                'function searchKeydown() {}\n' +
+                'function menuMove() {}\n' +
+                'function menuBack() {}\n' +
+                'function menuActivate() { menuActivateCalls += 1; openSearch(); }\n' +
+                'function doAction() {}\n' +
+                'function moveFocus() {}\n' +
+                openSearchSource + '\n' +
+                'this.__openSearch = openSearch;\n' +
+                'this.__keydown = (e) => {' + keydownBodySource + '\n};\n' +
+                'this.__state = () => ({ errorSource, menuOpen, searchOpen, placesApiReady: placesSearchApi !== null, createAttempts, startSessionCalls, closeMenuCalls, renderSearchCalls, focusCalls, menuActivateCalls, showErrorCalls: showErrorCalls.map((call) => ({ ...call })), clearCalls: Array.from(clearCalls), searchQuery, searchPredictionsLength: searchPredictions.length, searchLoading, searchEmpty, placeDetailsLoading, searchZone, keyIdx, predIdx, predictionBackZone, searchReturnPrediction });',
+              context,
+            );
+
+            context.__openSearch();
+            let state = context.__state();
+            if (state.errorSource !== "places" || !state.menuOpen || state.searchOpen || state.placesApiReady) {
+              throw new Error(`${JSON.stringify(retryKey)} setup no longer leaves the visible menu owning the failed Places initialization`);
+            }
+            if (state.createAttempts !== 1 || state.startSessionCalls !== 0 || state.closeMenuCalls !== 0 ||
+                state.renderSearchCalls !== 0 || state.focusCalls !== 0) {
+              throw new Error(`${JSON.stringify(retryKey)} setup mutated search UI after synchronous Places initialization failure`);
+            }
+            if (state.showErrorCalls.length !== 1 || state.showErrorCalls[0].title !== "場所検索を開始できません" ||
+                state.showErrorCalls[0].source !== "places" ||
+                !state.showErrorCalls[0].body.includes("決定で再試行、矢印でメニューを操作できます。")) {
+              throw new Error(`${JSON.stringify(retryKey)} setup no longer exposes the menu-level Places recovery error`);
+            }
+
+            let preventDefaultCalls = 0;
+            context.__keydown({
+              key: retryKey,
+              isComposing: false,
+              keyCode: 0,
+              preventDefault() {
+                preventDefaultCalls += 1;
+              },
+            });
+            state = context.__state();
+            if (state.errorSource !== null || state.menuOpen || !state.searchOpen || !state.placesApiReady) {
+              throw new Error(`${JSON.stringify(retryKey)} no longer recovers from synchronous Places initialization failure`);
+            }
+            if (state.createAttempts !== 2 || state.startSessionCalls !== 1 || state.menuActivateCalls !== 1 ||
+                state.closeMenuCalls !== 1 || state.renderSearchCalls !== 1 || state.focusCalls !== 1) {
+              throw new Error(`${JSON.stringify(retryKey)} no longer retries openSearch exactly once through the visible menu`);
+            }
+            if (state.searchQuery !== "" || state.searchPredictionsLength !== 0 || state.searchLoading || state.searchEmpty ||
+                state.placeDetailsLoading || state.searchZone !== "input" || state.keyIdx !== 0 || state.predIdx !== 0 ||
+                state.predictionBackZone !== "input" || state.searchReturnPrediction !== null) {
+              throw new Error(`${JSON.stringify(retryKey)} retry no longer initializes a clean search session`);
+            }
+            if (preventDefaultCalls !== 1) {
+              throw new Error(`${JSON.stringify(retryKey)} retry was not consumed exactly once`);
+            }
+          }
+
+          console.log("Synchronous Places initialization retry contract OK");
+          NODE
