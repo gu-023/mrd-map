@@ -149,12 +149,13 @@
   }
 
   if (!cfg.GOOGLE_MAPS_API_KEY || cfg.GOOGLE_MAPS_API_KEY === "__GOOGLE_MAPS_API_KEY__") {
-    document.addEventListener("keydown", (e) => {
+    const handleMissingApiKeyDpad = (e) => {
       if (e.key === "Enter" || e.key === " ") location.reload();
       if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "].indexOf(e.key) >= 0) {
         e.preventDefault();
       }
-    });
+    };
+    document.addEventListener("keydown", handleMissingApiKeyDpad);
     showError(
       "APIキー未設定",
       "ローカル: <code>cp js/config.template.js js/config.js</code> してキーを設定。<br>" +
