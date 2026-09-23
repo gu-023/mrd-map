@@ -28,6 +28,25 @@ jobs:
           const vm = require("vm");
 
           const source = fs.readFileSync("js/app.js", "utf8");
+          const routeOriginGuidance = [
+            [
+              "現在地が古いため経路を開始できません",
+              "決定で現在地を更新してから、目的地をもう一度選んでください。",
+            ],
+            [
+              "現在地が未取得",
+              "先に決定で現在地を取得してください。",
+            ],
+          ];
+          for (const [title, body] of routeOriginGuidance) {
+            const titleIndex = source.indexOf(JSON.stringify(title));
+            const bodyIndex = source.indexOf(JSON.stringify(body), titleIndex);
+            const sourceIndex = source.indexOf(JSON.stringify("geolocation"), bodyIndex);
+            if (titleIndex < 0 || bodyIndex < 0 || sourceIndex < 0 || sourceIndex - bodyIndex > 220) {
+              throw new Error(`route-origin geolocation guidance drifted for ${title}`);
+            }
+          }
+
           const keydownStart = source.indexOf('  document.addEventListener("keydown", (e) => {');
           const keydownBodyStart = source.indexOf("{", keydownStart) + 1;
           const keydownEnd = source.indexOf(
