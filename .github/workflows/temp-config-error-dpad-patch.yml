@@ -16,7 +16,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: chatgpt/config-error-dpad-reload
-      - name: Patch missing-key D-pad recovery
+      - name: Format missing-key D-pad recovery
         shell: bash
         run: |
           python3 - <<'PY'
@@ -24,29 +24,34 @@ jobs:
 
           path = Path('js/app.js')
           source = path.read_text()
-          anchor = '  if (!cfg.GOOGLE_MAPS_API_KEY || cfg.GOOGLE_MAPS_API_KEY === "__GOOGLE_MAPS_API_KEY__") {\n    showError(\n'
-          replacement = '''  if (!cfg.GOOGLE_MAPS_API_KEY || cfg.GOOGLE_MAPS_API_KEY === "__GOOGLE_MAPS_API_KEY__") {
-            document.addEventListener("keydown", (e) => {
-              if (e.key === "Enter" || e.key === " ") location.reload();
-              if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "].indexOf(e.key) >= 0) {
-                e.preventDefault();
-              }
-            });
-            showError(
-          '''
-          if source.count(anchor) != 1:
-              raise SystemExit(f'expected one config-error anchor, found {source.count(anchor)}')
-          source = source.replace(anchor, replacement, 1)
-          body_anchor = '      "本番: GitHub Secret <code>GOOGLE_MAPS_API_KEY</code> を設定。<br>(README 参照)"\n'
-          body_replacement = '      "本番: GitHub Secret <code>GOOGLE_MAPS_API_KEY</code> を設定。<br>(README 参照)<br><br>" +\n      "設定反映後、決定で再読み込みできます。"\n'
-          if source.count(body_anchor) != 1:
-              raise SystemExit(f'expected one config body anchor, found {source.count(body_anchor)}')
-          path.write_text(source.replace(body_anchor, body_replacement, 1))
+          old = (
+              '  if (!cfg.GOOGLE_MAPS_API_KEY || cfg.GOOGLE_MAPS_API_KEY === "__GOOGLE_MAPS_API_KEY__") {\n'
+              '  document.addEventListener("keydown", (e) => {\n'
+              '    if (e.key === "Enter" || e.key === " ") location.reload();\n'
+              '    if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "].indexOf(e.key) >= 0) {\n'
+              '      e.preventDefault();\n'
+              '    }\n'
+              '  });\n'
+              '  showError(\n'
+          )
+          new = (
+              '  if (!cfg.GOOGLE_MAPS_API_KEY || cfg.GOOGLE_MAPS_API_KEY === "__GOOGLE_MAPS_API_KEY__") {\n'
+              '    document.addEventListener("keydown", (e) => {\n'
+              '      if (e.key === "Enter" || e.key === " ") location.reload();\n'
+              '      if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "].indexOf(e.key) >= 0) {\n'
+              '        e.preventDefault();\n'
+              '      }\n'
+              '    });\n'
+              '    showError(\n'
+          )
+          if source.count(old) != 1:
+              raise SystemExit(f'expected one malformed config block, found {source.count(old)}')
+          path.write_text(source.replace(old, new, 1))
           PY
           node --check js/app.js
           git diff --check
           git diff -- js/app.js
-      - name: Commit product patch
+      - name: Commit formatting patch
         shell: bash
         run: |
           if git diff --quiet -- js/app.js; then
@@ -56,5 +61,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add js/app.js
-          git commit -m "Make missing API key error D-pad reloadable"
+          git commit -m "Format missing API key D-pad handler"
           git push origin HEAD:chatgpt/config-error-dpad-reload
