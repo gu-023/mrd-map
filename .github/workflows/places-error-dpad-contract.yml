@@ -38,6 +38,16 @@ jobs:
             throw new Error("Places error guidance no longer matches the D-pad dismissal contract");
           }
 
+          const openSearchStart = source.indexOf("  function openSearch() {");
+          const openSearchEnd = source.indexOf("\n  function closeSearch() {", openSearchStart + 1);
+          if (openSearchStart < 0 || openSearchEnd < 0) {
+            throw new Error("openSearch helper could not be located");
+          }
+          const openSearchSource = source.slice(openSearchStart, openSearchEnd);
+          if (!openSearchSource.includes("決定で再試行、矢印でメニューを操作できます。")) {
+            throw new Error("Places initialization guidance no longer matches the visible-menu recovery contract");
+          }
+
           const keydownStart = source.indexOf('  document.addEventListener("keydown", (e) => {');
           const keydownBodyStart = source.indexOf("{", keydownStart) + 1;
           const keydownEnd = source.indexOf(
