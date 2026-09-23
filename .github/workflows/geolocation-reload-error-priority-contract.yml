@@ -69,6 +69,46 @@ jobs:
             context,
           );
 
+          context.__showError('Load terminal', 'reload required', 'google-maps-load');
+          assert.strictEqual(context.__getErrorSource(), 'google-maps-load');
+          assert.strictEqual(classes.has('hidden'), false, 'terminal load error must be visible');
+          const loadHtml = errorEl.innerHTML;
+
+          for (const laterSource of ['geolocation-reload', 'geolocation', 'compass', 'directions', 'storage', 'places', null]) {
+            context.__showError(`late ${laterSource}`, 'must not replace load recovery', laterSource);
+            assert.strictEqual(
+              context.__getErrorSource(),
+              'google-maps-load',
+              `${laterSource} replaced terminal load error ownership`,
+            );
+            assert.strictEqual(
+              errorEl.innerHTML,
+              loadHtml,
+              `${laterSource} replaced the reload-only load message`,
+            );
+          }
+
+          context.__clearError('google-maps-load');
+          assert.strictEqual(
+            context.__getErrorSource(),
+            'google-maps-load',
+            'matching clearError() must not release terminal load ownership',
+          );
+          assert.strictEqual(errorEl.innerHTML, loadHtml, 'clearError() changed terminal load content');
+          assert.strictEqual(classes.has('hidden'), false, 'clearError() hid terminal load recovery');
+
+          context.__showError('Auth after load', 'global auth recovery', 'google-maps-auth');
+          assert.strictEqual(
+            context.__getErrorSource(),
+            'google-maps-auth',
+            'global Google Maps auth failure must supersede load terminal ownership',
+          );
+
+          vm.runInContext(
+            'errorSource = null; els.error.innerHTML = ""; els.error.classList.add("hidden");',
+            context,
+          );
+
           context.__showError('GPS terminal', 'reload required', 'geolocation-reload');
           assert.strictEqual(context.__getErrorSource(), 'geolocation-reload');
           assert.strictEqual(classes.has('hidden'), false, 'terminal GPS error must be visible');
