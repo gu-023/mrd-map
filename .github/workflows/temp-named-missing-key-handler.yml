@@ -24,21 +24,23 @@ jobs:
 
           path = Path('js/app.js')
           source = path.read_text()
-          old = '''    document.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" || e.key === " ") location.reload();
-      if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "].indexOf(e.key) >= 0) {
-        e.preventDefault();
-      }
-    });
-'''
-          new = '''    const handleMissingApiKeyDpad = (e) => {
-      if (e.key === "Enter" || e.key === " ") location.reload();
-      if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "].indexOf(e.key) >= 0) {
-        e.preventDefault();
-      }
-    };
-    document.addEventListener("keydown", handleMissingApiKeyDpad);
-'''
+          old = (
+              '    document.addEventListener("keydown", (e) => {\n'
+              '      if (e.key === "Enter" || e.key === " ") location.reload();\n'
+              '      if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "].indexOf(e.key) >= 0) {\n'
+              '        e.preventDefault();\n'
+              '      }\n'
+              '    });\n'
+          )
+          new = (
+              '    const handleMissingApiKeyDpad = (e) => {\n'
+              '      if (e.key === "Enter" || e.key === " ") location.reload();\n'
+              '      if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "].indexOf(e.key) >= 0) {\n'
+              '        e.preventDefault();\n'
+              '      }\n'
+              '    };\n'
+              '    document.addEventListener("keydown", handleMissingApiKeyDpad);\n'
+          )
           if source.count(old) != 1:
               raise SystemExit(f'expected one missing-key handler, found {source.count(old)}')
           path.write_text(source.replace(old, new, 1))
