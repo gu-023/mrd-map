@@ -1,0 +1,115 @@
+name: Temporary geolocation unsupported patch
+
+on:
+  push:
+    branches:
+      - chatgpt/geolocation-unsupported-dpad-feedback
+    paths:
+      - .github/workflows/tmp-geolocation-unsupported-patch.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.event.head_commit.message == 'Add temporary geolocation unsupported patch helper'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chatgpt/geolocation-unsupported-dpad-feedback
+      - name: Patch unsupported geolocation D-pad feedback
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('js/app.js')
+          text = p.read_text()
+
+          old = '''  function startGeolocation() {
+    if (!("geolocation" in navigator)) {
+      setGps(false, "GPS非対応");
+      return;
+    }
+    setGps(false, "◎ を決定で現在地取得");
+  }
+
+  // ◎ボタンの click/keydown ハンドラ内（＝ユーザー操作中）から呼ぶこと
+  function acquireLocation() {
+    if (!("geolocation" in navigator)) {
+      setGps(false, "GPS非対応");
+      return;
+    }
+'''
+          new = '''  function showGeolocationUnsupported() {
+    setGps(false, "GPS非対応");
+    showError(
+      "位置情報を利用できません",
+      "この端末のブラウザは位置情報APIに対応していません。<br><br>" +
+      "決定で閉じた後、←→で他の操作を選べます。",
+      "geolocation-unsupported"
+    );
+  }
+
+  function startGeolocation() {
+    if (!("geolocation" in navigator)) {
+      showGeolocationUnsupported();
+      return;
+    }
+    setGps(false, "◎ を決定で現在地取得");
+  }
+
+  // ◎ボタンの click/keydown ハンドラ内（＝ユーザー操作中）から呼ぶこと
+  function acquireLocation() {
+    if (!("geolocation" in navigator)) {
+      showGeolocationUnsupported();
+      return;
+    }
+'''
+          if text.count(old) != 1:
+              raise SystemExit(f'geolocation anchor count was {text.count(old)}, expected 1')
+          text = text.replace(old, new, 1)
+
+          old = '''    if (errorSource === "geolocation") {
+      if (e.key === "Enter" || e.key === " ") doAction("recenter");
+      if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "].indexOf(e.key) >= 0) {
+        e.preventDefault();
+      }
+      return;
+    }
+
+    if (errorSource === "compass") {
+'''
+          new = '''    if (errorSource === "geolocation") {
+      if (e.key === "Enter" || e.key === " ") doAction("recenter");
+      if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "].indexOf(e.key) >= 0) {
+        e.preventDefault();
+      }
+      return;
+    }
+
+    if (errorSource === "geolocation-unsupported") {
+      if (e.key === "Enter" || e.key === " ") clearError("geolocation-unsupported");
+      if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "].indexOf(e.key) >= 0) {
+        e.preventDefault();
+      }
+      return;
+    }
+
+    if (errorSource === "compass") {
+'''
+          if text.count(old) != 1:
+              raise SystemExit(f'D-pad anchor count was {text.count(old)}, expected 1')
+          text = text.replace(old, new, 1)
+          p.write_text(text)
+          PY
+          node --check js/app.js
+          git diff --check
+      - name: Commit product change
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add js/app.js
+          git commit -m 'Explain unsupported geolocation on D-pad'
+          git push origin HEAD:chatgpt/geolocation-unsupported-dpad-feedback
