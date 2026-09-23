@@ -87,7 +87,7 @@
   let navBounds = null; // ルート全体の範囲（プレビュー用）
   let zoomedForTurn = false; // 曲がり角ズーム中か
   // 信号機（OpenStreetMap）
-  let signalsOn = true;
+  let signalsOn = false; // External Overpass lookup is opt-in from the navigation menu.
   let signalData = [];
   let signalMarkers = [];
   const OVERPASS_REQUEST_TIMEOUT_MS = 25000; // server側20秒に通信余裕を加えたclient上限
