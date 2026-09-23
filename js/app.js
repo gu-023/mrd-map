@@ -2333,7 +2333,7 @@
     } else {
       body = "現在地を特定できません。屋外/窓際で ◎ を決定して再取得してください。";
     }
-    showError("位置情報を取得できません", body + "<br><br>◎ 再取得 / ↻ 再読み込み", "geolocation");
+    showError("位置情報を取得できません", body, "geolocation");
   }
 
   function setGps(on, text) {
