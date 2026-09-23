@@ -564,7 +564,11 @@
     } else if (DOE) {
       start();
     } else {
-      showError("方位センサー非対応", "この端末では向き連動を利用できません。", "compass");
+      showError(
+        "方位センサー非対応",
+        "この端末では向き連動を利用できません。<br><br>決定で閉じた後、←→で他の操作を選べます。",
+        "compass-unsupported"
+      );
     }
   }
 
@@ -2465,6 +2469,14 @@
 
     if (errorSource === "geolocation-unsupported") {
       if (e.key === "Enter" || e.key === " ") clearError("geolocation-unsupported");
+      if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "].indexOf(e.key) >= 0) {
+        e.preventDefault();
+      }
+      return;
+    }
+
+    if (errorSource === "compass-unsupported") {
+      if (e.key === "Enter" || e.key === " ") clearError("compass-unsupported");
       if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "].indexOf(e.key) >= 0) {
         e.preventDefault();
       }

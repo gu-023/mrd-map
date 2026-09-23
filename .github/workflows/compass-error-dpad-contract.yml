@@ -38,6 +38,10 @@ jobs:
           if (keydownStart < 0 || keydownBodyStart <= 0 || keydownEnd < 0) {
             throw new Error("keydown handler could not be located");
           }
+          if (!source.includes('"compass-unsupported"') ||
+              !source.includes("決定で閉じた後、←→で他の操作を選べます。")) {
+            throw new Error("unsupported compass dismiss contract missing");
+          }
 
           const keydownBodySource = source
             .slice(keydownBodyStart, keydownEnd)
@@ -56,11 +60,13 @@ jobs:
               'const focusables = [{ dataset: { action: "zoom-in" } }];\n' +
               'let actionCalls = [];\n' +
               'let focusMoves = [];\n' +
+              'let clearCalls = [];\n' +
               'function doAction(action) { actionCalls.push(action); }\n' +
               'function moveFocus(delta) { focusMoves.push(delta); }\n' +
+              'function clearError(source) { clearCalls.push(source); if (errorSource === source) errorSource = null; }\n' +
               'this.__keydown = (e) => {' + keydownBodySource + '\n};\n' +
-              'this.__reset = () => { errorSource = "compass"; actionCalls = []; focusMoves = []; };\n' +
-              'this.__state = () => ({ errorSource, actionCalls: Array.from(actionCalls), focusMoves: Array.from(focusMoves) });',
+              'this.__reset = (source = "compass") => { errorSource = source; actionCalls = []; focusMoves = []; clearCalls = []; };\n' +
+              'this.__state = () => ({ errorSource, actionCalls: Array.from(actionCalls), focusMoves: Array.from(focusMoves), clearCalls: Array.from(clearCalls) });',
             context,
           );
 
@@ -77,8 +83,8 @@ jobs:
             if (state.errorSource !== "compass") {
               throw new Error(`${key} unexpectedly dismissed the compass error`);
             }
-            if (state.actionCalls.length !== 0 || state.focusMoves.length !== 0) {
-              throw new Error(`${key} leaked into hidden main controls`);
+            if (state.actionCalls.length !== 0 || state.focusMoves.length !== 0 || state.clearCalls.length !== 0) {
+              throw new Error(`${key} leaked out of the retryable compass error`);
             }
             if (preventDefaultCalls !== 1) {
               throw new Error(`${key} was not consumed exactly once`);
@@ -98,11 +104,55 @@ jobs:
             if (state.actionCalls.length !== 1 || state.actionCalls[0] !== "toggle-compass") {
               throw new Error(`${JSON.stringify(key)} did not retry compass deterministically`);
             }
-            if (state.focusMoves.length !== 0) {
-              throw new Error(`${JSON.stringify(key)} moved hidden focus`);
+            if (state.focusMoves.length !== 0 || state.clearCalls.length !== 0) {
+              throw new Error(`${JSON.stringify(key)} leaked out of the retryable compass error`);
             }
             if (preventDefaultCalls !== 1) {
               throw new Error(`${JSON.stringify(key)} was not consumed exactly once`);
+            }
+          }
+
+          for (const key of ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"]) {
+            context.__reset("compass-unsupported");
+            let preventDefaultCalls = 0;
+            context.__keydown({
+              key,
+              preventDefault() {
+                preventDefaultCalls += 1;
+              },
+            });
+            const state = context.__state();
+            if (state.errorSource !== "compass-unsupported") {
+              throw new Error(`${key} unexpectedly dismissed the unsupported compass error`);
+            }
+            if (state.actionCalls.length !== 0 || state.focusMoves.length !== 0 || state.clearCalls.length !== 0) {
+              throw new Error(`${key} leaked into hidden controls from the unsupported compass error`);
+            }
+            if (preventDefaultCalls !== 1) {
+              throw new Error(`${key} was not consumed exactly once for unsupported compass`);
+            }
+          }
+
+          for (const key of ["Enter", " "]) {
+            context.__reset("compass-unsupported");
+            let preventDefaultCalls = 0;
+            context.__keydown({
+              key,
+              preventDefault() {
+                preventDefaultCalls += 1;
+              },
+            });
+            const state = context.__state();
+            if (state.errorSource !== null ||
+                state.clearCalls.length !== 1 ||
+                state.clearCalls[0] !== "compass-unsupported") {
+              throw new Error(`${JSON.stringify(key)} did not dismiss unsupported compass deterministically`);
+            }
+            if (state.actionCalls.length !== 0 || state.focusMoves.length !== 0) {
+              throw new Error(`${JSON.stringify(key)} retried or moved hidden focus for unsupported compass`);
+            }
+            if (preventDefaultCalls !== 1) {
+              throw new Error(`${JSON.stringify(key)} was not consumed exactly once for unsupported compass`);
             }
           }
 
