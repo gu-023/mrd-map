@@ -24,16 +24,8 @@ jobs:
 
           path = Path('js/app.js')
           source = path.read_text()
-          old = '''  if (!cfg.GOOGLE_MAPS_API_KEY || cfg.GOOGLE_MAPS_API_KEY === "__GOOGLE_MAPS_API_KEY__") {
-            showError(
-              "APIキー未設定",
-              "ローカル: <code>cp js/config.template.js js/config.js</code> してキーを設定。<br>" +
-              "本番: GitHub Secret <code>GOOGLE_MAPS_API_KEY</code> を設定。<br>(README 参照)"
-            );
-            return;
-          }
-          '''
-          new = '''  if (!cfg.GOOGLE_MAPS_API_KEY || cfg.GOOGLE_MAPS_API_KEY === "__GOOGLE_MAPS_API_KEY__") {
+          anchor = '  if (!cfg.GOOGLE_MAPS_API_KEY || cfg.GOOGLE_MAPS_API_KEY === "__GOOGLE_MAPS_API_KEY__") {\n    showError(\n'
+          replacement = '''  if (!cfg.GOOGLE_MAPS_API_KEY || cfg.GOOGLE_MAPS_API_KEY === "__GOOGLE_MAPS_API_KEY__") {
             document.addEventListener("keydown", (e) => {
               if (e.key === "Enter" || e.key === " ") location.reload();
               if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "].indexOf(e.key) >= 0) {
@@ -41,17 +33,15 @@ jobs:
               }
             });
             showError(
-              "APIキー未設定",
-              "ローカル: <code>cp js/config.template.js js/config.js</code> してキーを設定。<br>" +
-              "本番: GitHub Secret <code>GOOGLE_MAPS_API_KEY</code> を設定。<br>(README 参照)<br><br>" +
-              "設定反映後、決定で再読み込みできます。"
-            );
-            return;
-          }
           '''
-          if source.count(old) != 1:
-              raise SystemExit(f'expected one config-error block, found {source.count(old)}')
-          path.write_text(source.replace(old, new))
+          if source.count(anchor) != 1:
+              raise SystemExit(f'expected one config-error anchor, found {source.count(anchor)}')
+          source = source.replace(anchor, replacement, 1)
+          body_anchor = '      "本番: GitHub Secret <code>GOOGLE_MAPS_API_KEY</code> を設定。<br>(README 参照)"\n'
+          body_replacement = '      "本番: GitHub Secret <code>GOOGLE_MAPS_API_KEY</code> を設定。<br>(README 参照)<br><br>" +\n      "設定反映後、決定で再読み込みできます。"\n'
+          if source.count(body_anchor) != 1:
+              raise SystemExit(f'expected one config body anchor, found {source.count(body_anchor)}')
+          path.write_text(source.replace(body_anchor, body_replacement, 1))
           PY
           node --check js/app.js
           git diff --check
