@@ -50,7 +50,8 @@ jobs:
           git add js/app.js .github/workflows/chatgpt-route-origin-guidance-patch.yml
           git diff --cached --check
           changed="$(git diff --cached --name-only)"
-          test "$changed" = "js/app.js" || {
+          expected=$'.github/workflows/chatgpt-route-origin-guidance-patch.yml\njs/app.js'
+          test "$changed" = "$expected" || {
             echo "Unexpected staged paths:" >&2
             printf '%s\n' "$changed" >&2
             exit 1
