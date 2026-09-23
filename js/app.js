@@ -547,19 +547,19 @@
             compassPermissionPending = false;
             clearCompassPermissionWatchdog();
             if (state === "granted") start();
-            else showError("方位センサーが拒否されました", "🧭 を決定でもう一度試してください。", "compass");
+            else showError("方位センサーが拒否されました", "決定でもう一度試してください。", "compass");
           })
           .catch(() => {
             if (!isCurrentRequest()) return;
             compassPermissionPending = false;
             clearCompassPermissionWatchdog();
-            showError("方位センサーを開始できません", "🧭 を決定で再試行。", "compass");
+            showError("方位センサーを開始できません", "決定で再試行。", "compass");
           });
       } catch (_) {
         if (!isCurrentRequest()) return;
         compassPermissionPending = false;
         clearCompassPermissionWatchdog();
-        showError("方位センサーを開始できません", "🧭 を決定で再試行。", "compass");
+        showError("方位センサーを開始できません", "決定で再試行。", "compass");
       }
     } else if (DOE) {
       start();
@@ -588,7 +588,7 @@
       if (requestId !== compassPermissionRequestId || !compassPermissionPending) return;
       compassPermissionPending = false;
       compassPermissionRequestId += 1;
-      showError("方位センサーが応答しません", "🧭 を決定で再試行してください。", "compass");
+      showError("方位センサーが応答しません", "決定で再試行してください。", "compass");
     }, COMPASS_PERMISSION_PENDING_TIMEOUT_MS);
   }
 
@@ -602,7 +602,7 @@
       if (document.visibilityState === "hidden") return;
       if (requestId !== compassPermissionRequestId || !compassOn || headingInitialized) return;
       disableCompass();
-      showError("方位センサーが応答しません", "🧭 を決定で再試行してください。", "compass");
+      showError("方位センサーが応答しません", "決定で再試行してください。", "compass");
     }, COMPASS_FIRST_READING_TIMEOUT_MS);
   }
 
@@ -623,7 +623,7 @@
         return;
       }
       disableCompass();
-      showError("方位センサーの更新が停止しました", "🧭 を決定で再試行してください。", "compass");
+      showError("方位センサーの更新が停止しました", "決定で再試行してください。", "compass");
     };
     compassStreamSilenceTimer = setTimeout(checkForSilence, COMPASS_STREAM_SILENCE_TIMEOUT_MS);
   }
