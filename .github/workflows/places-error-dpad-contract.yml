@@ -28,6 +28,16 @@ jobs:
           const vm = require("vm");
 
           const source = fs.readFileSync("js/app.js", "utf8");
+          const placesDetailStart = source.indexOf("  function placesErrorDetail(status) {");
+          const placesDetailEnd = source.indexOf("\n  function ", placesDetailStart + 1);
+          if (placesDetailStart < 0 || placesDetailEnd < 0) {
+            throw new Error("placesErrorDetail helper could not be located");
+          }
+          const placesDetailSource = source.slice(placesDetailStart, placesDetailEnd);
+          if (!placesDetailSource.includes("矢印または決定で閉じて検索を続けられます。")) {
+            throw new Error("Places error guidance no longer matches the D-pad dismissal contract");
+          }
+
           const keydownStart = source.indexOf('  document.addEventListener("keydown", (e) => {');
           const keydownBodyStart = source.indexOf("{", keydownStart) + 1;
           const keydownEnd = source.indexOf(
