@@ -1,0 +1,109 @@
+name: Guard geolocation error D-pad retry
+
+on:
+  pull_request:
+    paths:
+      - js/app.js
+      - .github/workflows/geolocation-error-dpad-contract.yml
+  push:
+    branches: [main]
+    paths:
+      - js/app.js
+      - .github/workflows/geolocation-error-dpad-contract.yml
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Exercise retryable geolocation error D-pad ownership
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require("fs");
+          const vm = require("vm");
+
+          const source = fs.readFileSync("js/app.js", "utf8");
+          const keydownStart = source.indexOf('  document.addEventListener("keydown", (e) => {');
+          const keydownBodyStart = source.indexOf("{", keydownStart) + 1;
+          const keydownEnd = source.indexOf(
+            "\n  });\n\n  // マウス/タップでも動くようにしておく",
+            keydownBodyStart,
+          );
+
+          if (keydownStart < 0 || keydownBodyStart <= 0 || keydownEnd < 0) {
+            throw new Error("keydown handler could not be located");
+          }
+
+          const keydownBodySource = source
+            .slice(keydownBodyStart, keydownEnd)
+            .replace(/^    /gm, "");
+
+          const context = {};
+          vm.createContext(context);
+          vm.runInContext(
+            'let googleMapsAuthFailed = false;\n' +
+              'let errorSource = "geolocation";\n' +
+              'let searchOpen = false;\n' +
+              'let menuOpen = false;\n' +
+              'let pickMode = false;\n' +
+              'let panMode = false;\n' +
+              'let focusIdx = 0;\n' +
+              'const focusables = [{ dataset: { action: "zoom-in" } }];\n' +
+              'const els = { searchQuery: {} };\n' +
+              'const document = { activeElement: null };\n' +
+              'let actionCalls = [];\n' +
+              'let clearCalls = [];\n' +
+              'let focusMoves = [];\n' +
+              'function doAction(action) { actionCalls.push(action); }\n' +
+              'function clearError(source) { clearCalls.push(source); }\n' +
+              'function moveFocus(delta) { focusMoves.push(delta); }\n' +
+              'function searchKeydown() { throw new Error("search must not receive geolocation error input"); }\n' +
+              'function menuMove() { throw new Error("menu must not receive geolocation error input"); }\n' +
+              'function menuBack() { throw new Error("menu must not receive geolocation error input"); }\n' +
+              'function menuActivate() { throw new Error("menu must not receive geolocation error input"); }\n' +
+              'function setPanMode() { throw new Error("pan mode must not receive geolocation error input"); }\n' +
+              'function confirmDestination() { throw new Error("picker must not receive geolocation error input"); }\n' +
+              'this.__keydown = (e) => {' + keydownBodySource + '\n};\n' +
+              'this.__reset = () => { errorSource = "geolocation"; actionCalls = []; clearCalls = []; focusMoves = []; };\n' +
+              'this.__state = () => ({ errorSource, actionCalls: Array.from(actionCalls), clearCalls: Array.from(clearCalls), focusMoves: Array.from(focusMoves) });',
+            context,
+          );
+
+          for (const key of ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Enter", " "]) {
+            context.__reset();
+            let preventDefaultCalls = 0;
+            context.__keydown({
+              key,
+              isComposing: false,
+              keyCode: 0,
+              preventDefault() {
+                preventDefaultCalls += 1;
+              },
+            });
+            const state = context.__state();
+            const shouldRetry = key === "Enter" || key === " ";
+            if (shouldRetry) {
+              if (state.actionCalls.length !== 1 || state.actionCalls[0] !== "recenter") {
+                throw new Error(`${JSON.stringify(key)} did not retry geolocation through recenter`);
+              }
+            } else if (state.actionCalls.length !== 0) {
+              throw new Error(`${JSON.stringify(key)} unexpectedly retried geolocation`);
+            }
+            if (state.clearCalls.length !== 0 || state.focusMoves.length !== 0) {
+              throw new Error(`${JSON.stringify(key)} leaked through the geolocation error overlay`);
+            }
+            if (state.errorSource !== "geolocation") {
+              throw new Error(`${JSON.stringify(key)} changed error ownership directly`);
+            }
+            if (preventDefaultCalls !== 1) {
+              throw new Error(`${JSON.stringify(key)} was not consumed exactly once`);
+            }
+          }
+
+          console.log("Retryable geolocation error D-pad contract OK");
+          NODE
