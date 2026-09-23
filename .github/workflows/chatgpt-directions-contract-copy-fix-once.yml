@@ -1,0 +1,64 @@
+name: ChatGPT one-shot Directions contract copy fix
+
+on:
+  push:
+    branches:
+      - chatgpt/clarify-directions-error-dismissal
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chatgpt/clarify-directions-error-dismissal
+          fetch-depth: 0
+
+      - name: Update intentional copy expectations
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          replacements = {
+              Path('.github/workflows/picker-invalid-destination-contract.yml'): [
+                  (
+                      "['目的地が無効です', '目的地をもう一度選択してください。', 'directions']",
+                      "['目的地が無効です', '目的地をもう一度選択してください。<br><br>矢印または決定で閉じられます。', 'directions']",
+                  ),
+              ],
+              Path('.github/workflows/directions-malformed-geometry-contract.yml'): [
+                  (
+                      '"経路データが不完全です。もう一度お試しください。",',
+                      '"経路データが不完全です。もう一度お試しください。<br><br>矢印または決定で閉じられます。",',
+                  ),
+              ],
+          }
+
+          for path, pairs in replacements.items():
+              text = path.read_text()
+              for old, new in pairs:
+                  count = text.count(old)
+                  if count != 1:
+                      raise SystemExit(f'{path}: expected exactly one match, found {count}: {old}')
+                  text = text.replace(old, new, 1)
+              path.write_text(text)
+          PY
+
+      - name: Validate contract-only patch
+        run: |
+          git diff --check
+          grep -Fq "目的地をもう一度選択してください。<br><br>矢印または決定で閉じられます。" .github/workflows/picker-invalid-destination-contract.yml
+          grep -Fq "経路データが不完全です。もう一度お試しください。<br><br>矢印または決定で閉じられます。" .github/workflows/directions-malformed-geometry-contract.yml
+
+      - name: Commit contract updates and remove helper
+        run: |
+          rm .github/workflows/chatgpt-directions-contract-copy-fix-once.yml
+          git add -A
+          git diff --cached --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Update Directions copy contract expectations"
+          git push origin HEAD:chatgpt/clarify-directions-error-dismissal
