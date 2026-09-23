@@ -19,9 +19,6 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: chatgpt/guard-auth-clear-terminal
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
       - name: Patch clearError terminal auth guard
         shell: bash
         run: |
@@ -29,21 +26,10 @@ jobs:
           const fs = require('fs');
           const path = 'js/app.js';
           let source = fs.readFileSync(path, 'utf8');
-          const before = `  function clearError(source) {
-            if (errorSource !== source) return;
-            errorSource = null;
-            els.error.classList.add("hidden");
-          }`.replace(/^            /gm, '');
-          const after = `  function clearError(source) {
-            if (errorSource === GOOGLE_MAPS_AUTH_ERROR_SOURCE) return;
-            if (errorSource !== source) return;
-            errorSource = null;
-            els.error.classList.add("hidden");
-          }`.replace(/^            /gm, '');
+          const before = '  function clearError(source) {\n    if (errorSource !== source) return;';
+          const after = '  function clearError(source) {\n    if (errorSource === GOOGLE_MAPS_AUTH_ERROR_SOURCE) return;\n    if (errorSource !== source) return;';
           const occurrences = source.split(before).length - 1;
-          if (occurrences !== 1) {
-            throw new Error(`expected one clearError anchor, found ${occurrences}`);
-          }
+          if (occurrences !== 1) throw new Error(`expected one clearError anchor, found ${occurrences}`);
           source = source.replace(before, after);
           fs.writeFileSync(path, source);
           NODE
