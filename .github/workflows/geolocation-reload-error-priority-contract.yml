@@ -62,7 +62,9 @@ jobs:
               'const GOOGLE_MAPS_AUTH_ERROR_SOURCE = "google-maps-auth";\n' +
               'const els = { error: __errorEl };\n' +
               extractFunction('showError') + '\n' +
+              extractFunction('clearError') + '\n' +
               'this.__showError = showError;\n' +
+              'this.__clearError = clearError;\n' +
               'this.__getErrorSource = () => errorSource;',
             context,
           );
@@ -108,6 +110,15 @@ jobs:
               `${laterSource} replaced the reload-only auth message`,
             );
           }
+
+          context.__clearError('google-maps-auth');
+          assert.strictEqual(
+            context.__getErrorSource(),
+            'google-maps-auth',
+            'matching clearError() must not release terminal auth ownership',
+          );
+          assert.strictEqual(errorEl.innerHTML, authHtml, 'clearError() changed terminal auth content');
+          assert.strictEqual(classes.has('hidden'), false, 'clearError() hid terminal auth recovery');
 
           console.log('Terminal error priority contract OK');
           NODE
