@@ -1,0 +1,56 @@
+name: Temporary align compass retry guidance
+
+on:
+  push:
+    branches:
+      - chatgpt/align-compass-retry-guidance
+    paths:
+      - .github/workflows/tmp-align-compass-retry-guidance.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: chatgpt/align-compass-retry-guidance
+
+      - name: Align retryable compass copy with D-pad recovery
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("js/app.js")
+          text = path.read_text()
+          replacements = {
+              "🧭 を決定でもう一度試してください。": ("決定でもう一度試してください。", 1),
+              "🧭 を決定で再試行。": ("決定で再試行。", 2),
+              "🧭 を決定で再試行してください。": ("決定で再試行してください。", 3),
+          }
+          for old, (new, expected) in replacements.items():
+              actual = text.count(old)
+              if actual != expected:
+                  raise SystemExit(f"expected {expected} occurrences of {old!r}, found {actual}")
+              text = text.replace(old, new)
+          if "🧭 を決定" in text:
+              raise SystemExit("stale compass-control retry guidance remains")
+          path.write_text(text)
+          PY
+          node --check js/app.js
+          git diff --check
+          git diff -- js/app.js
+
+      - name: Commit product change and remove helper
+        shell: bash
+        run: |
+          rm .github/workflows/tmp-align-compass-retry-guidance.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --check
+          git commit -m "Align compass retry guidance with D-pad"
+          git push origin HEAD:chatgpt/align-compass-retry-guidance
