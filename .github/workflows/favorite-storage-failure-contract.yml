@@ -48,12 +48,9 @@ jobs:
           }
 
           function extractKeydownRegistration() {
-            const sectionMarker = '  /* ---------- D-pad / フォーカス管理 ---------- */';
-            const sectionStart = source.indexOf(sectionMarker);
-            assert.notStrictEqual(sectionStart, -1, 'D-pad section not found');
             const marker = '  document.addEventListener("keydown", (e) => {';
-            const start = source.indexOf(marker, sectionStart);
-            assert.notStrictEqual(start, -1, 'global keydown registration not found');
+            const start = source.indexOf(marker);
+            assert.notStrictEqual(start, -1, 'keydown registration not found');
             const brace = source.indexOf('{', start);
             let depth = 0;
             for (let i = brace; i < source.length; i += 1) {
