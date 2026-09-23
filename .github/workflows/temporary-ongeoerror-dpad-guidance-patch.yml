@@ -1,0 +1,66 @@
+name: Temporary GPS error guidance patch helper
+
+on:
+  push:
+    branches:
+      - chatgpt/align-ongeoerror-dpad-guidance
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: chatgpt/align-ongeoerror-dpad-guidance
+
+      - name: Align onGeoError guidance with direct D-pad retry
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path("js/app.js")
+          source = path.read_text()
+          replacements = [
+              (
+                  'body = "◎ を決定して、表示される許可を承認してください。";',
+                  'body = "決定で再試行し、表示される許可を承認してください。";',
+              ),
+              (
+                  'body = "現在地の取得に時間がかかっています。◎ を決定で再取得してください。";',
+                  'body = "現在地の取得に時間がかかっています。決定で再取得してください。";',
+              ),
+              (
+                  'body = "現在地を特定できません。屋外/窓際で ◎ を決定して再取得してください。";',
+                  'body = "現在地を特定できません。屋外/窓際で決定して再取得してください。";',
+              ),
+          ]
+
+          old_counts = [source.count(old) for old, _ in replacements]
+          new_counts = [source.count(new) for _, new in replacements]
+          if old_counts == [0, 0, 0] and new_counts == [1, 1, 1]:
+              print("GPS error guidance already aligned")
+          else:
+              if old_counts != [1, 1, 1]:
+                  raise SystemExit(f"unexpected old guidance counts: {old_counts}")
+              for old, new in replacements:
+                  source = source.replace(old, new)
+              path.write_text(source)
+          PY
+
+          node --check js/app.js
+          git diff --check
+
+          if git diff --quiet -- js/app.js; then
+            echo "No product change required"
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add js/app.js
+          git commit -m "Align GPS error retry guidance with D-pad"
+          git push
