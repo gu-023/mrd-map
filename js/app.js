@@ -447,7 +447,7 @@
       requestValid = false;
       if (requestId === geoOneShotRequestId) geoOneShotRequestId += 1;
       setGps(false, "GPS開始失敗");
-      showError("位置情報を開始できません", "◎ を決定で再試行してください。", "geolocation");
+      showError("位置情報を開始できません", "決定で再試行してください。", "geolocation");
     }
     // 一度許可が通れば継続更新を開始（多重登録は防ぐ）
     if (geoWatchId === null) {
@@ -471,7 +471,7 @@
           geoWatchGeneration += 1;
           geoWatchId = null;
           setGps(false, "GPS開始失敗");
-          showError("位置情報を開始できません", "◎ を決定で再試行してください。", "geolocation");
+          showError("位置情報を開始できません", "決定で再試行してください。", "geolocation");
           return;
         }
         if (!Number.isInteger(watchId) || watchId < 0) {
@@ -487,7 +487,7 @@
         geoWatchGeneration += 1;
         geoWatchId = null;
         setGps(false, "GPS開始失敗");
-        showError("位置情報を開始できません", "◎ を決定で再試行してください。", "geolocation");
+        showError("位置情報を開始できません", "決定で再試行してください。", "geolocation");
       }
     }
   }
@@ -2388,7 +2388,7 @@
             geoWatchId = null;
           } catch (_) {
             setGps(false, "GPS再取得失敗");
-            showError("位置情報を再取得できません", "◎ を決定で再試行してください。", "geolocation");
+            showError("位置情報を再取得できません", "決定で再試行してください。", "geolocation");
             return;
           }
         }
