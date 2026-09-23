@@ -1329,7 +1329,7 @@
       ? "<br>APIキーの制限と <b>Places API</b> の有効化を確認してください。"
       : "";
     const code = status && status.code ? escapeHtml(status.code) : "UNKNOWN";
-    return `ステータス: <code>${code}</code>${hint}`;
+    return `ステータス: <code>${code}</code>${hint}<br><br>矢印または決定で閉じて検索を続けられます。`;
   }
 
   function refreshPredictions(returnPrediction = null) {
