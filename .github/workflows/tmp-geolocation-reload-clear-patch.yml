@@ -24,12 +24,23 @@ jobs:
 
           path = Path('js/app.js')
           text = path.read_text()
-          old = '    if (errorSource === GOOGLE_MAPS_AUTH_ERROR_SOURCE) return;\n'
-          new = old + '    if (errorSource === "geolocation-reload") return;\n'
-          count = text.count(old)
-          if count != 1:
-              raise SystemExit(f'expected one auth clear guard, found {count}')
-          path.write_text(text.replace(old, new, 1))
+          function_marker = '  function clearError(source) {\n'
+          auth_guard = '    if (errorSource === GOOGLE_MAPS_AUTH_ERROR_SOURCE) return;\n'
+          reload_guard = '    if (errorSource === "geolocation-reload") return;\n'
+          start = text.find(function_marker)
+          if start == -1:
+              raise SystemExit('clearError function not found')
+          end = text.find('  }\n', start)
+          if end == -1:
+              raise SystemExit('clearError function end not found')
+          body = text[start:end]
+          if reload_guard in body:
+              raise SystemExit('geolocation reload clear guard already present')
+          guard_at = body.find(auth_guard)
+          if guard_at == -1:
+              raise SystemExit('auth clear guard not found inside clearError')
+          insert_at = start + guard_at + len(auth_guard)
+          path.write_text(text[:insert_at] + reload_guard + text[insert_at:])
           PY
           node --check js/app.js
           git diff --check
