@@ -1,0 +1,81 @@
+name: Temporary Overpass route-corridor patch
+
+on:
+  push:
+    branches:
+      - chatgpt/overpass-route-corridor
+    paths:
+      - .github/workflows/chatgpt-overpass-route-corridor-patch.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.event.head_commit.message == 'Add temporary Overpass corridor patch workflow'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: chatgpt/overpass-route-corridor
+
+      - name: Scope traffic-signal query to the route corridor
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path("js/app.js")
+          source = path.read_text()
+          old = '''  function fetchSignals() {
+    if (!navBounds || !navFullPath.length) return;
+    const requestId = ++signalRequestId;
+    const sw = navBounds.getSouthWest(), ne = navBounds.getNorthEast();
+    const q =
+      `[out:json][timeout:20];node["highway"="traffic_signals"]` +
+      `(${sw.lat()},${sw.lng()},${ne.lat()},${ne.lng()});out;`;
+'''
+          new = '''  function fetchSignals() {
+    if (!navFullPath.length) return;
+    const routeLine = navFullPath
+      .map((point) => {
+        const lat = typeof point.lat === "function" ? point.lat() : point.lat;
+        const lng = typeof point.lng === "function" ? point.lng() : point.lng;
+        return Number.isFinite(lat) && Number.isFinite(lng) ? `${lat},${lng}` : null;
+      })
+      .filter(Boolean)
+      .join(",");
+    if (!routeLine) return;
+    const requestId = ++signalRequestId;
+    const q =
+      `[out:json][timeout:20];node["highway"="traffic_signals"]` +
+      `(around:25,${routeLine});out;`;
+'''
+          if source.count(old) != 1:
+              raise SystemExit(f"expected one Overpass bbox block, found {source.count(old)}")
+          path.write_text(source.replace(old, new))
+          PY
+
+          node --check js/app.js
+          git diff --check
+          python3 <<'PY'
+          from pathlib import Path
+          source = Path("js/app.js").read_text()
+          start = source.index("  function fetchSignals() {")
+          end = source.index("\n\n  function plotSignals() {", start)
+          block = source[start:end]
+          if '(around:25,${routeLine});out;' not in block:
+              raise SystemExit("route-corridor Overpass query missing")
+          if "getSouthWest" in block or "getNorthEast" in block:
+              raise SystemExit("route-wide bounding-box Overpass query remains")
+          PY
+          git diff -- js/app.js
+
+      - name: Commit runtime change
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add js/app.js
+          git commit -m "Scope Overpass lookup to route corridor"
+          git push origin HEAD:chatgpt/overpass-route-corridor
