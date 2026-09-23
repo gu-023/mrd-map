@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   patch:
-    if: github.event.head_commit.message == 'Add temporary Overpass corridor patch workflow'
+    if: github.event.head_commit.message == 'Fix temporary Overpass corridor patch workflow'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -27,30 +27,32 @@ jobs:
 
           path = Path("js/app.js")
           source = path.read_text()
-          old = '''  function fetchSignals() {
-    if (!navBounds || !navFullPath.length) return;
-    const requestId = ++signalRequestId;
-    const sw = navBounds.getSouthWest(), ne = navBounds.getNorthEast();
-    const q =
-      `[out:json][timeout:20];node["highway"="traffic_signals"]` +
-      `(${sw.lat()},${sw.lng()},${ne.lat()},${ne.lng()});out;`;
-'''
-          new = '''  function fetchSignals() {
-    if (!navFullPath.length) return;
-    const routeLine = navFullPath
-      .map((point) => {
-        const lat = typeof point.lat === "function" ? point.lat() : point.lat;
-        const lng = typeof point.lng === "function" ? point.lng() : point.lng;
-        return Number.isFinite(lat) && Number.isFinite(lng) ? `${lat},${lng}` : null;
-      })
-      .filter(Boolean)
-      .join(",");
-    if (!routeLine) return;
-    const requestId = ++signalRequestId;
-    const q =
-      `[out:json][timeout:20];node["highway"="traffic_signals"]` +
-      `(around:25,${routeLine});out;`;
-'''
+          old = (
+              '  function fetchSignals() {\n'
+              '    if (!navBounds || !navFullPath.length) return;\n'
+              '    const requestId = ++signalRequestId;\n'
+              '    const sw = navBounds.getSouthWest(), ne = navBounds.getNorthEast();\n'
+              '    const q =\n'
+              '      `[out:json][timeout:20];node["highway"="traffic_signals"]` +\n'
+              '      `(${sw.lat()},${sw.lng()},${ne.lat()},${ne.lng()});out;`;\n'
+          )
+          new = (
+              '  function fetchSignals() {\n'
+              '    if (!navFullPath.length) return;\n'
+              '    const routeLine = navFullPath\n'
+              '      .map((point) => {\n'
+              '        const lat = typeof point.lat === "function" ? point.lat() : point.lat;\n'
+              '        const lng = typeof point.lng === "function" ? point.lng() : point.lng;\n'
+              '        return Number.isFinite(lat) && Number.isFinite(lng) ? `${lat},${lng}` : null;\n'
+              '      })\n'
+              '      .filter(Boolean)\n'
+              '      .join(",");\n'
+              '    if (!routeLine) return;\n'
+              '    const requestId = ++signalRequestId;\n'
+              '    const q =\n'
+              '      `[out:json][timeout:20];node["highway"="traffic_signals"]` +\n'
+              '      `(around:25,${routeLine});out;`;\n'
+          )
           if source.count(old) != 1:
               raise SystemExit(f"expected one Overpass bbox block, found {source.count(old)}")
           path.write_text(source.replace(old, new))
