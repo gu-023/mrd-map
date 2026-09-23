@@ -24,16 +24,11 @@ jobs:
 
           path = Path('js/app.js')
           text = path.read_text()
-          old = '''  function clearError(source) {
-            if (errorSource === GOOGLE_MAPS_AUTH_ERROR_SOURCE) return;
-          '''
-          new = '''  function clearError(source) {
-            if (errorSource === GOOGLE_MAPS_AUTH_ERROR_SOURCE) return;
-            if (errorSource === "geolocation-reload") return;
-          '''
+          old = '    if (errorSource === GOOGLE_MAPS_AUTH_ERROR_SOURCE) return;\n'
+          new = old + '    if (errorSource === "geolocation-reload") return;\n'
           count = text.count(old)
           if count != 1:
-              raise SystemExit(f'expected one clearError anchor, found {count}')
+              raise SystemExit(f'expected one auth clear guard, found {count}')
           path.write_text(text.replace(old, new, 1))
           PY
           node --check js/app.js
