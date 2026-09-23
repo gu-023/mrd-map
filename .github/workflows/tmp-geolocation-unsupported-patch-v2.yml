@@ -1,0 +1,34 @@
+name: Temporary geolocation unsupported patch v2
+
+on:
+  push:
+    branches:
+      - chatgpt/geolocation-unsupported-dpad-feedback
+    paths:
+      - .github/workflows/tmp-geolocation-unsupported-patch-v2.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chatgpt/geolocation-unsupported-dpad-feedback
+      - name: Patch unsupported geolocation D-pad feedback
+        shell: bash
+        run: |
+          python3 -c "import base64,pathlib;p=pathlib.Path('js/app.js');t=p.read_text();o=base64.b64decode('ICBmdW5jdGlvbiBzdGFydEdlb2xvY2F0aW9uKCkgewogICAgaWYgKCEoImdlb2xvY2F0aW9uIiBpbiBuYXZpZ2F0b3IpKSB7CiAgICAgIHNldEdwcyhmYWxzZSwgIkdQU+mdnuWvvuW/nCIpOwogICAgICByZXR1cm47CiAgICB9CiAgICBzZXRHcHMoZmFsc2UsICLil44g44KS5rG65a6a44Gn54++5Zyo5Zyw5Y+W5b6XIik7CiAgfQoKICAvLyDil47jg5zjgr/jg7Pjga4gY2xpY2sva2V5ZG93biDjg4/jg7Pjg4njg6nlhoXvvIjvvJ3jg6bjg7zjgrbjg7zmk43kvZzkuK3vvInjgYvjgonlkbzjgbbjgZPjgagKICBmdW5jdGlvbiBhY3F1aXJlTG9jYXRpb24oKSB7CiAgICBpZiAoISgiZ2VvbG9jYXRpb24iIGluIG5hdmlnYXRvcikpIHsKICAgICAgc2V0R3BzKGZhbHNlLCAiR1BT6Z2e5a++5b+cIik7CiAgICAgIHJldHVybjsKICAgIH0K').decode();n=base64.b64decode('ICBmdW5jdGlvbiBzaG93R2VvbG9jYXRpb25VbnN1cHBvcnRlZCgpIHsKICAgIHNldEdwcyhmYWxzZSwgIkdQU+mdnuWvvuW/nCIpOwogICAgc2hvd0Vycm9yKAogICAgICAi5L2N572u5oOF5aCx44KS5Yip55So44Gn44GN44G+44Gb44KTIiwKICAgICAgIuOBk+OBruerr+acq+OBruODluODqeOCpuOCtuOBr+S9jee9ruaDheWgsUFQSeOBq+WvvuW/nOOBl+OBpuOBhOOBvuOBm+OCk+OAgjxicj48YnI+IiArCiAgICAgICLmsbrlrprjgafplonjgZjjgZ/lvozjgIHihpDihpLjgafku5bjga7mk43kvZzjgpLpgbjjgbnjgb7jgZnjgIIiLAogICAgICAiZ2VvbG9jYXRpb24tdW5zdXBwb3J0ZWQiCiAgICApOwogIH0KCiAgZnVuY3Rpb24gc3RhcnRHZW9sb2NhdGlvbigpIHsKICAgIGlmICghKCJnZW9sb2NhdGlvbiIgaW4gbmF2aWdhdG9yKSkgewogICAgICBzaG93R2VvbG9jYXRpb25VbnN1cHBvcnRlZCgpOwogICAgICByZXR1cm47CiAgICB9CiAgICBzZXRHcHMoZmFsc2UsICLil44g44KS5rG65a6a44Gn54++5Zyo5Zyw5Y+W5b6XIik7CiAgfQoKICAvLyDil47jg5zjgr/jg7Pjga4gY2xpY2sva2V5ZG93biDjg4/jg7Pjg4njg6nlhoXvvIjvvJ3jg6bjg7zjgrbjg7zmk43kvZzkuK3vvInjgYvjgonlkbzjgbbjgZPjgagKICBmdW5jdGlvbiBhY3F1aXJlTG9jYXRpb24oKSB7CiAgICBpZiAoISgiZ2VvbG9jYXRpb24iIGluIG5hdmlnYXRvcikpIHsKICAgICAgc2hvd0dlb2xvY2F0aW9uVW5zdXBwb3J0ZWQoKTsKICAgICAgcmV0dXJuOwogICAgfQo=').decode();assert t.count(o)==1,f'anchor1={t.count(o)}';p.write_text(t.replace(o,n,1))"
+          python3 -c "import base64,pathlib;p=pathlib.Path('js/app.js');t=p.read_text();o=base64.b64decode('ICAgIGlmIChlcnJvclNvdXJjZSA9PT0gImdlb2xvY2F0aW9uIikgewogICAgICBpZiAoZS5rZXkgPT09ICJFbnRlciIgfHwgZS5rZXkgPT09ICIgIikgZG9BY3Rpb24oInJlY2VudGVyIik7CiAgICAgIGlmIChbIkFycm93TGVmdCIsICJBcnJvd1JpZ2h0IiwgIkFycm93VXAiLCAiQXJyb3dEb3duIiwgIkVudGVyIiwgIiAiXS5pbmRleE9mKGUua2V5KSA+PSAwKSB7CiAgICAgICAgZS5wcmV2ZW50RGVmYXVsdCgpOwogICAgICB9CiAgICAgIHJldHVybjsKICAgIH0KCiAgICBpZiAoZXJyb3JTb3VyY2UgPT09ICJjb21wYXNzIikgewo=').decode();n=base64.b64decode('ICAgIGlmIChlcnJvclNvdXJjZSA9PT0gImdlb2xvY2F0aW9uIikgewogICAgICBpZiAoZS5rZXkgPT09ICJFbnRlciIgfHwgZS5rZXkgPT09ICIgIikgZG9BY3Rpb24oInJlY2VudGVyIik7CiAgICAgIGlmIChbIkFycm93TGVmdCIsICJBcnJvd1JpZ2h0IiwgIkFycm93VXAiLCAiQXJyb3dEb3duIiwgIkVudGVyIiwgIiAiXS5pbmRleE9mKGUua2V5KSA+PSAwKSB7CiAgICAgICAgZS5wcmV2ZW50RGVmYXVsdCgpOwogICAgICB9CiAgICAgIHJldHVybjsKICAgIH0KCiAgICBpZiAoZXJyb3JTb3VyY2UgPT09ICJnZW9sb2NhdGlvbi11bnN1cHBvcnRlZCIpIHsKICAgICAgaWYgKGUua2V5ID09PSAiRW50ZXIiIHx8IGUua2V5ID09PSAiICIpIGNsZWFyRXJyb3IoImdlb2xvY2F0aW9uLXVuc3VwcG9ydGVkIik7CiAgICAgIGlmIChbIkFycm93TGVmdCIsICJBcnJvd1JpZ2h0IiwgIkFycm93VXAiLCAiQXJyb3dEb3duIiwgIkVudGVyIiwgIiAiXS5pbmRleE9mKGUua2V5KSA+PSAwKSB7CiAgICAgICAgZS5wcmV2ZW50RGVmYXVsdCgpOwogICAgICB9CiAgICAgIHJldHVybjsKICAgIH0KCiAgICBpZiAoZXJyb3JTb3VyY2UgPT09ICJjb21wYXNzIikgewo=').decode();assert t.count(o)==1,f'anchor2={t.count(o)}';p.write_text(t.replace(o,n,1))"
+          node --check js/app.js
+          git diff --check
+      - name: Commit product change
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add js/app.js
+          git commit -m 'Explain unsupported geolocation on D-pad'
+          git push origin HEAD:chatgpt/geolocation-unsupported-dpad-feedback
