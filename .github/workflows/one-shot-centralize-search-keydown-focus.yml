@@ -24,30 +24,14 @@ jobs:
 
           path = Path("js/app.js")
           text = path.read_text()
-          old_key = '''        case "ArrowUp":
-          if (keyIdx - SEARCH_COLS >= 0) keyIdx -= SEARCH_COLS;
-          else { searchZone = "input"; els.searchQuery.focus(); }
-          break;'''
-          new_key = '''        case "ArrowUp":
-          if (keyIdx - SEARCH_COLS >= 0) keyIdx -= SEARCH_COLS;
-          else searchZone = "input";
-          break;'''
-          old_pred = '''        case "ArrowUp":
-          if (predIdx > 0) predIdx--;
-          else {
-            searchZone = predictionBackZone;
-            if (searchZone === "input") els.searchQuery.focus();
-          }
-          break;'''
-          new_pred = '''        case "ArrowUp":
-          if (predIdx > 0) predIdx--;
-          else searchZone = predictionBackZone;
-          break;'''
+          old_key = 'else { searchZone = "input"; els.searchQuery.focus(); }'
+          new_key = 'else searchZone = "input";'
+          old_pred = '            if (searchZone === "input") els.searchQuery.focus();\n'
           if text.count(old_key) != 1:
-              raise SystemExit("expected exactly one fallback-keyboard upward focus block")
+              raise SystemExit(f"expected one fallback keyboard direct focus, found {text.count(old_key)}")
           if text.count(old_pred) != 1:
-              raise SystemExit("expected exactly one prediction upward focus block")
-          text = text.replace(old_key, new_key).replace(old_pred, new_pred)
+              raise SystemExit(f"expected one prediction direct focus, found {text.count(old_pred)}")
+          text = text.replace(old_key, new_key, 1).replace(old_pred, "", 1)
           path.write_text(text)
           PY
           node --check js/app.js
