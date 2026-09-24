@@ -1,0 +1,113 @@
+name: One-shot preserve error focus across surfaces
+
+on:
+  push:
+    branches:
+      - chatgpt/preserve-error-focus-all-surfaces
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: chatgpt/preserve-error-focus-all-surfaces
+      - name: Patch error-focus ownership guards
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          app_path = Path("js/app.js")
+          app = app_path.read_text()
+
+          replacements = [
+              (
+                  '    const focused = els.menuList.querySelector(".focused");\n    if (focused && document.activeElement !== focused) focused.focus();',
+                  '    const focused = els.menuList.querySelector(".focused");\n    if (errorSource === null && focused && document.activeElement !== focused) focused.focus();',
+              ),
+              (
+                  '    els.picker.tabIndex = 0;\n    if (typeof document !== "undefined") { if (document.activeElement !== els.picker) els.picker.focus(); }\n    setNavBanner("←↑↓→ で地図を動かし、決定で目的地を確定");',
+                  '    els.picker.tabIndex = 0;\n    if (errorSource === null && typeof document !== "undefined") {\n      if (document.activeElement !== els.picker) els.picker.focus();\n    }\n    setNavBanner("←↑↓→ で地図を動かし、決定で目的地を確定");',
+              ),
+              (
+                  '    const focusedControl = focusables[focusIdx];\n    if (focusedControl && document.activeElement !== focusedControl) focusedControl.focus();',
+                  '    const focusedControl = focusables[focusIdx];\n    if (errorSource === null && focusedControl && document.activeElement !== focusedControl) focusedControl.focus();',
+              ),
+          ]
+          for old, new in replacements:
+              if app.count(old) != 1:
+                  raise SystemExit(f"app.js patch target count was {app.count(old)} for: {old[:80]!r}")
+              app = app.replace(old, new, 1)
+          app_path.write_text(app)
+
+          workflow_path = Path(".github/workflows/error-overlay-host-focus.yml")
+          workflow = workflow_path.read_text()
+
+          old_markers = '''              "render_search": "  function renderSearch() {",
+              "search_focus_listener": '  els.searchQuery.addEventListener("focus", () => {',
+'''
+          new_markers = '''              "render_search": "  function renderSearch() {",
+              "search_focus_listener": '  els.searchQuery.addEventListener("focus", () => {',
+              "render_menu": "  function renderMenu() {",
+              "menu_move": "  function menuMove(d) {",
+              "enter_pick": "  function enterPickMode() {",
+              "exit_pick": "  function exitPickMode() {",
+              "render_focus": "  function renderFocus() {",
+              "move_focus": "  function moveFocus(delta) {",
+'''
+          if workflow.count(old_markers) != 1:
+              raise SystemExit("workflow marker insertion target changed")
+          workflow = workflow.replace(old_markers, new_markers, 1)
+
+          old_capture = '''          render_search = app[app.index(markers["render_search"]):app.index(markers["search_focus_listener"])]
+'''
+          new_capture = '''          render_search = app[app.index(markers["render_search"]):app.index(markers["search_focus_listener"])]
+          render_menu = app[app.index(markers["render_menu"]):app.index(markers["menu_move"])]
+          enter_pick = app[app.index(markers["enter_pick"]):app.index(markers["exit_pick"])]
+          render_focus = app[app.index(markers["render_focus"]):app.index(markers["move_focus"])]
+'''
+          if workflow.count(old_capture) != 1:
+              raise SystemExit("workflow capture insertion target changed")
+          workflow = workflow.replace(old_capture, new_capture, 1)
+
+          old_search_guard = '''          if render_search.index("if (!errorOverlayVisible &&") > render_search.index("focusedSearchElement.focus();"):
+              raise SystemExit("search focus write must remain behind the visible-error guard")
+
+'''
+          new_search_guard = '''          if render_search.index("if (!errorOverlayVisible &&") > render_search.index("focusedSearchElement.focus();"):
+              raise SystemExit("search focus write must remain behind the visible-error guard")
+
+          surface_guards = (
+              ("menu", render_menu, "errorSource === null", "focused.focus();"),
+              ("picker", enter_pick, "errorSource === null", "els.picker.focus();"),
+              ("main controls", render_focus, "errorSource === null", "focusedControl.focus();"),
+          )
+          for name, section, guard, focus_write in surface_guards:
+              if guard not in section or focus_write not in section:
+                  raise SystemExit(f"{name} visible-error focus guard missing")
+              if section.index(guard) > section.index(focus_write):
+                  raise SystemExit(f"{name} focus write must remain behind the visible-error guard")
+
+'''
+          if workflow.count(old_search_guard) != 1:
+              raise SystemExit("workflow search guard insertion target changed")
+          workflow = workflow.replace(old_search_guard, new_search_guard, 1)
+          workflow_path.write_text(workflow)
+          PY
+
+          node --check js/app.js
+          git diff --check
+          git diff -- js/app.js .github/workflows/error-overlay-host-focus.yml
+
+      - name: Commit product and contract changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add js/app.js .github/workflows/error-overlay-host-focus.yml
+          git diff --cached --quiet && exit 0
+          git commit -m "Preserve error overlay focus across UI surfaces"
+          git push origin HEAD:chatgpt/preserve-error-focus-all-surfaces
