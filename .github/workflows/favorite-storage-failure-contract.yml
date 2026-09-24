@@ -19,7 +19,7 @@ jobs:
   favorite-storage-failure:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Exercise favorite storage failure and D-pad modal behavior
         shell: bash
         run: |
