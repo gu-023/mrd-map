@@ -1234,7 +1234,6 @@
     searchReturnPrediction = null;
     els.search.classList.remove("hidden");
     renderSearch();
-    els.searchQuery.focus();
   }
 
   function closeSearch() {
@@ -1272,7 +1271,6 @@
     els.search.classList.remove("hidden");
     refreshPredictions(searchReturnPrediction);
     renderSearch();
-    els.searchQuery.focus();
   }
 
   function renderSearch() {
