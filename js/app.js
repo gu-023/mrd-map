@@ -1318,7 +1318,7 @@
       : searchZone === "keys"
         ? els.searchKeyboard.querySelector(".focused")
         : els.searchPreds.querySelector(".focused");
-    const errorOverlayVisible = !els.error.classList.contains("hidden");
+    const errorOverlayVisible = errorSource !== null;
     if (!errorOverlayVisible &&
         focusedSearchElement &&
         document.activeElement !== focusedSearchElement) {

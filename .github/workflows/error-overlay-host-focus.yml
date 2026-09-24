@@ -35,7 +35,7 @@ jobs:
               "clear": "  function clearError(source) {",
               "next": '  if (!cfg.GOOGLE_MAPS_API_KEY || cfg.GOOGLE_MAPS_API_KEY === "__GOOGLE_MAPS_API_KEY__") {',
               "render_search": "  function renderSearch() {",
-              "close_search": "  function closeSearch() {",
+              "search_focus_listener": '  els.searchQuery.addEventListener("focus", () => {',
           }
           if any(app.count(marker) != 1 for marker in markers.values()):
               raise SystemExit("error-overlay focus lifecycle markers changed unexpectedly")
@@ -43,7 +43,7 @@ jobs:
           show = app[app.index(markers["show"]):app.index(markers["restore"])]
           restore = app[app.index(markers["restore"]):app.index(markers["clear"])]
           clear = app[app.index(markers["clear"]):app.index(markers["next"])]
-          render_search = app[app.index(markers["render_search"]):app.index(markers["close_search"])]
+          render_search = app[app.index(markers["render_search"]):app.index(markers["search_focus_listener"])]
 
           show_required = (
               "els.error.tabIndex = 0;",
@@ -79,7 +79,7 @@ jobs:
               raise SystemExit("clearError host-focus contract missing: " + ", ".join(missing))
 
           search_required = (
-              'const errorOverlayVisible = !els.error.classList.contains("hidden");',
+              "const errorOverlayVisible = errorSource !== null;",
               "if (!errorOverlayVisible &&",
               "focusedSearchElement &&",
               "document.activeElement !== focusedSearchElement",
