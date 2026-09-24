@@ -1,30 +1,16 @@
 /*
- * Ray-Ban Display host-focus bridge for the dynamic destination menu.
+ * Ray-Ban Display semantic/scroll bridge for the dynamic destination menu.
  *
- * The app owns D-pad selection through .menu-row.focused. Keep the browser's
- * activeElement on that same row so host pinch/select activation targets the
- * visible choice instead of a stale control behind the overlay.
+ * js/app.js owns D-pad selection, roving tabIndex, and browser focus. This
+ * bridge only adds button semantics and 600x600 scroll-edge affordances.
  */
 (function () {
   "use strict";
 
-  const menu = document.querySelector("#menu");
   const menuScroll = document.querySelector("#menu-scroll");
   const menuList = document.querySelector("#menu-list");
-  const controls = document.querySelector("#controls");
-  const search = document.querySelector("#search");
-  const picker = document.querySelector("#picker");
 
-  if (!menu || !menuScroll || !menuList || !controls || !search || !picker) return;
-
-  function focusWithoutScroll(element) {
-    if (!element || document.activeElement === element) return;
-    try {
-      element.focus({ preventScroll: true });
-    } catch (error) {
-      element.focus();
-    }
-  }
+  if (!menuScroll || !menuList) return;
 
   function updateMenuScrims() {
     const maxScrollTop = Math.max(0, menuList.scrollHeight - menuList.clientHeight);
@@ -37,43 +23,19 @@
 
   function syncMenuRows() {
     const rows = Array.from(menuList.querySelectorAll(".menu-row"));
-    const selected = menuList.querySelector(".menu-row.focused");
 
     rows.forEach((row) => {
       row.setAttribute("role", "button");
-      row.tabIndex = row === selected ? 0 : -1;
     });
 
-    if (!menu.classList.contains("hidden")) focusWithoutScroll(selected);
     requestAnimationFrame(updateMenuScrims);
   }
 
-  function restoreFocusAfterMenuClose() {
-    if (!menu.classList.contains("hidden")) return;
-
-    const active = document.activeElement;
-    if (active && menuList.contains(active) && typeof active.blur === "function") {
-      active.blur();
-    }
-
-    // Search owns the native composer focus, and picker mode owns the D-pad.
-    if (!search.classList.contains("hidden") || !picker.classList.contains("hidden")) return;
-
-    focusWithoutScroll(controls.querySelector(".focusable.focused"));
-  }
-
-  const observer = new MutationObserver(() => {
-    syncMenuRows();
-    restoreFocusAfterMenuClose();
-  });
+  const observer = new MutationObserver(syncMenuRows);
 
   observer.observe(menuList, {
     childList: true,
     subtree: true,
-    attributes: true,
-    attributeFilter: ["class"],
-  });
-  observer.observe(menu, {
     attributes: true,
     attributeFilter: ["class"],
   });
@@ -82,5 +44,4 @@
 
   syncMenuRows();
   updateMenuScrims();
-  restoreFocusAfterMenuClose();
 })();
