@@ -6,6 +6,7 @@ on:
       - index.html
       - css/style.css
       - js/app.js
+      - js/search-focus-bridge.js
       - .github/workflows/main-control-dom-focus.yml
   push:
     branches: [main]
@@ -13,6 +14,7 @@ on:
       - index.html
       - css/style.css
       - js/app.js
+      - js/search-focus-bridge.js
       - .github/workflows/main-control-dom-focus.yml
 
 permissions:
@@ -35,6 +37,7 @@ jobs:
           app = Path("js/app.js").read_text()
           css = Path("css/style.css").read_text()
           html = Path("index.html").read_text()
+          search_bridge = Path("js/search-focus-bridge.js").read_text()
 
           render_marker = "  function renderFocus() {"
           move_marker = "  function moveFocus(delta) {"
@@ -144,6 +147,35 @@ jobs:
               raise SystemExit(
                   "closeSearch no longer releases search focus and restores the main control rail: "
                   + ", ".join(missing)
+              )
+
+          bridge_required = (
+              'element.setAttribute("role", "button")',
+              'searchKeyboard.querySelector(".key.focused")',
+              'selectedKey.scrollIntoView({ block: "nearest", inline: "nearest" });',
+              "requestAnimationFrame(updateKeyboardScrims);",
+              "requestAnimationFrame(updatePredictionScrims);",
+          )
+          missing = [needle for needle in bridge_required if needle not in search_bridge]
+          if missing:
+              raise SystemExit(
+                  "search bridge no longer preserves semantic/scroll affordances: "
+                  + ", ".join(missing)
+              )
+
+          bridge_forbidden = (
+              "focusWithoutScroll(",
+              "restoreFocusAfterSearchClose(",
+              "element.tabIndex =",
+              ".focus({",
+              ".focus();",
+              ".blur();",
+          )
+          present = [needle for needle in bridge_forbidden if needle in search_bridge]
+          if present:
+              raise SystemExit(
+                  "search bridge must not compete with app.js for browser focus ownership: "
+                  + ", ".join(present)
               )
 
           class ControlParser(HTMLParser):
