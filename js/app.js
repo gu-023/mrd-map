@@ -1527,7 +1527,7 @@
         case "ArrowRight": if (keyIdx % SEARCH_COLS < SEARCH_COLS - 1 && keyIdx + 1 < SEARCH_KEYS.length) keyIdx++; break;
         case "ArrowUp":
           if (keyIdx - SEARCH_COLS >= 0) keyIdx -= SEARCH_COLS;
-          else { searchZone = "input"; els.searchQuery.focus(); }
+          else searchZone = "input";
           break;
         case "ArrowDown": {
           const below = keyIdx + SEARCH_COLS;
@@ -1544,7 +1544,6 @@
           if (predIdx > 0) predIdx--;
           else {
             searchZone = predictionBackZone;
-            if (searchZone === "input") els.searchQuery.focus();
           }
           break;
         case "ArrowDown": predIdx = Math.min(searchPredictions.length - 1, predIdx + 1); break;
