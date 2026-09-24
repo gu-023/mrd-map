@@ -1,0 +1,123 @@
+name: Apply Overpass route thinning
+
+on:
+  push:
+    branches:
+      - chatgpt/thin-overpass-route-points
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chatgpt/thin-overpass-route-points
+          fetch-depth: 0
+
+      - name: Apply focused runtime change
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('js/app.js')
+          src = path.read_text()
+
+          old_constants = '''  const OVERPASS_REQUEST_TIMEOUT_MS = 25000; // server側20秒に通信余裕を加えたclient上限
+'''
+          new_constants = '''  const SIGNAL_ROUTE_RADIUS_M = 25;
+  const OVERPASS_ROUTE_POINT_SPACING_M = 10;
+  const OVERPASS_QUERY_RADIUS_M = SIGNAL_ROUTE_RADIUS_M + OVERPASS_ROUTE_POINT_SPACING_M;
+  const OVERPASS_REQUEST_TIMEOUT_MS = 25000; // server側20秒に通信余裕を加えたclient上限
+'''
+          if src.count(old_constants) != 1:
+              raise SystemExit(f'expected one Overpass constant anchor, found {src.count(old_constants)}')
+          src = src.replace(old_constants, new_constants, 1)
+
+          old_block = '''    const routeLine = navFullPath
+      .map((point) => {
+        const lat = typeof point.lat === "function" ? point.lat() : point.lat;
+        const lng = typeof point.lng === "function" ? point.lng() : point.lng;
+        return Number.isFinite(lat) && Number.isFinite(lng) ? `${lat.toFixed(6)},${lng.toFixed(6)}` : null;
+      })
+      .filter(Boolean)
+      .join(",");
+    if (!routeLine) return;
+'''
+          new_block = '''    const validRoutePoints = navFullPath
+      .map((point) => {
+        const lat = typeof point.lat === "function" ? point.lat() : point.lat;
+        const lng = typeof point.lng === "function" ? point.lng() : point.lng;
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+        return { lat, lng, location: new google.maps.LatLng(lat, lng) };
+      })
+      .filter(Boolean);
+    const queryRoutePoints = validRoutePoints.filter((point, index) => {
+      if (index === 0 || index === validRoutePoints.length - 1) return true;
+      const previous = validRoutePoints[index - 1];
+      return meters(previous.location, point.location) >= OVERPASS_ROUTE_POINT_SPACING_M;
+    });
+    const routeLine = queryRoutePoints
+      .map((point) => `${point.lat.toFixed(6)},${point.lng.toFixed(6)}`)
+      .join(",");
+    if (!routeLine) return;
+'''
+          if src.count(old_block) != 1:
+              raise SystemExit(f'expected one fetchSignals route block, found {src.count(old_block)}')
+          src = src.replace(old_block, new_block, 1)
+
+          old_query = '''      `(around:25,${routeLine});out;`;'''
+          new_query = '''      `(around:${OVERPASS_QUERY_RADIUS_M},${routeLine});out;`;'''
+          if src.count(old_query) != 1:
+              raise SystemExit(f'expected one Overpass around query, found {src.count(old_query)}')
+          src = src.replace(old_query, new_query, 1)
+
+          old_filter = '''            if (min < 25) break;
+          }
+          if (min < 25) near.push({ lat: el.lat, lng: el.lon }); // ルート沿いのみ
+'''
+          new_filter = '''            if (min < SIGNAL_ROUTE_RADIUS_M) break;
+          }
+          if (min < SIGNAL_ROUTE_RADIUS_M) near.push({ lat: el.lat, lng: el.lon }); // ルート沿いのみ
+'''
+          if src.count(old_filter) != 1:
+              raise SystemExit(f'expected one local signal corridor filter, found {src.count(old_filter)}')
+          src = src.replace(old_filter, new_filter, 1)
+
+          path.write_text(src)
+          PY
+
+      - name: Static checks
+        shell: bash
+        run: |
+          node --check js/app.js
+          git diff --check
+          python3 - <<'PY'
+          from pathlib import Path
+          src = Path('js/app.js').read_text()
+          required = [
+              'const SIGNAL_ROUTE_RADIUS_M = 25;',
+              'const OVERPASS_ROUTE_POINT_SPACING_M = 10;',
+              'const OVERPASS_QUERY_RADIUS_M = SIGNAL_ROUTE_RADIUS_M + OVERPASS_ROUTE_POINT_SPACING_M;',
+              'meters(previous.location, point.location) >= OVERPASS_ROUTE_POINT_SPACING_M',
+              '`(around:${OVERPASS_QUERY_RADIUS_M},${routeLine});out;`',
+              'if (min < SIGNAL_ROUTE_RADIUS_M) near.push',
+          ]
+          missing = [item for item in required if item not in src]
+          if missing:
+              raise SystemExit('missing focused source assertions: ' + repr(missing))
+          PY
+
+      - name: Commit product change and remove helper
+        shell: bash
+        run: |
+          git rm .github/workflows/chatgpt-apply-overpass-thinning.yml
+          git add js/app.js
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'Thin dense Overpass route points'
+          git push origin HEAD:chatgpt/thin-overpass-route-points
