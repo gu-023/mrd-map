@@ -969,7 +969,9 @@
       els.menuList.appendChild(li);
     });
     const focused = els.menuList.querySelector(".focused");
-    if (focused && document.activeElement !== focused) focused.focus();
+    if (errorSource === null) {
+      if (focused && document.activeElement !== focused) focused.focus();
+    }
     if (focused && typeof focused.scrollIntoView === "function") {
       focused.scrollIntoView({ block: "nearest" });
     }
@@ -1572,7 +1574,9 @@
     followMode = false;
     els.picker.classList.remove("hidden");
     els.picker.tabIndex = 0;
-    if (typeof document !== "undefined") { if (document.activeElement !== els.picker) els.picker.focus(); }
+    if ((typeof errorSource === "undefined" || errorSource === null) && typeof document !== "undefined") {
+      if (document.activeElement !== els.picker) els.picker.focus();
+    }
     setNavBanner("←↑↓→ で地図を動かし、決定で目的地を確定");
   }
 
@@ -2571,7 +2575,9 @@
   function renderFocus() {
     focusables.forEach((el, i) => el.classList.toggle("focused", i === focusIdx));
     const focusedControl = focusables[focusIdx];
-    if (focusedControl && document.activeElement !== focusedControl) focusedControl.focus();
+    if (typeof errorSource === "undefined" || errorSource === null) {
+      if (focusedControl && document.activeElement !== focusedControl) focusedControl.focus();
+    }
   }
 
   function moveFocus(delta) {
