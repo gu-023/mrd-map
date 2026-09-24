@@ -231,7 +231,7 @@ jobs:
                 'function showError(title, body, source) { errorSource = source; showErrorCalls.push({ title, body, source }); }\n' +
                 'function clearError(source) { clearCalls.push(source); if (errorSource === source) errorSource = null; }\n' +
                 'function closeMenu() { closeMenuCalls += 1; menuOpen = false; }\n' +
-                'function renderSearch() { renderSearchCalls += 1; }\n' +
+                'function renderSearch() { renderSearchCalls += 1; if (errorSource === null) els.searchQuery.focus(); }\n' +
                 'function clearDirectionsRequestTimeout() {}\n' +
                 'function setNavBanner() {}\n' +
                 'function searchKeydown() {}\n' +
