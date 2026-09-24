@@ -20,113 +20,180 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Exercise dense-route Overpass query shaping
+      - name: Exercise bounded sequential Overpass query shaping
         shell: bash
         run: |
           node <<'NODE'
           const fs = require("fs");
           const vm = require("vm");
 
-          const source = fs.readFileSync("js/app.js", "utf8");
-          const signalsStart = source.indexOf("  function fetchSignals() {");
-          const signalsEnd = source.indexOf("\n\n  function plotSignals() {", signalsStart);
-          const timeoutMatch = source.match(/^  const OVERPASS_REQUEST_TIMEOUT_MS = (\d+);/m);
-          const maxBodyMatch = source.match(/^  const OVERPASS_MAX_REQUEST_BODY_BYTES = (\d+) \* 1024;/m);
-          if (signalsStart < 0 || signalsEnd < 0 || !timeoutMatch || !maxBodyMatch) {
-            throw new Error("Overpass implementation could not be located");
-          }
-
-          const signalsSource = source.slice(signalsStart, signalsEnd).replace(/^  /gm, "");
-          let requestBody = null;
-          let fetchCount = 0;
-
-          class MockAbortController {
-            constructor() {
-              this.signal = {};
+          (async () => {
+            const source = fs.readFileSync("js/app.js", "utf8");
+            const signalsStart = source.indexOf("  function fetchSignals() {");
+            const signalsEnd = source.indexOf("\n\n  function plotSignals() {", signalsStart);
+            const timeoutMatch = source.match(/^  const OVERPASS_REQUEST_TIMEOUT_MS = (\d+);/m);
+            const maxBodyMatch = source.match(/^  const OVERPASS_MAX_REQUEST_BODY_BYTES = (\d+) \* 1024;/m);
+            if (signalsStart < 0 || signalsEnd < 0 || !timeoutMatch || !maxBodyMatch) {
+              throw new Error("Overpass implementation could not be located");
             }
-            abort() {}
-          }
 
-          const context = {
-            AbortController: MockAbortController,
-            fetch(url, options) {
-              fetchCount += 1;
-              if (url !== "https://overpass-api.de/api/interpreter") {
-                throw new Error(`unexpected Overpass URL: ${url}`);
+            const signalsSource = source.slice(signalsStart, signalsEnd).replace(/^  /gm, "");
+            let fetchBodies = [];
+            let inFlight = 0;
+            let maxInFlight = 0;
+
+            class MockAbortController {
+              constructor() {
+                this.signal = {};
               }
-              requestBody = options && options.body;
-              return new Promise(() => {});
-            },
-            setTimeout() {
-              return 1;
-            },
-            clearTimeout() {},
-            meters(a, b) {
-              return Math.abs(a.distanceM - b.distanceM);
-            },
-            distanceToSegment() {
-              return Infinity;
-            },
-            google: { maps: { LatLng: class {} } },
-            plotSignals() {},
-          };
-          vm.createContext(context);
+              abort() {}
+            }
 
-          vm.runInContext(`
-            const OVERPASS_REQUEST_TIMEOUT_MS = ${Number(timeoutMatch[1])};
-            const OVERPASS_MAX_REQUEST_BODY_BYTES = ${Number(maxBodyMatch[1])} * 1024;
-            let signalRequestId = 0;
-            let navMode = true;
-            let signalData = [];
-            let navFullPath = [
-              { lat: () => 35.000000, lng: () => 139.000000, distanceM: 0 },
-              { lat: () => 35.000045, lng: () => 139.000000, distanceM: 5 },
-              { lat: () => 35.000108, lng: () => 139.000000, distanceM: 12 },
-              { lat: () => 35.000153, lng: () => 139.000000, distanceM: 17 },
-              { lat: () => 35.000162, lng: () => 139.000000, distanceM: 18 },
-            ];
+            const context = {
+              AbortController: MockAbortController,
+              fetch(url, options) {
+                if (url !== "https://overpass-api.de/api/interpreter") {
+                  throw new Error(`unexpected Overpass URL: ${url}`);
+                }
+                fetchBodies.push(options && options.body);
+                inFlight += 1;
+                maxInFlight = Math.max(maxInFlight, inFlight);
+                return Promise.resolve({
+                  ok: true,
+                  json() {
+                    inFlight -= 1;
+                    return Promise.resolve({
+                      elements: [{ id: 42, lat: 35.000050, lon: 139.000000 }],
+                    });
+                  },
+                });
+              },
+              setTimeout() {
+                return 1;
+              },
+              clearTimeout() {},
+              meters(a, b) {
+                return Math.abs(a.distanceM - b.distanceM);
+              },
+              distanceToSegment() {
+                return 0;
+              },
+              google: {
+                maps: {
+                  LatLng: class {
+                    constructor(lat, lng) {
+                      this.latValue = lat;
+                      this.lngValue = lng;
+                    }
+                  },
+                },
+              },
+              plotSignals() {},
+            };
+            vm.createContext(context);
 
-            ${signalsSource}
-            fetchSignals();
-          `, context);
+            await vm.runInContext(`
+              const OVERPASS_REQUEST_TIMEOUT_MS = ${Number(timeoutMatch[1])};
+              const OVERPASS_MAX_REQUEST_BODY_BYTES = ${Number(maxBodyMatch[1])} * 1024;
+              let signalRequestId = 0;
+              let navMode = true;
+              let signalData = [];
+              let navFullPath = [
+                { lat: () => 35.000000, lng: () => 139.000000, distanceM: 0 },
+                { lat: () => 35.000045, lng: () => 139.000000, distanceM: 5 },
+                { lat: () => 35.000108, lng: () => 139.000000, distanceM: 12 },
+                { lat: () => 35.000153, lng: () => 139.000000, distanceM: 17 },
+                { lat: () => 35.000162, lng: () => 139.000000, distanceM: 18 },
+              ];
 
-          if (fetchCount !== 1 || typeof requestBody !== "string" || !requestBody.startsWith("data=")) {
-            throw new Error("Overpass request was not issued exactly once with a data body");
-          }
+              ${signalsSource}
+              fetchSignals();
+            `, context);
 
-          const query = decodeURIComponent(requestBody.slice("data=".length));
-          const expected =
-            '[out:json][timeout:20];node["highway"="traffic_signals"]' +
-            '(around:35,35.000000,139.000000,35.000108,139.000000,35.000162,139.000000);out;';
-          if (query !== expected) {
-            throw new Error(`unexpected thinned Overpass query:\n${query}\nexpected:\n${expected}`);
-          }
-          if (query.includes("35.000045") || query.includes("35.000153")) {
-            throw new Error("dense intermediate route samples were not removed");
-          }
-          if (!source.includes("const SIGNAL_ROUTE_RADIUS_M = 25;")) {
-            throw new Error("client-side traffic-signal corridor is no longer fixed at 25 m");
-          }
-          if (!source.includes("if (min < SIGNAL_ROUTE_RADIUS_M) near.push")) {
-            throw new Error("client-side exact-route filter no longer uses SIGNAL_ROUTE_RADIUS_M");
-          }
-          if (Number(maxBodyMatch[1]) !== 64 ||
-              !source.includes("if (requestBody.length > OVERPASS_MAX_REQUEST_BODY_BYTES) return;")) {
-            throw new Error("Overpass request-size guard is not pinned at 64 KiB");
-          }
+            if (fetchBodies.length !== 1 || typeof fetchBodies[0] !== "string" || !fetchBodies[0].startsWith("data=")) {
+              throw new Error("small Overpass request was not issued exactly once with a data body");
+            }
 
-          vm.runInContext(`
-            navFullPath = Array.from({ length: 4000 }, (_, i) => ({
-              lat: () => 35 + i * 0.0001,
-              lng: () => 139,
-              distanceM: i * 20,
-            }));
-            fetchSignals();
-          `, context);
+            const query = decodeURIComponent(fetchBodies[0].slice("data=".length));
+            const expected =
+              '[out:json][timeout:20];node["highway"="traffic_signals"]' +
+              '(around:35,35.000000,139.000000,35.000108,139.000000,35.000162,139.000000);out;';
+            if (query !== expected) {
+              throw new Error(`unexpected thinned Overpass query:\n${query}\nexpected:\n${expected}`);
+            }
+            if (query.includes("35.000045") || query.includes("35.000153")) {
+              throw new Error("dense intermediate route samples were not removed");
+            }
+            if (!source.includes("const SIGNAL_ROUTE_RADIUS_M = 25;")) {
+              throw new Error("client-side traffic-signal corridor is no longer fixed at 25 m");
+            }
+            if (!source.includes("if (min < SIGNAL_ROUTE_RADIUS_M) near.push")) {
+              throw new Error("client-side exact-route filter no longer uses SIGNAL_ROUTE_RADIUS_M");
+            }
+            if (Number(maxBodyMatch[1]) !== 64 ||
+                !source.includes("const OVERPASS_MAX_REQUEST_CHUNKS = 4;")) {
+              throw new Error("Overpass request budgets are no longer pinned at 64 KiB / four chunks");
+            }
 
-          if (fetchCount !== 1) {
-            throw new Error("oversized Overpass body was sent instead of being rejected locally");
-          }
+            fetchBodies = [];
+            inFlight = 0;
+            maxInFlight = 0;
+            await vm.runInContext(`
+              navFullPath = Array.from({ length: 4000 }, (_, i) => ({
+                lat: () => 35 + i * 0.0001,
+                lng: () => 139,
+                distanceM: i * 20,
+              }));
+              signalData = [];
+              fetchSignals();
+            `, context);
 
-          console.log("Overpass query retains endpoints, thins dense samples, stays within a 64 KiB client body budget, widens to 35 m, and keeps the exact 25 m local filter");
+            if (fetchBodies.length < 2 || fetchBodies.length > 4) {
+              throw new Error(`oversized route used ${fetchBodies.length} requests instead of 2-4 bounded chunks`);
+            }
+            if (maxInFlight !== 1) {
+              throw new Error(`Overpass chunks were not sequential; max in-flight requests: ${maxInFlight}`);
+            }
+            if (fetchBodies.some((body) => typeof body !== "string" || body.length > 64 * 1024)) {
+              throw new Error("an Overpass chunk exceeded the 64 KiB body budget");
+            }
+
+            const routeTokens = fetchBodies.map((body) => {
+              const decoded = decodeURIComponent(body.slice("data=".length));
+              const match = decoded.match(/\(around:35,([^)]*)\);out;$/);
+              if (!match) throw new Error(`unexpected chunk query: ${decoded}`);
+              return match[1].split(",");
+            });
+            for (let i = 0; i < routeTokens.length - 1; i++) {
+              const current = routeTokens[i];
+              const next = routeTokens[i + 1];
+              const currentEnd = current.slice(-2).join(",");
+              const nextStart = next.slice(0, 2).join(",");
+              if (currentEnd !== nextStart) {
+                throw new Error(`chunk boundary lost route continuity: ${currentEnd} != ${nextStart}`);
+              }
+            }
+            const signalCount = vm.runInContext("signalData.length", context);
+            if (signalCount !== 1) {
+              throw new Error(`overlapping chunk responses were not de-duplicated; signalData length=${signalCount}`);
+            }
+
+            fetchBodies = [];
+            await vm.runInContext(`
+              navFullPath = Array.from({ length: 20000 }, (_, i) => ({
+                lat: () => 35 + i * 0.0001,
+                lng: () => 139,
+                distanceM: i * 20,
+              }));
+              fetchSignals();
+            `, context);
+            if (fetchBodies.length !== 0) {
+              throw new Error("route requiring more than four chunks sent partial Overpass traffic");
+            }
+
+            console.log("Overpass query keeps 10 m thinning / 35 m candidate corridor / 25 m exact filtering, chunks oversized routes sequentially into <=64 KiB bodies with overlap de-duplication, and rejects routes needing more than four chunks before network I/O");
+          })().catch((error) => {
+            console.error(error);
+            process.exit(1);
+          });
           NODE
