@@ -49,32 +49,48 @@ jobs:
               'const atBottom = maxScrollTop <= 1 || menuList.scrollTop >= maxScrollTop - 1;',
               'menuScroll.classList.toggle("at-top", atTop);',
               'menuScroll.classList.toggle("at-bottom", atBottom);',
-              'const selected = menuList.querySelector(".menu-row.focused");',
               'row.setAttribute("role", "button");',
-              'row.tabIndex = row === selected ? 0 : -1;',
-              'if (!menu.classList.contains("hidden")) focusWithoutScroll(selected);',
               'requestAnimationFrame(updateMenuScrims);',
-              'if (active && menuList.contains(active) && typeof active.blur === "function") {',
-              'if (!search.classList.contains("hidden") || !picker.classList.contains("hidden")) return;',
-              'focusWithoutScroll(controls.querySelector(".focusable.focused"));',
               'menuList.addEventListener("scroll", updateMenuScrims, { passive: true });',
               'updateMenuScrims();',
           )
           missing = [needle for needle in bridge_required if needle not in bridge]
           if missing:
               raise SystemExit(
-                  "menu focus bridge no longer preserves host-focus/edge-scrim contract: "
+                  "menu bridge no longer preserves semantic/scroll affordances: "
                   + ", ".join(missing)
+              )
+
+          bridge_forbidden = (
+              "focusWithoutScroll(",
+              "restoreFocusAfterMenuClose(",
+              "row.tabIndex =",
+              ".focus({",
+              ".focus();",
+              ".blur();",
+          )
+          present = [needle for needle in bridge_forbidden if needle in bridge]
+          if present:
+              raise SystemExit(
+                  "menu bridge must not compete with app.js for browser focus ownership: "
+                  + ", ".join(present)
               )
 
           app_required = (
               'li.className = "menu-row" + (i === menuIdx ? " focused" : "");',
+              'li.tabIndex = i === menuIdx ? 0 : -1;',
               'li.addEventListener("click", () => { menuIdx = i; renderMenu(); it.action(); });',
+              'const focused = els.menuList.querySelector(".focused");',
+              'if (focused && document.activeElement !== focused) focused.focus();',
+              'const focusedMenuRow = els.menuList.contains(document.activeElement)',
+              'if (focusedMenuRow && typeof focusedMenuRow.blur === "function") focusedMenuRow.blur();',
+              'function closeMenuToMap() {',
+              'renderFocus();',
           )
           missing = [needle for needle in app_required if needle not in app]
           if missing:
               raise SystemExit(
-                  "app menu renderer no longer exposes bridge selection/activation state: "
+                  "app menu renderer no longer owns visual + host DOM focus synchronization: "
                   + ", ".join(missing)
               )
 
@@ -171,7 +187,7 @@ jobs:
           if html.index(bridge_script) < html.index(app_script):
               raise SystemExit("menu focus bridge must load after js/app.js")
 
-          for element_id in ("menu", "menu-scroll", "menu-list", "controls", "search", "picker"):
+          for element_id in ("menu-scroll", "menu-list"):
               if f'id="{element_id}"' not in html:
-                  raise SystemExit(f"missing menu focus bridge target #{element_id}")
+                  raise SystemExit(f"missing menu bridge target #{element_id}")
           PY
