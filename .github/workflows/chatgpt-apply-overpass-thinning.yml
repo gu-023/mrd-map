@@ -27,63 +27,74 @@ jobs:
           path = Path('js/app.js')
           src = path.read_text()
 
-          old_constants = '''  const OVERPASS_REQUEST_TIMEOUT_MS = 25000; // server側20秒に通信余裕を加えたclient上限
-'''
-          new_constants = '''  const SIGNAL_ROUTE_RADIUS_M = 25;
-  const OVERPASS_ROUTE_POINT_SPACING_M = 10;
-  const OVERPASS_QUERY_RADIUS_M = SIGNAL_ROUTE_RADIUS_M + OVERPASS_ROUTE_POINT_SPACING_M;
-  const OVERPASS_REQUEST_TIMEOUT_MS = 25000; // server側20秒に通信余裕を加えたclient上限
-'''
+          old_constants = "  const OVERPASS_REQUEST_TIMEOUT_MS = 25000; // server側20秒に通信余裕を加えたclient上限\n"
+          new_constants = "\n".join([
+              "  const SIGNAL_ROUTE_RADIUS_M = 25;",
+              "  const OVERPASS_ROUTE_POINT_SPACING_M = 10;",
+              "  const OVERPASS_QUERY_RADIUS_M = SIGNAL_ROUTE_RADIUS_M + OVERPASS_ROUTE_POINT_SPACING_M;",
+              "  const OVERPASS_REQUEST_TIMEOUT_MS = 25000; // server側20秒に通信余裕を加えたclient上限",
+              "",
+          ])
           if src.count(old_constants) != 1:
               raise SystemExit(f'expected one Overpass constant anchor, found {src.count(old_constants)}')
           src = src.replace(old_constants, new_constants, 1)
 
-          old_block = '''    const routeLine = navFullPath
-      .map((point) => {
-        const lat = typeof point.lat === "function" ? point.lat() : point.lat;
-        const lng = typeof point.lng === "function" ? point.lng() : point.lng;
-        return Number.isFinite(lat) && Number.isFinite(lng) ? `${lat.toFixed(6)},${lng.toFixed(6)}` : null;
-      })
-      .filter(Boolean)
-      .join(",");
-    if (!routeLine) return;
-'''
-          new_block = '''    const validRoutePoints = navFullPath
-      .map((point) => {
-        const lat = typeof point.lat === "function" ? point.lat() : point.lat;
-        const lng = typeof point.lng === "function" ? point.lng() : point.lng;
-        if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
-        return { lat, lng, location: new google.maps.LatLng(lat, lng) };
-      })
-      .filter(Boolean);
-    const queryRoutePoints = validRoutePoints.filter((point, index) => {
-      if (index === 0 || index === validRoutePoints.length - 1) return true;
-      const previous = validRoutePoints[index - 1];
-      return meters(previous.location, point.location) >= OVERPASS_ROUTE_POINT_SPACING_M;
-    });
-    const routeLine = queryRoutePoints
-      .map((point) => `${point.lat.toFixed(6)},${point.lng.toFixed(6)}`)
-      .join(",");
-    if (!routeLine) return;
-'''
+          old_block = "\n".join([
+              "    const routeLine = navFullPath",
+              "      .map((point) => {",
+              "        const lat = typeof point.lat === \"function\" ? point.lat() : point.lat;",
+              "        const lng = typeof point.lng === \"function\" ? point.lng() : point.lng;",
+              "        return Number.isFinite(lat) && Number.isFinite(lng) ? `${lat.toFixed(6)},${lng.toFixed(6)}` : null;",
+              "      })",
+              "      .filter(Boolean)",
+              "      .join(\",\");",
+              "    if (!routeLine) return;",
+              "",
+          ])
+          new_block = "\n".join([
+              "    const validRoutePoints = navFullPath",
+              "      .map((point) => {",
+              "        const lat = typeof point.lat === \"function\" ? point.lat() : point.lat;",
+              "        const lng = typeof point.lng === \"function\" ? point.lng() : point.lng;",
+              "        if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;",
+              "        return { lat, lng, location: new google.maps.LatLng(lat, lng) };",
+              "      })",
+              "      .filter(Boolean);",
+              "    const queryRoutePoints = [];",
+              "    for (let i = 0; i < validRoutePoints.length; i++) {",
+              "      const point = validRoutePoints[i];",
+              "      const previous = queryRoutePoints[queryRoutePoints.length - 1];",
+              "      const isEndpoint = i === 0 || i === validRoutePoints.length - 1;",
+              "      if (!isEndpoint && previous &&",
+              "          meters(previous.location, point.location) < OVERPASS_ROUTE_POINT_SPACING_M) continue;",
+              "      queryRoutePoints.push(point);",
+              "    }",
+              "    const routeLine = queryRoutePoints",
+              "      .map((point) => `${point.lat.toFixed(6)},${point.lng.toFixed(6)}`)",
+              "      .join(\",\");",
+              "    if (!routeLine) return;",
+              "",
+          ])
           if src.count(old_block) != 1:
               raise SystemExit(f'expected one fetchSignals route block, found {src.count(old_block)}')
           src = src.replace(old_block, new_block, 1)
 
-          old_query = '''      `(around:25,${routeLine});out;`;'''
-          new_query = '''      `(around:${OVERPASS_QUERY_RADIUS_M},${routeLine});out;`;'''
+          old_query = "      `(around:25,${routeLine});out;`;"
+          new_query = "      `(around:${OVERPASS_QUERY_RADIUS_M},${routeLine});out;`;"
           if src.count(old_query) != 1:
               raise SystemExit(f'expected one Overpass around query, found {src.count(old_query)}')
           src = src.replace(old_query, new_query, 1)
 
-          old_filter = '''            if (min < 25) break;
-          }
-          if (min < 25) near.push({ lat: el.lat, lng: el.lon }); // ルート沿いのみ
-'''
-          new_filter = '''            if (min < SIGNAL_ROUTE_RADIUS_M) break;
-          }
-          if (min < SIGNAL_ROUTE_RADIUS_M) near.push({ lat: el.lat, lng: el.lon }); // ルート沿いのみ
-'''
+          old_filter = "\n".join([
+              "            if (min < 25) break;",
+              "          }",
+              "          if (min < 25) near.push({ lat: el.lat, lng: el.lon }); // ルート沿いのみ",
+          ])
+          new_filter = "\n".join([
+              "            if (min < SIGNAL_ROUTE_RADIUS_M) break;",
+              "          }",
+              "          if (min < SIGNAL_ROUTE_RADIUS_M) near.push({ lat: el.lat, lng: el.lon }); // ルート沿いのみ",
+          ])
           if src.count(old_filter) != 1:
               raise SystemExit(f'expected one local signal corridor filter, found {src.count(old_filter)}')
           src = src.replace(old_filter, new_filter, 1)
@@ -103,7 +114,7 @@ jobs:
               'const SIGNAL_ROUTE_RADIUS_M = 25;',
               'const OVERPASS_ROUTE_POINT_SPACING_M = 10;',
               'const OVERPASS_QUERY_RADIUS_M = SIGNAL_ROUTE_RADIUS_M + OVERPASS_ROUTE_POINT_SPACING_M;',
-              'meters(previous.location, point.location) >= OVERPASS_ROUTE_POINT_SPACING_M',
+              'meters(previous.location, point.location) < OVERPASS_ROUTE_POINT_SPACING_M',
               '`(around:${OVERPASS_QUERY_RADIUS_M},${routeLine});out;`',
               'if (min < SIGNAL_ROUTE_RADIUS_M) near.push',
           ]
