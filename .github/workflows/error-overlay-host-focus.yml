@@ -1,0 +1,84 @@
+name: Error overlay host focus guard
+
+on:
+  pull_request:
+    paths:
+      - index.html
+      - js/app.js
+      - .github/workflows/error-overlay-host-focus.yml
+  push:
+    branches: [main]
+    paths:
+      - index.html
+      - js/app.js
+      - .github/workflows/error-overlay-host-focus.yml
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check error overlay host-focus contract
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          app = Path("js/app.js").read_text()
+          html = Path("index.html").read_text()
+
+          markers = {
+              "show": "  function showError(titleHtml, bodyHtml, source = null) {",
+              "restore": "  function restoreFocusAfterError() {",
+              "clear": "  function clearError(source) {",
+              "next": '  if (!cfg.GOOGLE_MAPS_API_KEY || cfg.GOOGLE_MAPS_API_KEY === "__GOOGLE_MAPS_API_KEY__") {',
+          }
+          if any(app.count(marker) != 1 for marker in markers.values()):
+              raise SystemExit("error-overlay focus lifecycle markers changed unexpectedly")
+
+          show = app[app.index(markers["show"]):app.index(markers["restore"])]
+          restore = app[app.index(markers["restore"]):app.index(markers["clear"])]
+          clear = app[app.index(markers["clear"]):app.index(markers["next"])]
+
+          show_required = (
+              "els.error.tabIndex = 0;",
+              'els.error.classList.remove("hidden");',
+              'typeof els.error.focus === "function"',
+              "els.error.focus();",
+              "els.error.onclick = () => {",
+              'typeof els.error.dispatchEvent === "function"',
+              'typeof KeyboardEvent === "function"',
+              'new KeyboardEvent("keydown", { key: "Enter", bubbles: true })',
+          )
+          missing = [item for item in show_required if item not in show]
+          if missing:
+              raise SystemExit("showError host-focus contract missing: " + ", ".join(missing))
+          if show.index('els.error.classList.remove("hidden");') > show.index("els.error.focus();"):
+              raise SystemExit("error overlay must be visible before focus is transferred")
+
+          restore_required = ("renderSearch();", "renderMenu();", "els.picker.focus();", "renderFocus();")
+          missing = [item for item in restore_required if item not in restore]
+          if missing:
+              raise SystemExit("error focus restoration contract missing: " + ", ".join(missing))
+
+          clear_required = (
+              'const ownsFocus = typeof document !== "undefined" && document.activeElement === els.error;',
+              "els.error.tabIndex = -1;",
+              'els.error.classList.add("hidden");',
+              'typeof els.error.blur === "function"',
+              "els.error.blur();",
+              "restoreFocusAfterError();",
+          )
+          missing = [item for item in clear_required if item not in clear]
+          if missing:
+              raise SystemExit("clearError host-focus contract missing: " + ", ".join(missing))
+
+          expected_html = '<div id="error-overlay" class="hidden" role="button" tabindex="-1" aria-live="assertive" aria-atomic="true"></div>'
+          if expected_html not in html:
+              raise SystemExit("error overlay host semantics changed unexpectedly")
+          PY
+
+          node --check js/app.js
+          git diff --check
