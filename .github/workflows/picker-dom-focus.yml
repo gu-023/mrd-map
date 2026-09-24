@@ -45,37 +45,55 @@ jobs:
               'const picker = document.querySelector("#picker");',
               'picker.setAttribute("role", "button");',
               'picker.setAttribute("aria-label", "地図中央を目的地に確定");',
-              'picker.tabIndex = open ? 0 : -1;',
-              'focusWithoutScroll(picker);',
-              'if (document.activeElement === picker && typeof picker.blur === "function") picker.blur();',
-              'if (!menu.classList.contains("hidden") || !search.classList.contains("hidden")) return;',
-              'focusWithoutScroll(controls.querySelector(".focusable.focused"));',
               'picker.addEventListener("click", () => {',
               'if (picker.classList.contains("hidden")) return;',
               'picker.dispatchEvent(new KeyboardEvent("keydown", {',
               'key: "Enter",',
               'code: "Enter",',
               'bubbles: true,',
-              'const observer = new MutationObserver(syncPickerFocus);',
-              'attributeFilter: ["class"],',
           )
           missing = [needle for needle in bridge_required if needle not in bridge]
           if missing:
               raise SystemExit(
-                  "picker focus bridge no longer preserves host-focus contract: "
+                  "picker bridge no longer preserves host activation semantics: "
                   + ", ".join(missing)
+              )
+
+          bridge_forbidden = (
+              "focusWithoutScroll(",
+              "syncPickerFocus(",
+              "MutationObserver",
+              "picker.tabIndex =",
+              ".focus({",
+              ".focus();",
+              ".blur();",
+              '#controls',
+              '#menu',
+              '#search',
+          )
+          present = [needle for needle in bridge_forbidden if needle in bridge]
+          if present:
+              raise SystemExit(
+                  "picker bridge must not compete with app.js for browser focus ownership: "
+                  + ", ".join(present)
               )
 
           app_required = (
               'els.picker.classList.remove("hidden");',
+              'els.picker.tabIndex = 0;',
+              'if (document.activeElement !== els.picker) els.picker.focus();',
               'els.picker.classList.add("hidden");',
+              'els.picker.tabIndex = -1;',
+              'if (document.activeElement === els.picker && typeof els.picker.blur === "function") {',
+              'els.picker.blur();',
+              'renderFocus();',
               'if (pickMode) {',
               'case "Enter": case " ": confirmDestination(); break;',
           )
           missing = [needle for needle in app_required if needle not in app]
           if missing:
               raise SystemExit(
-                  "app picker flow no longer exposes the expected Enter confirmation path: "
+                  "app picker flow no longer owns host DOM focus + Enter confirmation: "
                   + ", ".join(missing)
               )
 
