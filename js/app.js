@@ -137,7 +137,31 @@
     errorSource = source;
     els.error.innerHTML =
       `<div class="title">${titleHtml}</div><div>${bodyHtml}</div>`;
+    els.error.tabIndex = 0;
     els.error.classList.remove("hidden");
+    if (typeof els.error.focus === "function") els.error.focus();
+    els.error.onclick = () => {
+      if (els.error.classList.contains("hidden")) return;
+      if (typeof els.error.dispatchEvent === "function" && typeof KeyboardEvent === "function") {
+        els.error.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+      }
+    };
+  }
+
+  function restoreFocusAfterError() {
+    if (searchOpen) {
+      renderSearch();
+      return;
+    }
+    if (menuOpen) {
+      renderMenu();
+      return;
+    }
+    if (pickMode) {
+      if (typeof document !== "undefined") { if (document.activeElement !== els.picker) els.picker.focus(); }
+      return;
+    }
+    renderFocus();
   }
 
   function clearError(source) {
@@ -145,8 +169,14 @@
     if (errorSource === "google-maps-load") return;
     if (errorSource === "geolocation-reload") return;
     if (errorSource !== source) return;
+    const ownsFocus = typeof document !== "undefined" && document.activeElement === els.error;
     errorSource = null;
+    els.error.tabIndex = -1;
     els.error.classList.add("hidden");
+    if (ownsFocus) {
+      if (typeof els.error.blur === "function") els.error.blur();
+      restoreFocusAfterError();
+    }
   }
 
   if (!cfg.GOOGLE_MAPS_API_KEY || cfg.GOOGLE_MAPS_API_KEY === "__GOOGLE_MAPS_API_KEY__") {
@@ -1539,7 +1569,7 @@
     followMode = false;
     els.picker.classList.remove("hidden");
     els.picker.tabIndex = 0;
-    if (document.activeElement !== els.picker) els.picker.focus();
+    if (typeof document !== "undefined") { if (document.activeElement !== els.picker) els.picker.focus(); }
     setNavBanner("←↑↓→ で地図を動かし、決定で目的地を確定");
   }
 
