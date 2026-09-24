@@ -1538,13 +1538,20 @@
     pickMode = true;
     followMode = false;
     els.picker.classList.remove("hidden");
+    els.picker.tabIndex = 0;
+    if (document.activeElement !== els.picker) els.picker.focus();
     setNavBanner("←↑↓→ で地図を動かし、決定で目的地を確定");
   }
 
   function exitPickMode() {
     pickMode = false;
     els.picker.classList.add("hidden");
+    els.picker.tabIndex = -1;
+    if (document.activeElement === els.picker && typeof els.picker.blur === "function") {
+      els.picker.blur();
+    }
     setNavBanner(null);
+    renderFocus();
   }
 
   function confirmDestination() {
