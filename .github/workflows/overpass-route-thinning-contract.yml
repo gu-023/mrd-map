@@ -31,7 +31,8 @@ jobs:
           const signalsStart = source.indexOf("  function fetchSignals() {");
           const signalsEnd = source.indexOf("\n\n  function plotSignals() {", signalsStart);
           const timeoutMatch = source.match(/^  const OVERPASS_REQUEST_TIMEOUT_MS = (\d+);/m);
-          if (signalsStart < 0 || signalsEnd < 0 || !timeoutMatch) {
+          const maxBodyMatch = source.match(/^  const OVERPASS_MAX_REQUEST_BODY_BYTES = (\d+) \* 1024;/m);
+          if (signalsStart < 0 || signalsEnd < 0 || !timeoutMatch || !maxBodyMatch) {
             throw new Error("Overpass implementation could not be located");
           }
 
@@ -73,6 +74,7 @@ jobs:
 
           vm.runInContext(`
             const OVERPASS_REQUEST_TIMEOUT_MS = ${Number(timeoutMatch[1])};
+            const OVERPASS_MAX_REQUEST_BODY_BYTES = ${Number(maxBodyMatch[1])} * 1024;
             let signalRequestId = 0;
             let navMode = true;
             let signalData = [];
@@ -108,6 +110,23 @@ jobs:
           if (!source.includes("if (min < SIGNAL_ROUTE_RADIUS_M) near.push")) {
             throw new Error("client-side exact-route filter no longer uses SIGNAL_ROUTE_RADIUS_M");
           }
+          if (Number(maxBodyMatch[1]) !== 64 ||
+              !source.includes("if (requestBody.length > OVERPASS_MAX_REQUEST_BODY_BYTES) return;")) {
+            throw new Error("Overpass request-size guard is not pinned at 64 KiB");
+          }
 
-          console.log("Overpass query retains endpoints, thins dense samples, widens to 35 m, and keeps the exact 25 m local filter");
+          vm.runInContext(`
+            navFullPath = Array.from({ length: 4000 }, (_, i) => ({
+              lat: () => 35 + i * 0.0001,
+              lng: () => 139,
+              distanceM: i * 20,
+            }));
+            fetchSignals();
+          `, context);
+
+          if (fetchCount !== 1) {
+            throw new Error("oversized Overpass body was sent instead of being rejected locally");
+          }
+
+          console.log("Overpass query retains endpoints, thins dense samples, stays within a 64 KiB client body budget, widens to 35 m, and keeps the exact 25 m local filter");
           NODE
