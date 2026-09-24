@@ -97,6 +97,53 @@ jobs:
                   + ", ".join(missing)
               )
 
+          render_picker_start = app.find("  function renderPickerFocus() {")
+          render_picker_end = app.find("\n  function enterPickMode() {", render_picker_start)
+          restore_picker_start = app.find("  function restoreFocusAfterError() {")
+          restore_picker_end = app.find("\n  function clearError(source) {", restore_picker_start)
+          enter_picker_start = app.find("  function enterPickMode() {")
+          enter_picker_end = app.find("\n  function exitPickMode() {", enter_picker_start)
+          if min(
+              render_picker_start,
+              render_picker_end,
+              restore_picker_start,
+              restore_picker_end,
+              enter_picker_start,
+              enter_picker_end,
+          ) < 0:
+              raise SystemExit("unable to isolate picker focus ownership sections")
+
+          render_picker = app[render_picker_start:render_picker_end]
+          restore_picker = app[restore_picker_start:restore_picker_end]
+          enter_picker = app[enter_picker_start:enter_picker_end]
+
+          picker_focus_lines = [
+              line.strip()
+              for line in app.splitlines()
+              if "els.picker.focus(" in line
+          ]
+          expected_picker_focus = [
+              "if (document.activeElement !== els.picker) els.picker.focus();"
+          ]
+          if picker_focus_lines != expected_picker_focus:
+              raise SystemExit(
+                  "picker DOM focus must be written only by renderPickerFocus(): "
+                  + repr(picker_focus_lines)
+              )
+          if "els.picker.focus();" not in render_picker:
+              raise SystemExit("renderPickerFocus() no longer owns the sole picker DOM focus write")
+          if "if (!pickMode) return;" not in render_picker or "errorSource === null" not in render_picker:
+              raise SystemExit("renderPickerFocus() lost picker/error visibility guards")
+
+          for name, section in (
+              ("restoreFocusAfterError", restore_picker),
+              ("enterPickMode", enter_picker),
+          ):
+              if "renderPickerFocus();" not in section:
+                  raise SystemExit(f"{name} must delegate picker DOM focus to renderPickerFocus()")
+              if "els.picker.focus();" in section:
+                  raise SystemExit(f"{name} must not bypass renderPickerFocus()")
+
           def require_css_declarations(selector, expected):
               matches = list(re.finditer(re.escape(selector) + r"\s*\{([^}]*)\}", css, re.S))
               if not matches:

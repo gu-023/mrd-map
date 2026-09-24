@@ -41,6 +41,7 @@ jobs:
               "search_focus_listener": '  els.searchQuery.addEventListener("focus", () => {',
               "render_menu": "  function renderMenu() {",
               "menu_move": "  function menuMove(d) {",
+              "render_picker": "  function renderPickerFocus() {",
               "enter_pick": "  function enterPickMode() {",
               "exit_pick": "  function exitPickMode() {",
               "render_focus": "  function renderFocus() {",
@@ -56,6 +57,7 @@ jobs:
           reopen_search = app[app.index(markers["reopen_search"]):app.index(markers["render_search"])]
           render_search = app[app.index(markers["render_search"]):app.index(markers["search_focus_listener"])]
           render_menu = app[app.index(markers["render_menu"]):app.index(markers["menu_move"])]
+          render_picker = app[app.index(markers["render_picker"]):app.index(markers["enter_pick"])]
           enter_pick = app[app.index(markers["enter_pick"]):app.index(markers["exit_pick"])]
           render_focus = app[app.index(markers["render_focus"]):app.index(markers["move_focus"])]
 
@@ -75,7 +77,7 @@ jobs:
           if show.index('els.error.classList.remove("hidden");') > show.index("els.error.focus();"):
               raise SystemExit("error overlay must be visible before focus is transferred")
 
-          restore_required = ("renderSearch();", "renderMenu();", "els.picker.focus();", "renderFocus();")
+          restore_required = ("renderSearch();", "renderMenu();", "renderPickerFocus();", "renderFocus();")
           missing = [item for item in restore_required if item not in restore]
           if missing:
               raise SystemExit("error focus restoration contract missing: " + ", ".join(missing))
@@ -111,9 +113,12 @@ jobs:
               if "els.searchQuery.focus();" in section:
                   raise SystemExit(f"{name} must not bypass the visible-error focus guard")
 
+          if "renderPickerFocus();" not in enter_pick or "els.picker.focus();" in enter_pick:
+              raise SystemExit("enterPickMode must delegate picker focus to renderPickerFocus()")
+
           surface_guards = (
               ("menu", render_menu, "errorSource === null", "focused.focus();"),
-              ("picker", enter_pick, "errorSource === null", "els.picker.focus();"),
+              ("picker", render_picker, "errorSource === null", "els.picker.focus();"),
               ("main controls", render_focus, "errorSource === null", "focusedControl.focus();"),
           )
           for name, section, guard, focus_write in surface_guards:

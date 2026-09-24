@@ -158,7 +158,7 @@
       return;
     }
     if (pickMode) {
-      if (typeof document !== "undefined") { if (document.activeElement !== els.picker) els.picker.focus(); }
+      renderPickerFocus();
       return;
     }
     renderFocus();
@@ -1555,6 +1555,13 @@
     renderSearch();
   }
 
+  function renderPickerFocus() {
+    if (!pickMode) return;
+    if ((typeof errorSource === "undefined" || errorSource === null) && typeof document !== "undefined") {
+      if (document.activeElement !== els.picker) els.picker.focus();
+    }
+  }
+
   function enterPickMode() {
     if (navMode && !navRerouting && !els.navBanner.classList.contains("hidden")) {
       routePreviousNavBanner = els.navBanner.innerHTML; // picker failure 時に旧ナビ案内を復元
@@ -1571,9 +1578,7 @@
     followMode = false;
     els.picker.classList.remove("hidden");
     els.picker.tabIndex = 0;
-    if ((typeof errorSource === "undefined" || errorSource === null) && typeof document !== "undefined") {
-      if (document.activeElement !== els.picker) els.picker.focus();
-    }
+    renderPickerFocus();
     setNavBanner("←↑↓→ で地図を動かし、決定で目的地を確定");
   }
 
