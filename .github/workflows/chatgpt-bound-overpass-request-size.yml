@@ -26,40 +26,26 @@ jobs:
           path = Path('js/app.js')
           source = path.read_text()
 
-          old_constant = '  const OVERPASS_REQUEST_TIMEOUT_MS = 25000; // server側20秒に通信余裕を加えたclient上限\n'
-          new_constant = (
-              old_constant +
-              '  const OVERPASS_MAX_REQUEST_BODY_BYTES = 64 * 1024; // percent-encoded POST bodyはASCIIなのでlengthでbyte上限を判定\n'
-          )
-          if source.count(old_constant) != 1:
+          timeout_anchor = '  const OVERPASS_REQUEST_TIMEOUT_MS = 25000; // server側20秒に通信余裕を加えたclient上限\n'
+          size_constant = '  const OVERPASS_MAX_REQUEST_BODY_BYTES = 64 * 1024; // percent-encoded POST bodyはASCIIなのでlengthでbyte上限を判定\n'
+          if source.count(timeout_anchor) != 1 or size_constant in source:
               raise SystemExit('unexpected Overpass timeout constant anchor')
-          source = source.replace(old_constant, new_constant, 1)
+          source = source.replace(timeout_anchor, timeout_anchor + size_constant, 1)
 
-          old_request = '''    const q =
-      `[out:json][timeout:20];node["highway"="traffic_signals"]` +
-      `(around:${OVERPASS_QUERY_RADIUS_M},${routeLine});out;`;
-    const abortController = typeof AbortController === "function" ? new AbortController() : null;
-    fetchSignals.abortController = abortController;
-    const requestOptions = {
-      method: "POST",
-      body: "data=" + encodeURIComponent(q),
-    };
-'''
-          new_request = '''    const q =
-      `[out:json][timeout:20];node["highway"="traffic_signals"]` +
-      `(around:${OVERPASS_QUERY_RADIUS_M},${routeLine});out;`;
-    const requestBody = "data=" + encodeURIComponent(q);
-    if (requestBody.length > OVERPASS_MAX_REQUEST_BODY_BYTES) return;
-    const abortController = typeof AbortController === "function" ? new AbortController() : null;
-    fetchSignals.abortController = abortController;
-    const requestOptions = {
-      method: "POST",
-      body: requestBody,
-    };
-'''
-          if source.count(old_request) != 1:
-              raise SystemExit('unexpected Overpass request anchor')
-          source = source.replace(old_request, new_request, 1)
+          abort_anchor = '    const abortController = typeof AbortController === "function" ? new AbortController() : null;\n'
+          guard = (
+              '    const requestBody = "data=" + encodeURIComponent(q);\n'
+              '    if (requestBody.length > OVERPASS_MAX_REQUEST_BODY_BYTES) return;\n'
+          )
+          if source.count(abort_anchor) != 1 or 'const requestBody = "data=" + encodeURIComponent(q);' in source:
+              raise SystemExit('unexpected Overpass abort-controller anchor')
+          source = source.replace(abort_anchor, guard + abort_anchor, 1)
+
+          body_anchor = '      body: "data=" + encodeURIComponent(q),\n'
+          if source.count(body_anchor) != 1:
+              raise SystemExit('unexpected Overpass request body anchor')
+          source = source.replace(body_anchor, '      body: requestBody,\n', 1)
+
           path.write_text(source)
           PY
 
