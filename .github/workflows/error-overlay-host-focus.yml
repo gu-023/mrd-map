@@ -34,6 +34,8 @@ jobs:
               "restore": "  function restoreFocusAfterError() {",
               "clear": "  function clearError(source) {",
               "next": '  if (!cfg.GOOGLE_MAPS_API_KEY || cfg.GOOGLE_MAPS_API_KEY === "__GOOGLE_MAPS_API_KEY__") {',
+              "render_search": "  function renderSearch() {",
+              "close_search": "  function closeSearch() {",
           }
           if any(app.count(marker) != 1 for marker in markers.values()):
               raise SystemExit("error-overlay focus lifecycle markers changed unexpectedly")
@@ -41,6 +43,7 @@ jobs:
           show = app[app.index(markers["show"]):app.index(markers["restore"])]
           restore = app[app.index(markers["restore"]):app.index(markers["clear"])]
           clear = app[app.index(markers["clear"]):app.index(markers["next"])]
+          render_search = app[app.index(markers["render_search"]):app.index(markers["close_search"])]
 
           show_required = (
               "els.error.tabIndex = 0;",
@@ -74,6 +77,19 @@ jobs:
           missing = [item for item in clear_required if item not in clear]
           if missing:
               raise SystemExit("clearError host-focus contract missing: " + ", ".join(missing))
+
+          search_required = (
+              'const errorOverlayVisible = !els.error.classList.contains("hidden");',
+              "if (!errorOverlayVisible &&",
+              "focusedSearchElement &&",
+              "document.activeElement !== focusedSearchElement",
+              "focusedSearchElement.focus();",
+          )
+          missing = [item for item in search_required if item not in render_search]
+          if missing:
+              raise SystemExit("search render can steal visible error-overlay focus: " + ", ".join(missing))
+          if render_search.index("if (!errorOverlayVisible &&") > render_search.index("focusedSearchElement.focus();"):
+              raise SystemExit("search focus write must remain behind the visible-error guard")
 
           expected_html = '<div id="error-overlay" class="hidden" role="button" tabindex="-1" aria-live="assertive" aria-atomic="true"></div>'
           if expected_html not in html:
