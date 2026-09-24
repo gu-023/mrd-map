@@ -90,9 +90,6 @@
   let signalsOn = false; // External Overpass lookup is opt-in from the navigation menu.
   let signalData = [];
   let signalMarkers = [];
-  const SIGNAL_ROUTE_RADIUS_M = 25;
-  const OVERPASS_ROUTE_POINT_SPACING_M = 10;
-  const OVERPASS_QUERY_RADIUS_M = SIGNAL_ROUTE_RADIUS_M + OVERPASS_ROUTE_POINT_SPACING_M;
   const OVERPASS_REQUEST_TIMEOUT_MS = 25000; // server側20秒に通信余裕を加えたclient上限
   let signalRequestId = 0; // 古い Overpass callback を無視するための世代番号
   let geocoder = null;
@@ -1794,12 +1791,15 @@
   /* ---------- 信号機（OpenStreetMap Overpass・無料/キー不要） ---------- */
   function fetchSignals() {
     if (!navFullPath.length) return;
+    const SIGNAL_ROUTE_RADIUS_M = 25;
+    const OVERPASS_ROUTE_POINT_SPACING_M = 10;
+    const OVERPASS_QUERY_RADIUS_M = SIGNAL_ROUTE_RADIUS_M + OVERPASS_ROUTE_POINT_SPACING_M;
     const validRoutePoints = navFullPath
       .map((point) => {
         const lat = typeof point.lat === "function" ? point.lat() : point.lat;
         const lng = typeof point.lng === "function" ? point.lng() : point.lng;
         if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
-        return { lat, lng, location: new google.maps.LatLng(lat, lng) };
+        return { lat, lng, source: point };
       })
       .filter(Boolean);
     const queryRoutePoints = [];
@@ -1808,7 +1808,7 @@
       const previous = queryRoutePoints[queryRoutePoints.length - 1];
       const isEndpoint = i === 0 || i === validRoutePoints.length - 1;
       if (!isEndpoint && previous &&
-          meters(previous.location, point.location) < OVERPASS_ROUTE_POINT_SPACING_M) continue;
+          meters(previous.source, point.source) < OVERPASS_ROUTE_POINT_SPACING_M) continue;
       queryRoutePoints.push(point);
     }
     const routeLine = queryRoutePoints
