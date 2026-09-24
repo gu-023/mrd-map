@@ -1,0 +1,67 @@
+name: One-shot centralize search keydown focus
+
+on:
+  push:
+    branches:
+      - chatgpt/centralize-search-keydown-focus
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: chatgpt/centralize-search-keydown-focus
+      - name: Apply atomic focus-ownership patch
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("js/app.js")
+          text = path.read_text()
+          old_key = '''        case "ArrowUp":
+          if (keyIdx - SEARCH_COLS >= 0) keyIdx -= SEARCH_COLS;
+          else { searchZone = "input"; els.searchQuery.focus(); }
+          break;'''
+          new_key = '''        case "ArrowUp":
+          if (keyIdx - SEARCH_COLS >= 0) keyIdx -= SEARCH_COLS;
+          else searchZone = "input";
+          break;'''
+          old_pred = '''        case "ArrowUp":
+          if (predIdx > 0) predIdx--;
+          else {
+            searchZone = predictionBackZone;
+            if (searchZone === "input") els.searchQuery.focus();
+          }
+          break;'''
+          new_pred = '''        case "ArrowUp":
+          if (predIdx > 0) predIdx--;
+          else searchZone = predictionBackZone;
+          break;'''
+          if text.count(old_key) != 1:
+              raise SystemExit("expected exactly one fallback-keyboard upward focus block")
+          if text.count(old_pred) != 1:
+              raise SystemExit("expected exactly one prediction upward focus block")
+          text = text.replace(old_key, new_key).replace(old_pred, new_pred)
+          path.write_text(text)
+          PY
+          node --check js/app.js
+          git diff --check
+          git diff -- js/app.js
+      - name: Commit product change
+        shell: bash
+        run: |
+          if git diff --quiet -- js/app.js; then
+            echo "No product diff produced" >&2
+            exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add js/app.js
+          git commit -m "Centralize search keydown focus ownership"
+          git push origin HEAD:chatgpt/centralize-search-keydown-focus
