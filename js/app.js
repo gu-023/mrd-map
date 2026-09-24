@@ -90,6 +90,9 @@
   let signalsOn = false; // External Overpass lookup is opt-in from the navigation menu.
   let signalData = [];
   let signalMarkers = [];
+  const SIGNAL_ROUTE_RADIUS_M = 25;
+  const OVERPASS_ROUTE_POINT_SPACING_M = 10;
+  const OVERPASS_QUERY_RADIUS_M = SIGNAL_ROUTE_RADIUS_M + OVERPASS_ROUTE_POINT_SPACING_M;
   const OVERPASS_REQUEST_TIMEOUT_MS = 25000; // server側20秒に通信余裕を加えたclient上限
   let signalRequestId = 0; // 古い Overpass callback を無視するための世代番号
   let geocoder = null;
@@ -1791,19 +1794,31 @@
   /* ---------- 信号機（OpenStreetMap Overpass・無料/キー不要） ---------- */
   function fetchSignals() {
     if (!navFullPath.length) return;
-    const routeLine = navFullPath
+    const validRoutePoints = navFullPath
       .map((point) => {
         const lat = typeof point.lat === "function" ? point.lat() : point.lat;
         const lng = typeof point.lng === "function" ? point.lng() : point.lng;
-        return Number.isFinite(lat) && Number.isFinite(lng) ? `${lat.toFixed(6)},${lng.toFixed(6)}` : null;
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+        return { lat, lng, location: new google.maps.LatLng(lat, lng) };
       })
-      .filter(Boolean)
+      .filter(Boolean);
+    const queryRoutePoints = [];
+    for (let i = 0; i < validRoutePoints.length; i++) {
+      const point = validRoutePoints[i];
+      const previous = queryRoutePoints[queryRoutePoints.length - 1];
+      const isEndpoint = i === 0 || i === validRoutePoints.length - 1;
+      if (!isEndpoint && previous &&
+          meters(previous.location, point.location) < OVERPASS_ROUTE_POINT_SPACING_M) continue;
+      queryRoutePoints.push(point);
+    }
+    const routeLine = queryRoutePoints
+      .map((point) => `${point.lat.toFixed(6)},${point.lng.toFixed(6)}`)
       .join(",");
     if (!routeLine) return;
     const requestId = ++signalRequestId;
     const q =
       `[out:json][timeout:20];node["highway"="traffic_signals"]` +
-      `(around:25,${routeLine});out;`;
+      `(around:${OVERPASS_QUERY_RADIUS_M},${routeLine});out;`;
     const abortController = typeof AbortController === "function" ? new AbortController() : null;
     fetchSignals.abortController = abortController;
     const requestOptions = {
@@ -1836,9 +1851,9 @@
           for (let i = 0; i < navFullPath.length - 1; i++) {
             const d = distanceToSegment(pt, navFullPath[i], navFullPath[i + 1]);
             if (d < min) min = d;
-            if (min < 25) break;
+            if (min < SIGNAL_ROUTE_RADIUS_M) break;
           }
-          if (min < 25) near.push({ lat: el.lat, lng: el.lon }); // ルート沿いのみ
+          if (min < SIGNAL_ROUTE_RADIUS_M) near.push({ lat: el.lat, lng: el.lon }); // ルート沿いのみ
         }
         signalData = near;
         plotSignals();
