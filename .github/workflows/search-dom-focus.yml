@@ -105,6 +105,38 @@ jobs:
                   + ", ".join(missing)
               )
 
+          render_search_start = app.find("  function renderSearch() {")
+          render_search_end = app.find(
+              '\n  els.searchQuery.addEventListener("focus"',
+              render_search_start,
+          )
+          if render_search_start < 0 or render_search_end < 0:
+              raise SystemExit("unable to isolate renderSearch() for focus ownership check")
+          render_search = app[render_search_start:render_search_end]
+
+          search_focus_tokens = (
+              "searchQuery",
+              "searchKeyboard",
+              "searchPreds",
+              "focusedSearchElement",
+              "#search-query",
+              "#search-keyboard",
+              "#search-preds",
+          )
+          search_focus_lines = [
+              line.strip()
+              for line in app.splitlines()
+              if ".focus(" in line
+              and any(token in line for token in search_focus_tokens)
+          ]
+          if search_focus_lines != ["focusedSearchElement.focus();"]:
+              raise SystemExit(
+                  "search DOM focus must be written only by renderSearch(): "
+                  + repr(search_focus_lines)
+              )
+          if "focusedSearchElement.focus();" not in render_search:
+              raise SystemExit("renderSearch() no longer owns the sole search DOM focus write")
+
           def require_css_declarations(selector, expected):
               matches = list(re.finditer(re.escape(selector) + r"\s*\{([^}]*)\}", css, re.S))
               if not matches:
