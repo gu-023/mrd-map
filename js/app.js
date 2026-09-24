@@ -1206,6 +1206,9 @@
   }
 
   function closeSearch() {
+    const focusedSearchElement = els.search.contains(document.activeElement)
+      ? document.activeElement
+      : null;
     if (predictionTimeoutId !== null) clearTimeout(predictionTimeoutId);
     if (placeDetailsTimeoutId !== null) clearTimeout(placeDetailsTimeoutId);
     if (compositionRefreshTimeoutId !== null) clearTimeout(compositionRefreshTimeoutId);
@@ -1218,8 +1221,11 @@
     clearError("places"); // 明示的に検索を閉じたら Places 由来の stale error も解除
     placeDetailsLoading = false;
     searchOpen = false;
-    els.searchQuery.blur();
+    if (focusedSearchElement && typeof focusedSearchElement.blur === "function") {
+      focusedSearchElement.blur();
+    }
     els.search.classList.add("hidden");
+    renderFocus();
     if (followMode) {
       const currentPosition = userMarker && userMarker.getPosition();
       if (currentPosition) map.panTo(currentPosition);
@@ -1240,10 +1246,12 @@
   function renderSearch() {
     if (els.searchQuery.value !== searchQuery) els.searchQuery.value = searchQuery;
     els.searchQuery.classList.toggle("focused", searchZone === "input");
+    els.searchQuery.tabIndex = searchZone === "input" ? 0 : -1;
     els.searchKeyboard.innerHTML = "";
     SEARCH_KEYS.forEach((k, i) => {
       const d = document.createElement("div");
       d.className = "key" + (searchZone === "keys" && i === keyIdx ? " focused" : "");
+      d.tabIndex = searchZone === "keys" && i === keyIdx ? 0 : -1;
       d.textContent = k;
       d.addEventListener("click", () => {
         els.searchQuery.blur();
@@ -1270,10 +1278,19 @@
     searchPredictions.forEach((p, i) => {
       const li = document.createElement("li");
       li.className = "pred" + (searchZone === "preds" && i === predIdx ? " focused" : "");
+      li.tabIndex = searchZone === "preds" && i === predIdx ? 0 : -1;
       li.textContent = p.label;
       li.addEventListener("click", () => { els.searchQuery.blur(); searchZone = "preds"; predIdx = i; selectPrediction(p); });
       els.searchPreds.appendChild(li);
     });
+    const focusedSearchElement = searchZone === "input"
+      ? els.searchQuery
+      : searchZone === "keys"
+        ? els.searchKeyboard.querySelector(".focused")
+        : els.searchPreds.querySelector(".focused");
+    if (focusedSearchElement && document.activeElement !== focusedSearchElement) {
+      focusedSearchElement.focus();
+    }
     const focusedPrediction = els.searchPreds.querySelector(".focused");
     if (focusedPrediction && typeof focusedPrediction.scrollIntoView === "function") {
       focusedPrediction.scrollIntoView({ block: "nearest" });
