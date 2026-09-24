@@ -91,6 +91,7 @@
   let signalData = [];
   let signalMarkers = [];
   const OVERPASS_REQUEST_TIMEOUT_MS = 25000; // server側20秒に通信余裕を加えたclient上限
+  const OVERPASS_MAX_REQUEST_BODY_BYTES = 64 * 1024; // percent-encoded POST bodyはASCIIなのでlengthでbyte上限を判定
   let signalRequestId = 0; // 古い Overpass callback を無視するための世代番号
   let geocoder = null;
   let travelMode = "WALKING"; // WALKING / DRIVING / BICYCLING / TRANSIT
@@ -1819,11 +1820,13 @@
     const q =
       `[out:json][timeout:20];node["highway"="traffic_signals"]` +
       `(around:${OVERPASS_QUERY_RADIUS_M},${routeLine});out;`;
+    const requestBody = "data=" + encodeURIComponent(q);
+    if (requestBody.length > OVERPASS_MAX_REQUEST_BODY_BYTES) return;
     const abortController = typeof AbortController === "function" ? new AbortController() : null;
     fetchSignals.abortController = abortController;
     const requestOptions = {
       method: "POST",
-      body: "data=" + encodeURIComponent(q),
+      body: requestBody,
     };
     if (abortController) requestOptions.signal = abortController.signal;
     const timeoutId = setTimeout(() => {
