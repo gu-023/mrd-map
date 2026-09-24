@@ -1795,7 +1795,7 @@
       .map((point) => {
         const lat = typeof point.lat === "function" ? point.lat() : point.lat;
         const lng = typeof point.lng === "function" ? point.lng() : point.lng;
-        return Number.isFinite(lat) && Number.isFinite(lng) ? `${lat},${lng}` : null;
+        return Number.isFinite(lat) && Number.isFinite(lng) ? `${lat.toFixed(6)},${lng.toFixed(6)}` : null;
       })
       .filter(Boolean)
       .join(",");
