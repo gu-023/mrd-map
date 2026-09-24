@@ -42,10 +42,8 @@ jobs:
           html = Path("index.html").read_text()
 
           bridge_required = (
-              'element.setAttribute("role", "button");',
-              'element.tabIndex = element === selected ? 0 : -1;',
+              'element.setAttribute("role", "button")',
               'const selectedKey = searchKeyboard.querySelector(".key.focused");',
-              'const selectedPrediction = searchPreds.querySelector(".pred.focused");',
               'if (selectedKey && typeof selectedKey.scrollIntoView === "function") {',
               'selectedKey.scrollIntoView({ block: "nearest", inline: "nearest" });',
               'function updateKeyboardScrims() {',
@@ -66,28 +64,44 @@ jobs:
               'requestAnimationFrame(updatePredictionScrims);',
               'searchPreds.addEventListener("scroll", updatePredictionScrims, { passive: true });',
               'updatePredictionScrims();',
-              'if (searchQuery.classList.contains("focused")) return;',
-              'focusWithoutScroll(selectedKey || selectedPrediction);',
-              'if (active && search.contains(active) && typeof active.blur === "function") {',
-              'if (!menu.classList.contains("hidden") || !picker.classList.contains("hidden")) return;',
-              'focusWithoutScroll(controls.querySelector(".focusable.focused"));',
           )
           missing = [needle for needle in bridge_required if needle not in bridge]
           if missing:
               raise SystemExit(
-                  "search focus bridge no longer preserves host-focus contract: "
+                  "search bridge no longer preserves semantic/scroll affordances: "
                   + ", ".join(missing)
+              )
+
+          bridge_forbidden = (
+              "focusWithoutScroll(",
+              "restoreFocusAfterSearchClose(",
+              "element.tabIndex =",
+              ".focus({",
+              ".focus();",
+              ".blur();",
+          )
+          present = [needle for needle in bridge_forbidden if needle in bridge]
+          if present:
+              raise SystemExit(
+                  "search bridge must not compete with app.js for browser focus ownership: "
+                  + ", ".join(present)
               )
 
           app_required = (
               'els.searchQuery.classList.toggle("focused", searchZone === "input");',
+              'els.searchQuery.tabIndex = searchZone === "input" ? 0 : -1;',
               'd.className = "key" + (searchZone === "keys" && i === keyIdx ? " focused" : "");',
+              'd.tabIndex = searchZone === "keys" && i === keyIdx ? 0 : -1;',
               'li.className = "pred" + (searchZone === "preds" && i === predIdx ? " focused" : "");',
+              'li.tabIndex = searchZone === "preds" && i === predIdx ? 0 : -1;',
+              'const focusedSearchElement = searchZone === "input"',
+              'document.activeElement !== focusedSearchElement',
+              'focusedSearchElement.focus();',
           )
           missing = [needle for needle in app_required if needle not in app]
           if missing:
               raise SystemExit(
-                  "app search renderer no longer exposes bridge selection state: "
+                  "app search renderer no longer owns visual + host DOM focus synchronization: "
                   + ", ".join(missing)
               )
 
