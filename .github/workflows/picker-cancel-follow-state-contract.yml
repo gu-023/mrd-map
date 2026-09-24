@@ -73,6 +73,7 @@ jobs:
             clearDirectionsRequestTimeout() {},
             clearError() {},
             disableCompass() {},
+            renderFocus() {},
             openDestinationMenu() {},
             computeRoute(...args) {
               computeRouteCalls.push(args);
@@ -303,6 +304,7 @@ jobs:
                 errors.push({ title, body, sourceName });
               },
               disableCompass() {},
+              renderFocus() {},
               directionsService: {
                 route(_request, callback) {
                   routeCalls += 1;
