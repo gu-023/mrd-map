@@ -1795,6 +1795,7 @@
     const SIGNAL_ROUTE_RADIUS_M = 25;
     const OVERPASS_ROUTE_POINT_SPACING_M = 10;
     const OVERPASS_QUERY_RADIUS_M = SIGNAL_ROUTE_RADIUS_M + OVERPASS_ROUTE_POINT_SPACING_M;
+    const OVERPASS_MAX_REQUEST_CHUNKS = 4;
     const validRoutePoints = navFullPath
       .map((point) => {
         const lat = typeof point.lat === "function" ? point.lat() : point.lat;
@@ -1812,36 +1813,79 @@
           meters(previous.source, point.source) < OVERPASS_ROUTE_POINT_SPACING_M) continue;
       queryRoutePoints.push(point);
     }
-    const routeLine = queryRoutePoints
-      .map((point) => `${point.lat.toFixed(6)},${point.lng.toFixed(6)}`)
-      .join(",");
-    if (!routeLine) return;
-    const requestId = ++signalRequestId;
-    const q =
+    const serializedRoutePoints = queryRoutePoints.map((point) => {
+      const text = `${point.lat.toFixed(6)},${point.lng.toFixed(6)}`;
+      return { text, encodedLength: encodeURIComponent(text).length };
+    });
+    if (!serializedRoutePoints.length) return;
+
+    const queryPrefix =
       `[out:json][timeout:20];node["highway"="traffic_signals"]` +
-      `(around:${OVERPASS_QUERY_RADIUS_M},${routeLine});out;`;
-    const requestBody = "data=" + encodeURIComponent(q);
-    if (requestBody.length > OVERPASS_MAX_REQUEST_BODY_BYTES) return;
+      `(around:${OVERPASS_QUERY_RADIUS_M},`;
+    const querySuffix = ");out;";
+    const encodedPrefixLength = ("data=" + encodeURIComponent(queryPrefix)).length;
+    const encodedSuffixLength = encodeURIComponent(querySuffix).length;
+    const encodedSeparatorLength = encodeURIComponent(",").length;
+    const buildRequestBody = (points) =>
+      "data=" + encodeURIComponent(queryPrefix + points.map((point) => point.text).join(",") + querySuffix);
+
+    const requestBodies = [];
+    let chunkPoints = [];
+    let chunkBodyLength = encodedPrefixLength + encodedSuffixLength;
+    for (const point of serializedRoutePoints) {
+      const addedLength = (chunkPoints.length ? encodedSeparatorLength : 0) + point.encodedLength;
+      if (chunkBodyLength + addedLength <= OVERPASS_MAX_REQUEST_BODY_BYTES) {
+        chunkPoints.push(point);
+        chunkBodyLength += addedLength;
+        continue;
+      }
+      if (!chunkPoints.length) return;
+      requestBodies.push(buildRequestBody(chunkPoints));
+      if (requestBodies.length >= OVERPASS_MAX_REQUEST_CHUNKS) return;
+      const overlapPoint = chunkPoints[chunkPoints.length - 1];
+      chunkPoints = [overlapPoint, point];
+      chunkBodyLength = encodedPrefixLength + encodedSuffixLength +
+        overlapPoint.encodedLength + encodedSeparatorLength + point.encodedLength;
+      if (chunkBodyLength > OVERPASS_MAX_REQUEST_BODY_BYTES) return;
+    }
+    if (chunkPoints.length) requestBodies.push(buildRequestBody(chunkPoints));
+    if (!requestBodies.length || requestBodies.length > OVERPASS_MAX_REQUEST_CHUNKS ||
+        requestBodies.some((body) => body.length > OVERPASS_MAX_REQUEST_BODY_BYTES)) return;
+
+    const requestId = ++signalRequestId;
     const abortController = typeof AbortController === "function" ? new AbortController() : null;
     fetchSignals.abortController = abortController;
-    const requestOptions = {
-      method: "POST",
-      body: requestBody,
-    };
-    if (abortController) requestOptions.signal = abortController.signal;
     const timeoutId = setTimeout(() => {
       if (requestId === signalRequestId) signalRequestId++;
       if (fetchSignals.abortController === abortController) fetchSignals.abortController = null;
       if (abortController) abortController.abort();
     }, OVERPASS_REQUEST_TIMEOUT_MS);
-    fetch("https://overpass-api.de/api/interpreter", requestOptions)
-      .then((r) => (r.ok ? r.json() : null))
+    const elements = [];
+    const fetchChunk = (index) => {
+      if (requestId !== signalRequestId || !navMode) return Promise.resolve(null);
+      const requestOptions = {
+        method: "POST",
+        body: requestBodies[index],
+      };
+      if (abortController) requestOptions.signal = abortController.signal;
+      return fetch("https://overpass-api.de/api/interpreter", requestOptions)
+        .then((r) => (r.ok ? r.json() : null))
+        .then((j) => {
+          if (!j || !Array.isArray(j.elements)) return null;
+          for (const element of j.elements) elements.push(element);
+          return index + 1 < requestBodies.length
+            ? fetchChunk(index + 1)
+            : { elements };
+        });
+    };
+    return fetchChunk(0)
       .then((j) => {
         clearTimeout(timeoutId);
         if (fetchSignals.abortController === abortController) fetchSignals.abortController = null;
         if (requestId !== signalRequestId || !navMode) return;
         if (!j || !j.elements) return;
         const near = [];
+        const seenSignals = new Set();
         for (const el of j.elements) {
           if (near.length >= 200) break;
           if (!el ||
@@ -1849,6 +1893,11 @@
               !Number.isFinite(el.lon) || el.lon < -180 || el.lon > 180) {
             continue;
           }
+          const signalKey = el.id !== undefined && el.id !== null
+            ? `id:${el.id}`
+            : `${el.lat},${el.lon}`;
+          if (seenSignals.has(signalKey)) continue;
+          seenSignals.add(signalKey);
           const pt = new google.maps.LatLng(el.lat, el.lon);
           let min = navFullPath.length === 1 ? meters(pt, navFullPath[0]) : Infinity;
           for (let i = 0; i < navFullPath.length - 1; i++) {
