@@ -1,0 +1,79 @@
+name: One-shot menu DOM focus patch
+
+on:
+  push:
+    branches:
+      - chatgpt/menu-dom-focus-sync-20260924
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: chatgpt/menu-dom-focus-sync-20260924
+
+      - name: Apply focused menu DOM focus patch
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('js/app.js')
+          text = path.read_text()
+
+          replacements = [
+              (
+                  '    renderMenu();\n    els.menu.classList.remove("hidden");',
+                  '    els.menu.classList.remove("hidden");\n    renderMenu();',
+              ),
+              (
+                  '  function closeMenu() {\n    menuOpen = false;\n    els.menu.classList.add("hidden");\n  }',
+                  '  function closeMenu() {\n    const focusedMenuRow = els.menuList.contains(document.activeElement)\n      ? document.activeElement\n      : null;\n    menuOpen = false;\n    els.menu.classList.add("hidden");\n    if (focusedMenuRow && typeof focusedMenuRow.blur === "function") focusedMenuRow.blur();\n  }',
+              ),
+              (
+                  '  function closeMenuToMap() {\n    closeMenu();\n    if (followMode) {',
+                  '  function closeMenuToMap() {\n    closeMenu();\n    renderFocus();\n    if (followMode) {',
+              ),
+              (
+                  '      li.className = "menu-row" + (i === menuIdx ? " focused" : "");\n      li.textContent = it.label;',
+                  '      li.className = "menu-row" + (i === menuIdx ? " focused" : "");\n      li.tabIndex = i === menuIdx ? 0 : -1;\n      li.textContent = it.label;',
+              ),
+              (
+                  '    const focused = els.menuList.querySelector(".focused");\n    if (focused && typeof focused.scrollIntoView === "function") {',
+                  '    const focused = els.menuList.querySelector(".focused");\n    if (focused && document.activeElement !== focused) focused.focus();\n    if (focused && typeof focused.scrollIntoView === "function") {',
+              ),
+              (
+                  '        action: () => { followMode = false; map.panTo(s.start_location); closeMenu(); },',
+                  '        action: () => { followMode = false; map.panTo(s.start_location); closeMenuToMap(); },',
+              ),
+          ]
+
+          for old, new in replacements:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'expected exactly one patch anchor, found {count}: {old[:80]!r}')
+              text = text.replace(old, new, 1)
+
+          path.write_text(text)
+          PY
+
+          node --check js/app.js
+          git diff --check
+
+      - name: Commit product change
+        shell: bash
+        run: |
+          if git diff --quiet -- js/app.js; then
+            echo 'No product diff produced' >&2
+            exit 1
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add js/app.js
+          git commit -m 'Synchronize menu DOM focus for pinch activation'
+          git push origin HEAD:chatgpt/menu-dom-focus-sync-20260924
