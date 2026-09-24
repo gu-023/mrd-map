@@ -1577,8 +1577,10 @@
     pickMode = false;
     els.picker.classList.add("hidden");
     els.picker.tabIndex = -1;
-    if (document.activeElement === els.picker && typeof els.picker.blur === "function") {
-      els.picker.blur();
+    if (typeof document !== "undefined") {
+      if (document.activeElement === els.picker && typeof els.picker.blur === "function") {
+        els.picker.blur();
+      }
     }
     setNavBanner(null);
     renderFocus();
