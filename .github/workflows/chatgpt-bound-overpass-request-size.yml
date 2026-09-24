@@ -1,0 +1,81 @@
+name: ChatGPT one-shot bound Overpass request size
+
+on:
+  push:
+    branches:
+      - chatgpt/bound-overpass-request-size
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: chatgpt/bound-overpass-request-size
+
+      - name: Apply bounded Overpass request patch
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path('js/app.js')
+          source = path.read_text()
+
+          old_constant = '  const OVERPASS_REQUEST_TIMEOUT_MS = 25000; // server側20秒に通信余裕を加えたclient上限\n'
+          new_constant = (
+              old_constant +
+              '  const OVERPASS_MAX_REQUEST_BODY_BYTES = 64 * 1024; // percent-encoded POST bodyはASCIIなのでlengthでbyte上限を判定\n'
+          )
+          if source.count(old_constant) != 1:
+              raise SystemExit('unexpected Overpass timeout constant anchor')
+          source = source.replace(old_constant, new_constant, 1)
+
+          old_request = '''    const q =
+      `[out:json][timeout:20];node["highway"="traffic_signals"]` +
+      `(around:${OVERPASS_QUERY_RADIUS_M},${routeLine});out;`;
+    const abortController = typeof AbortController === "function" ? new AbortController() : null;
+    fetchSignals.abortController = abortController;
+    const requestOptions = {
+      method: "POST",
+      body: "data=" + encodeURIComponent(q),
+    };
+'''
+          new_request = '''    const q =
+      `[out:json][timeout:20];node["highway"="traffic_signals"]` +
+      `(around:${OVERPASS_QUERY_RADIUS_M},${routeLine});out;`;
+    const requestBody = "data=" + encodeURIComponent(q);
+    if (requestBody.length > OVERPASS_MAX_REQUEST_BODY_BYTES) return;
+    const abortController = typeof AbortController === "function" ? new AbortController() : null;
+    fetchSignals.abortController = abortController;
+    const requestOptions = {
+      method: "POST",
+      body: requestBody,
+    };
+'''
+          if source.count(old_request) != 1:
+              raise SystemExit('unexpected Overpass request anchor')
+          source = source.replace(old_request, new_request, 1)
+          path.write_text(source)
+          PY
+
+          node --check js/app.js
+          git diff --check
+          git diff -- js/app.js
+
+      - name: Commit product change
+        shell: bash
+        run: |
+          if git diff --quiet -- js/app.js; then
+            echo 'No product change to commit'
+            exit 1
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add js/app.js
+          git commit -m 'Bound Overpass request body size'
+          git push origin HEAD:chatgpt/bound-overpass-request-size
