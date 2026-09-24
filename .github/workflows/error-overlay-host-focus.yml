@@ -34,6 +34,9 @@ jobs:
               "restore": "  function restoreFocusAfterError() {",
               "clear": "  function clearError(source) {",
               "next": '  if (!cfg.GOOGLE_MAPS_API_KEY || cfg.GOOGLE_MAPS_API_KEY === "__GOOGLE_MAPS_API_KEY__") {',
+              "open_search": "  function openSearch() {",
+              "close_search": "  function closeSearch() {",
+              "reopen_search": "  function reopenSearchResults() {",
               "render_search": "  function renderSearch() {",
               "search_focus_listener": '  els.searchQuery.addEventListener("focus", () => {',
               "render_menu": "  function renderMenu() {",
@@ -49,6 +52,8 @@ jobs:
           show = app[app.index(markers["show"]):app.index(markers["restore"])]
           restore = app[app.index(markers["restore"]):app.index(markers["clear"])]
           clear = app[app.index(markers["clear"]):app.index(markers["next"])]
+          open_search = app[app.index(markers["open_search"]):app.index(markers["close_search"])]
+          reopen_search = app[app.index(markers["reopen_search"]):app.index(markers["render_search"])]
           render_search = app[app.index(markers["render_search"]):app.index(markers["search_focus_listener"])]
           render_menu = app[app.index(markers["render_menu"]):app.index(markers["menu_move"])]
           enter_pick = app[app.index(markers["enter_pick"]):app.index(markers["exit_pick"])]
@@ -99,6 +104,12 @@ jobs:
               raise SystemExit("search render can steal visible error-overlay focus: " + ", ".join(missing))
           if render_search.index("if (!errorOverlayVisible &&") > render_search.index("focusedSearchElement.focus();"):
               raise SystemExit("search focus write must remain behind the visible-error guard")
+
+          for name, section in (("openSearch", open_search), ("reopenSearchResults", reopen_search)):
+              if "renderSearch();" not in section:
+                  raise SystemExit(f"{name} must delegate DOM focus to renderSearch")
+              if "els.searchQuery.focus();" in section:
+                  raise SystemExit(f"{name} must not bypass the visible-error focus guard")
 
           surface_guards = (
               ("menu", render_menu, "errorSource === null", "focused.focus();"),
