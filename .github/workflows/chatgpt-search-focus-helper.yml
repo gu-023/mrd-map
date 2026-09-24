@@ -24,7 +24,6 @@ jobs:
 
           app_path = Path("js/app.js")
           app = app_path.read_text()
-
           replacements = [
               (
                   '''  function closeSearch() {\n    if (predictionTimeoutId !== null) clearTimeout(predictionTimeoutId);''',
@@ -51,20 +50,11 @@ jobs:
                   '''    const focusedSearchElement = searchZone === "input"\n      ? els.searchQuery\n      : searchZone === "keys"\n        ? els.searchKeyboard.querySelector(".focused")\n        : els.searchPreds.querySelector(".focused");\n    if (focusedSearchElement && document.activeElement !== focusedSearchElement) {\n      focusedSearchElement.focus();\n    }\n    const focusedPrediction = els.searchPreds.querySelector(".focused");\n    if (focusedPrediction && typeof focusedPrediction.scrollIntoView === "function") {''',
               ),
           ]
-
           for old, new in replacements:
               if app.count(old) != 1:
                   raise SystemExit(f"expected exactly one app.js replacement target: {old[:80]!r}")
               app = app.replace(old, new, 1)
           app_path.write_text(app)
-
-          workflow_path = Path(".github/workflows/main-control-dom-focus.yml")
-          workflow = workflow_path.read_text()
-          old = '''          if "renderFocus();" not in close_to_map:\n              raise SystemExit("closeMenuToMap must restore host focus to the main control rail")\n\n          class ControlParser(HTMLParser):'''
-          new = '''          if "renderFocus();" not in close_to_map:\n              raise SystemExit("closeMenuToMap must restore host focus to the main control rail")\n\n          close_search_marker = "  function closeSearch() {"\n          reopen_search_marker = "  function reopenSearchResults() {"\n          render_search_marker = "  function renderSearch() {"\n          search_focus_listener_marker = '  els.searchQuery.addEventListener("focus", () => {'\n          search_markers = (\n              close_search_marker,\n              reopen_search_marker,\n              render_search_marker,\n              search_focus_listener_marker,\n          )\n          if any(app.count(marker) != 1 for marker in search_markers):\n              raise SystemExit("expected exactly one search focus lifecycle function for each marker")\n\n          close_search = app[app.index(close_search_marker):app.index(reopen_search_marker)]\n          render_search = app[app.index(render_search_marker):app.index(search_focus_listener_marker)]\n          search_required = (\n              'els.searchQuery.tabIndex = searchZone === "input" ? 0 : -1;',\n              'd.tabIndex = searchZone === "keys" && i === keyIdx ? 0 : -1;',\n              'li.tabIndex = searchZone === "preds" && i === predIdx ? 0 : -1;',\n              'const focusedSearchElement = searchZone === "input"',\n              'els.searchKeyboard.querySelector(".focused")',\n              'els.searchPreds.querySelector(".focused")',\n              'document.activeElement !== focusedSearchElement',\n              'focusedSearchElement.focus();',\n          )\n          missing = [needle for needle in search_required if needle not in render_search]\n          if missing:\n              raise SystemExit(\n                  "renderSearch no longer preserves visual + host DOM focus synchronization: "\n                  + ", ".join(missing)\n              )\n\n          close_search_required = (\n              "els.search.contains(document.activeElement)",\n              "focusedSearchElement.blur();",\n              "renderFocus();",\n          )\n          missing = [needle for needle in close_search_required if needle not in close_search]\n          if missing:\n              raise SystemExit(\n                  "closeSearch no longer releases search focus and restores the main control rail: "\n                  + ", ".join(missing)\n              )\n\n          class ControlParser(HTMLParser):'''
-          if workflow.count(old) != 1:
-              raise SystemExit("expected exactly one host-focus workflow insertion target")
-          workflow_path.write_text(workflow.replace(old, new, 1))
           PY
 
       - name: Static validation
@@ -75,17 +65,18 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           app = Path("js/app.js").read_text()
+          assert 'els.searchQuery.tabIndex = searchZone === "input" ? 0 : -1;' in app
           assert 'd.tabIndex = searchZone === "keys" && i === keyIdx ? 0 : -1;' in app
           assert 'li.tabIndex = searchZone === "preds" && i === predIdx ? 0 : -1;' in app
           assert 'focusedSearchElement.focus();' in app
+          assert 'els.search.contains(document.activeElement)' in app
           PY
 
-      - name: Commit target changes and remove helper
+      - name: Commit runtime change
         shell: bash
         run: |
-          rm .github/workflows/chatgpt-search-focus-helper.yml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add js/app.js .github/workflows/main-control-dom-focus.yml .github/workflows/chatgpt-search-focus-helper.yml
+          git add js/app.js
           git commit -m "Synchronize search DOM focus for pinch activation"
           git push origin HEAD:chatgpt/search-dom-focus
