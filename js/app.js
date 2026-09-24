@@ -909,15 +909,20 @@
     menuIdx = Math.max(0, Math.min(initialIdx, items.length - 1));
     menuOpen = true;
     els.menuTitle.textContent = title;
-    renderMenu();
     els.menu.classList.remove("hidden");
+    renderMenu();
   }
   function closeMenu() {
+    const focusedMenuRow = els.menuList.contains(document.activeElement)
+      ? document.activeElement
+      : null;
     menuOpen = false;
     els.menu.classList.add("hidden");
+    if (focusedMenuRow && typeof focusedMenuRow.blur === "function") focusedMenuRow.blur();
   }
   function closeMenuToMap() {
     closeMenu();
+    renderFocus();
     if (followMode) {
       const currentPosition = userMarker && userMarker.getPosition();
       if (currentPosition) map.panTo(currentPosition);
@@ -928,11 +933,13 @@
     menuItems.forEach((it, i) => {
       const li = document.createElement("li");
       li.className = "menu-row" + (i === menuIdx ? " focused" : "");
+      li.tabIndex = i === menuIdx ? 0 : -1;
       li.textContent = it.label;
       li.addEventListener("click", () => { menuIdx = i; renderMenu(); it.action(); });
       els.menuList.appendChild(li);
     });
     const focused = els.menuList.querySelector(".focused");
+    if (focused && document.activeElement !== focused) focused.focus();
     if (focused && typeof focused.scrollIntoView === "function") {
       focused.scrollIntoView({ block: "nearest" });
     }
@@ -1031,7 +1038,7 @@
         : fmtDist(stepDistanceMeters(s));
       return {
         label: `${i + 1}. ${stripHtml(s.instructions)} (${distanceText})`,
-        action: () => { followMode = false; map.panTo(s.start_location); closeMenu(); },
+        action: () => { followMode = false; map.panTo(s.start_location); closeMenuToMap(); },
       };
     });
     items.push({ label: "← 戻る", action: openDestinationMenu });
