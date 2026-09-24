@@ -1,0 +1,56 @@
+name: One-shot search entry error focus patch
+
+on:
+  push:
+    branches:
+      - chatgpt/preserve-search-entry-error-focus
+    paths:
+      - .github/workflows/one-shot-search-entry-error-focus.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: chatgpt/preserve-search-entry-error-focus
+      - name: Remove unguarded search entry focus writes
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("js/app.js")
+          text = path.read_text()
+          replacements = [
+              (
+                  '    els.search.classList.remove("hidden");\n    renderSearch();\n    els.searchQuery.focus();\n  }\n\n  function closeSearch() {',
+                  '    els.search.classList.remove("hidden");\n    renderSearch();\n  }\n\n  function closeSearch() {',
+              ),
+              (
+                  '    refreshPredictions(searchReturnPrediction);\n    renderSearch();\n    els.searchQuery.focus();\n  }\n\n  function renderSearch() {',
+                  '    refreshPredictions(searchReturnPrediction);\n    renderSearch();\n  }\n\n  function renderSearch() {',
+              ),
+          ]
+          for old, new in replacements:
+              if text.count(old) != 1:
+                  raise SystemExit("search entry focus patch target changed unexpectedly")
+              text = text.replace(old, new, 1)
+          path.write_text(text)
+          PY
+
+          node --check js/app.js
+          git diff --check
+      - name: Commit product change
+        run: |
+          if git diff --quiet -- js/app.js; then
+            echo "Expected js/app.js change was not produced" >&2
+            exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add js/app.js
+          git commit -m "Preserve error focus on search entry"
+          git push origin HEAD:chatgpt/preserve-search-entry-error-focus
