@@ -102,6 +102,50 @@ jobs:
           if "renderFocus();" not in close_to_map:
               raise SystemExit("closeMenuToMap must restore host focus to the main control rail")
 
+          close_search_marker = "  function closeSearch() {"
+          reopen_search_marker = "  function reopenSearchResults() {"
+          render_search_marker = "  function renderSearch() {"
+          search_focus_listener_marker = '  els.searchQuery.addEventListener("focus", () => {'
+          search_markers = (
+              close_search_marker,
+              reopen_search_marker,
+              render_search_marker,
+              search_focus_listener_marker,
+          )
+          if any(app.count(marker) != 1 for marker in search_markers):
+              raise SystemExit("expected exactly one search focus lifecycle function for each marker")
+
+          close_search = app[app.index(close_search_marker):app.index(reopen_search_marker)]
+          render_search = app[app.index(render_search_marker):app.index(search_focus_listener_marker)]
+          search_required = (
+              'els.searchQuery.tabIndex = searchZone === "input" ? 0 : -1;',
+              'd.tabIndex = searchZone === "keys" && i === keyIdx ? 0 : -1;',
+              'li.tabIndex = searchZone === "preds" && i === predIdx ? 0 : -1;',
+              'const focusedSearchElement = searchZone === "input"',
+              'els.searchKeyboard.querySelector(".focused")',
+              'els.searchPreds.querySelector(".focused")',
+              'document.activeElement !== focusedSearchElement',
+              'focusedSearchElement.focus();',
+          )
+          missing = [needle for needle in search_required if needle not in render_search]
+          if missing:
+              raise SystemExit(
+                  "renderSearch no longer preserves visual + host DOM focus synchronization: "
+                  + ", ".join(missing)
+              )
+
+          close_search_required = (
+              "els.search.contains(document.activeElement)",
+              "focusedSearchElement.blur();",
+              "renderFocus();",
+          )
+          missing = [needle for needle in close_search_required if needle not in close_search]
+          if missing:
+              raise SystemExit(
+                  "closeSearch no longer releases search focus and restores the main control rail: "
+                  + ", ".join(missing)
+              )
+
           class ControlParser(HTMLParser):
               def __init__(self):
                   super().__init__()
