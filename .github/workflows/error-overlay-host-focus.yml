@@ -79,7 +79,7 @@ jobs:
               raise SystemExit("clearError host-focus contract missing: " + ", ".join(missing))
 
           search_required = (
-              'const errorOverlayVisible = !els.error.classList.contains("hidden");',
+              "const errorOverlayVisible = errorSource !== null;",
               "if (!errorOverlayVisible &&",
               "focusedSearchElement &&",
               "document.activeElement !== focusedSearchElement",
