@@ -1,0 +1,32 @@
+name: One-shot safe picker exit
+
+on:
+  push:
+    branches:
+      - chatgpt/error-overlay-host-focus
+    paths:
+      - .github/workflows/one-shot-safe-picker-exit.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: chatgpt/error-overlay-host-focus
+      - name: Apply patch
+        run: python3 .github/scripts/one-shot-safe-picker-exit.py
+      - name: Verify patch
+        run: |
+          node --check js/app.js
+          git diff --check
+      - name: Commit runtime hardening
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add js/app.js
+          git commit -m "Harden picker blur for isolated runtime guards"
+          git push origin HEAD:chatgpt/error-overlay-host-focus
