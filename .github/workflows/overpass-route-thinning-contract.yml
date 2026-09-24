@@ -1,0 +1,113 @@
+name: Guard Overpass route thinning contract
+
+on:
+  pull_request:
+    paths:
+      - js/app.js
+      - .github/workflows/overpass-route-thinning-contract.yml
+  push:
+    branches: [main]
+    paths:
+      - js/app.js
+      - .github/workflows/overpass-route-thinning-contract.yml
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Exercise dense-route Overpass query shaping
+        shell: bash
+        run: |
+          node <<'NODE'
+          const fs = require("fs");
+          const vm = require("vm");
+
+          const source = fs.readFileSync("js/app.js", "utf8");
+          const signalsStart = source.indexOf("  function fetchSignals() {");
+          const signalsEnd = source.indexOf("\n\n  function plotSignals() {", signalsStart);
+          const timeoutMatch = source.match(/^  const OVERPASS_REQUEST_TIMEOUT_MS = (\d+);/m);
+          if (signalsStart < 0 || signalsEnd < 0 || !timeoutMatch) {
+            throw new Error("Overpass implementation could not be located");
+          }
+
+          const signalsSource = source.slice(signalsStart, signalsEnd).replace(/^  /gm, "");
+          let requestBody = null;
+          let fetchCount = 0;
+
+          class MockAbortController {
+            constructor() {
+              this.signal = {};
+            }
+            abort() {}
+          }
+
+          const context = {
+            AbortController: MockAbortController,
+            fetch(url, options) {
+              fetchCount += 1;
+              if (url !== "https://overpass-api.de/api/interpreter") {
+                throw new Error(`unexpected Overpass URL: ${url}`);
+              }
+              requestBody = options && options.body;
+              return new Promise(() => {});
+            },
+            setTimeout() {
+              return 1;
+            },
+            clearTimeout() {},
+            meters(a, b) {
+              return Math.abs(a.distanceM - b.distanceM);
+            },
+            distanceToSegment() {
+              return Infinity;
+            },
+            google: { maps: { LatLng: class {} } },
+            plotSignals() {},
+          };
+          vm.createContext(context);
+
+          vm.runInContext(`
+            const OVERPASS_REQUEST_TIMEOUT_MS = ${Number(timeoutMatch[1])};
+            let signalRequestId = 0;
+            let navMode = true;
+            let signalData = [];
+            let navFullPath = [
+              { lat: () => 35.000000, lng: () => 139.000000, distanceM: 0 },
+              { lat: () => 35.000045, lng: () => 139.000000, distanceM: 5 },
+              { lat: () => 35.000108, lng: () => 139.000000, distanceM: 12 },
+              { lat: () => 35.000153, lng: () => 139.000000, distanceM: 17 },
+              { lat: () => 35.000162, lng: () => 139.000000, distanceM: 18 },
+            ];
+
+            ${signalsSource}
+            fetchSignals();
+          `, context);
+
+          if (fetchCount !== 1 || typeof requestBody !== "string" || !requestBody.startsWith("data=")) {
+            throw new Error("Overpass request was not issued exactly once with a data body");
+          }
+
+          const query = decodeURIComponent(requestBody.slice("data=".length));
+          const expected =
+            '[out:json][timeout:20];node["highway"="traffic_signals"]' +
+            '(around:35,35.000000,139.000000,35.000108,139.000000,35.000162,139.000000);out;';
+          if (query !== expected) {
+            throw new Error(`unexpected thinned Overpass query:\n${query}\nexpected:\n${expected}`);
+          }
+          if (query.includes("35.000045") || query.includes("35.000153")) {
+            throw new Error("dense intermediate route samples were not removed");
+          }
+          if (!source.includes("const SIGNAL_ROUTE_RADIUS_M = 25;")) {
+            throw new Error("client-side traffic-signal corridor is no longer fixed at 25 m");
+          }
+          if (!source.includes("if (min < SIGNAL_ROUTE_RADIUS_M) near.push")) {
+            throw new Error("client-side exact-route filter no longer uses SIGNAL_ROUTE_RADIUS_M");
+          }
+
+          console.log("Overpass query retains endpoints, thins dense samples, widens to 35 m, and keeps the exact 25 m local filter");
+          NODE
