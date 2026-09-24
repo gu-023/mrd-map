@@ -1,4 +1,4 @@
-name: Main control DOM focus guard
+name: Host DOM focus guard
 
 on:
   pull_request:
@@ -24,7 +24,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Check main-control DOM focus contract
+      - name: Check host DOM focus contract
         shell: bash
         run: |
           python3 - <<'PY'
@@ -57,6 +57,50 @@ jobs:
                   "renderFocus no longer preserves visual + DOM focus synchronization: "
                   + ", ".join(missing)
               )
+
+          open_menu_marker = "  function openMenu(title, items, initialIdx = 0) {"
+          close_menu_marker = "  function closeMenu() {"
+          close_to_map_marker = "  function closeMenuToMap() {"
+          render_menu_marker = "  function renderMenu() {"
+          menu_move_marker = "  function menuMove(d) {"
+          markers = (
+              open_menu_marker,
+              close_menu_marker,
+              close_to_map_marker,
+              render_menu_marker,
+              menu_move_marker,
+          )
+          if any(app.count(marker) != 1 for marker in markers):
+              raise SystemExit("expected exactly one menu focus lifecycle function for each marker")
+
+          open_menu = app[app.index(open_menu_marker):app.index(close_menu_marker)]
+          close_menu = app[app.index(close_menu_marker):app.index(close_to_map_marker)]
+          close_to_map = app[app.index(close_to_map_marker):app.index(render_menu_marker)]
+          render_menu = app[app.index(render_menu_marker):app.index(menu_move_marker)]
+
+          reveal = 'els.menu.classList.remove("hidden");'
+          render = "renderMenu();"
+          if reveal not in open_menu or render not in open_menu or open_menu.index(reveal) > open_menu.index(render):
+              raise SystemExit("menu must be visible before renderMenu focuses the selected row")
+
+          menu_required = (
+              'li.tabIndex = i === menuIdx ? 0 : -1;',
+              'li.addEventListener("click",',
+              'const focused = els.menuList.querySelector(".focused");',
+              'document.activeElement !== focused',
+              'focused.focus();',
+          )
+          missing = [needle for needle in menu_required if needle not in render_menu]
+          if missing:
+              raise SystemExit(
+                  "renderMenu no longer preserves visual + host DOM focus synchronization: "
+                  + ", ".join(missing)
+              )
+
+          if "els.menuList.contains(document.activeElement)" not in close_menu or ".blur();" not in close_menu:
+              raise SystemExit("closeMenu must release focus owned by a menu row")
+          if "renderFocus();" not in close_to_map:
+              raise SystemExit("closeMenuToMap must restore host focus to the main control rail")
 
           class ControlParser(HTMLParser):
               def __init__(self):
