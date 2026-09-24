@@ -31,7 +31,8 @@ jobs:
           const signalsStart = source.indexOf("  function fetchSignals() {");
           const signalsEnd = source.indexOf("\n\n  function plotSignals() {", signalsStart);
           const timeoutMatch = source.match(/^  const OVERPASS_REQUEST_TIMEOUT_MS = (\d+);/m);
-          if (signalsStart < 0 || signalsEnd < 0 || !timeoutMatch) {
+          const maxBodyMatch = source.match(/^  const OVERPASS_MAX_REQUEST_BODY_BYTES = (\d+) \* 1024;/m);
+          if (signalsStart < 0 || signalsEnd < 0 || !timeoutMatch || !maxBodyMatch) {
             throw new Error("Overpass timeout implementation could not be located");
           }
 
@@ -39,6 +40,7 @@ jobs:
             .slice(signalsStart, signalsEnd)
             .replace(/^  /gm, "");
           const timeoutMs = Number(timeoutMatch[1]);
+          const maxBodyBytes = Number(maxBodyMatch[1]) * 1024;
           if (!Number.isFinite(timeoutMs) || timeoutMs < 1000 || timeoutMs > 60000) {
             throw new Error(`unexpected Overpass timeout: ${timeoutMs}`);
           }
@@ -121,6 +123,7 @@ jobs:
 
             vm.runInContext(`
               const OVERPASS_REQUEST_TIMEOUT_MS = ${timeoutMs};
+              const OVERPASS_MAX_REQUEST_BODY_BYTES = ${maxBodyBytes};
               let signalRequestId = 0;
               let navMode = true;
               let navBounds = {
