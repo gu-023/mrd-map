@@ -1,40 +1,23 @@
 /*
- * Ray-Ban Display host-focus bridge for search fallback controls.
+ * Ray-Ban Display search scroll-affordance bridge.
  *
- * The app owns search D-pad selection through .focused classes. Keep the
- * browser's activeElement on the selected fallback key or Places prediction so
- * host pinch/select activation targets the visible choice. Native composer
- * focus remains owned by the app's real search input.
+ * js/app.js owns D-pad selection, roving tabIndex, document.activeElement, and
+ * focus restoration. This bridge only preserves semantic button roles plus the
+ * compact keyboard/prediction scroll affordances used on the 600x600 display.
  */
 (function () {
   "use strict";
 
   const search = document.querySelector("#search");
-  const searchQuery = document.querySelector("#search-query");
   const searchKeyboardScroll = document.querySelector("#search-keyboard-scroll");
   const searchKeyboard = document.querySelector("#search-keyboard");
   const searchPredsScroll = document.querySelector("#search-preds-scroll");
   const searchPreds = document.querySelector("#search-preds");
-  const menu = document.querySelector("#menu");
-  const picker = document.querySelector("#picker");
-  const controls = document.querySelector("#controls");
 
-  if (!search || !searchQuery || !searchKeyboardScroll || !searchKeyboard || !searchPredsScroll || !searchPreds || !menu || !picker || !controls) return;
+  if (!search || !searchKeyboardScroll || !searchKeyboard || !searchPredsScroll || !searchPreds) return;
 
-  function focusWithoutScroll(element) {
-    if (!element || document.activeElement === element) return;
-    try {
-      element.focus({ preventScroll: true });
-    } catch (error) {
-      element.focus();
-    }
-  }
-
-  function makeRovingButtons(elements, selected) {
-    elements.forEach((element) => {
-      element.setAttribute("role", "button");
-      element.tabIndex = element === selected ? 0 : -1;
-    });
+  function markInteractive(elements) {
+    elements.forEach((element) => element.setAttribute("role", "button"));
   }
 
   function updateKeyboardScrims() {
@@ -55,54 +38,27 @@
     searchPredsScroll.classList.toggle("at-bottom", atBottom);
   }
 
-  function syncSearchControls() {
+  function syncSearchAffordances() {
     const keys = Array.from(searchKeyboard.querySelectorAll(".key"));
     const predictions = Array.from(searchPreds.querySelectorAll(".pred"));
     const selectedKey = searchKeyboard.querySelector(".key.focused");
-    const selectedPrediction = searchPreds.querySelector(".pred.focused");
 
-    makeRovingButtons(keys, selectedKey);
-    makeRovingButtons(predictions, selectedPrediction);
+    markInteractive(keys);
+    markInteractive(predictions);
 
     if (search.classList.contains("hidden")) return;
 
-    // Keep the active fallback key inside the compact scrollable keyboard zone.
+    // Keep the selected fallback key inside the compact scrollable keyboard zone.
     if (selectedKey && typeof selectedKey.scrollIntoView === "function") {
       selectedKey.scrollIntoView({ block: "nearest", inline: "nearest" });
     }
     requestAnimationFrame(updateKeyboardScrims);
     requestAnimationFrame(updatePredictionScrims);
-
-    // The app explicitly owns focus for the real input/native composer path.
-    if (searchQuery.classList.contains("focused")) return;
-
-    focusWithoutScroll(selectedKey || selectedPrediction);
   }
 
-  function restoreFocusAfterSearchClose() {
-    if (!search.classList.contains("hidden")) return;
-
-    const active = document.activeElement;
-    if (active && search.contains(active) && typeof active.blur === "function") {
-      active.blur();
-    }
-
-    // A destination menu or picker opened from search owns focus/D-pad next.
-    if (!menu.classList.contains("hidden") || !picker.classList.contains("hidden")) return;
-
-    focusWithoutScroll(controls.querySelector(".focusable.focused"));
-  }
-
-  const observer = new MutationObserver(() => {
-    syncSearchControls();
-    restoreFocusAfterSearchClose();
-  });
+  const observer = new MutationObserver(syncSearchAffordances);
 
   observer.observe(search, {
-    attributes: true,
-    attributeFilter: ["class"],
-  });
-  observer.observe(searchQuery, {
     attributes: true,
     attributeFilter: ["class"],
   });
@@ -122,8 +78,7 @@
   searchKeyboard.addEventListener("scroll", updateKeyboardScrims, { passive: true });
   searchPreds.addEventListener("scroll", updatePredictionScrims, { passive: true });
 
-  syncSearchControls();
+  syncSearchAffordances();
   updateKeyboardScrims();
   updatePredictionScrims();
-  restoreFocusAfterSearchClose();
 })();
