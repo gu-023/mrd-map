@@ -20,20 +20,10 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
-
           path = Path("js/app.js")
           source = path.read_text()
-          old = '''    if (focusedSearchElement && document.activeElement !== focusedSearchElement) {
-              focusedSearchElement.focus();
-            }
-'''
-          new = '''    const errorOverlayVisible = !els.error.classList.contains("hidden");
-            if (!errorOverlayVisible &&
-                focusedSearchElement &&
-                document.activeElement !== focusedSearchElement) {
-              focusedSearchElement.focus();
-            }
-'''
+          old = '    if (focusedSearchElement && document.activeElement !== focusedSearchElement) {\n      focusedSearchElement.focus();\n    }\n'
+          new = '    const errorOverlayVisible = !els.error.classList.contains("hidden");\n    if (!errorOverlayVisible &&\n        focusedSearchElement &&\n        document.activeElement !== focusedSearchElement) {\n      focusedSearchElement.focus();\n    }\n'
           if new in source:
               print("renderSearch focus guard already present")
           else:
