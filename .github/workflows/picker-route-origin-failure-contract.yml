@@ -122,6 +122,7 @@ jobs:
               },
               clearError() {},
               disableCompass() {},
+              renderFocus() {},
               directionsService: {
                 route() {
                   routeCalls += 1;
